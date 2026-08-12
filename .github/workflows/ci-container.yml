@@ -30,8 +30,44 @@ jobs:
           bash -n scripts/*.sh
           python scripts/validate_configs.py
 
-  publish:
-    name: Build and publish GHCR images
+  publish-lite:
+    name: Build and publish lite GHCR image
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Docker metadata (lite)
+        id: meta-lite
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/theninjallo/floodman-operations-voice-aio
+          tags: |
+            type=raw,value=lite,enable=${{ github.ref == 'refs/heads/main' }}
+            type=match,pattern=v(.*),group=1,suffix=-lite
+      - name: Build and push lite image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: lite
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta-lite.outputs.tags }}
+          labels: ${{ steps.meta-lite.outputs.labels }}
+          cache-from: type=gha,scope=floodman-lite
+          cache-to: type=gha,mode=max,scope=floodman-lite
+          build-args: |
+            AVA_COMMIT=18d4e769335f3b643aca80e084c7e66f0969491e
+            PRELOAD_WHISPER_MODEL=tiny.en
+
+  publish-full:
+    name: Build and publish full GHCR image
     needs: test
     runs-on: ubuntu-latest
     steps:
@@ -45,39 +81,25 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Docker metadata (full)
         id: meta-full
-        uses: docker/metadata-action@v3
+        uses: docker/metadata-action@v5
         with:
           images: ghcr.io/theninjallo/floodman-operations-voice-aio
           tags: |
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=match,pattern=v(.*),group=1
       - name: Build and push full image
-        uses: docker/build-push-action@v3
+        uses: docker/build-push-action@v6
         with:
           context: .
           target: full
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta-full.outputs.tags }}
           labels: ${{ steps.meta-full.outputs.labels }}
+          cache-from: type=gha,scope=floodman-full
+          cache-to: type=gha,mode=max,scope=floodman-full
           build-args: |
             AVA_COMMIT=18d4e769335f3b643aca80e084c7e66f0969491e
             PRELOAD_WHISPER_MODEL=tiny.en
-      - name: Docker metadata (lite)
-        id: meta-lite
-        uses: docker/metadata-action@v3
-        with:
-          images: ghcr.io/theninjallo/floodman-operations-voice-aio
-          tags: |
-            type=raw,value=lite,enable=${{ github.ref == 'refs/heads/main' }}
-            type=match,pattern=v(.*),group=1,suffix=-lite
-      - name: Build and push lite image
-        uses: docker/build-push-action@v3
-        with:
-          context: .
-          target: lite
-          push: true
-          tags: ${{ steps.meta-lite.outputs.tags }}
-          labels: ${{ steps.meta-lite.outputs.labels }}
-          build-args: |
-            AVA_COMMIT=18d4e769335f3b643aca80e084c7e66f0969491e
-            PRELOAD_WHISPER_MODEL=tiny.en
+            PIPER_TTS_VERSION=1.6.0
+            LLAMA_CPP_PYTHON_VERSION=0.3.34
