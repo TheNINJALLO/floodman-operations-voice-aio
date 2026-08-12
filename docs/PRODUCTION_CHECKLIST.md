@@ -126,7 +126,26 @@ Use this checklist before moving Floodman’s primary number or enabling outboun
 - [ ] Do not record or transcribe full card or bank credentials.
 - [ ] Establish a documented incident and credential-rotation process.
 
-## Backups and recovery
+## Call recording
+
+- [ ] `CALL_RECORDING_ENABLED=false` until legal/compliance sign-off on disclosure language.
+- [ ] Recording disclosure script reviewed and approved by legal counsel.
+- [ ] `CALL_RECORDING_DISCLOSURE_ENABLED=true` confirmed before enabling recording.
+- [ ] `CALL_RECORDING_RETENTION_DAYS` set to match your data-retention policy.
+- [ ] `CALL_RECORDING_STORAGE_DIR` is inside `/home/container/data` and excluded from `.gitignore`.
+- [ ] Dashboard recording access tested for each role (owner, manager, staff).
+- [ ] Unauthorized access to `/api/v1/recordings/*` returns 401.
+- [ ] Streaming endpoint tested with HTTP Range header (partial content 206).
+- [ ] Path traversal to recordings directory rejected with 403.
+- [ ] Legal hold workflow tested: held recordings survive retention cleanup.
+- [ ] Retention cleanup dry-run tested before enabling scheduled cleanup.
+- [ ] Payment segment pause confirmed: no card/CVV/bank data in recording files.
+- [ ] SHA-256 digest verified for at least one finalized recording.
+- [ ] Recording metadata persists after container restart.
+- [ ] Recording failure during active call does not disconnect the caller.
+- [ ] Backups do not include recordings by default (PII — contains customer voice data).
+- [ ] `--include-media` backup flag documented and restricted to authorized personnel.
+
 
 - [ ] Automated daily backup runs successfully.
 - [ ] Backup is copied off the voice host.

@@ -491,6 +491,46 @@ exten => 8991,1,NoOp(Twilio Play termination test two)
  same => n,Hangup()
 """
 
+    # ── Call recording configuration ──────────────────────────────────────────
+    recording_enabled = env_bool("CALL_RECORDING_ENABLED", False)
+    recording_dir = safe_path(
+        env("CALL_RECORDING_STORAGE_DIR", str(data_dir / "recordings")),
+        "CALL_RECORDING_STORAGE_DIR",
+    ) or str(data_dir / "recordings")
+    recording_fmt = re.sub(r"[^a-z0-9]", "", env("CALL_RECORDING_FORMAT", "wav").lower()) or "wav"
+    recording_beep = env_bool("CALL_RECORDING_BEEP_ENABLED", False)
+    recording_disclosure = env_bool("CALL_RECORDING_DISCLOSURE_ENABLED", True)
+
+    # MixMonitor inbound lines — inserted after Answer(), before AGI gate_start.
+    # Uses Asterisk UNIQUEID (digits and dots only) and FILTER to mask caller.
+    # 'b' flag: record from bridge-start.  'B' flag: also capture pre-bridge.
+    rec_inbound_lines = ""
+    if recording_enabled:
+        beep_flag = "bBr" if recording_beep else "bB"
+        rec_inbound_lines = (
+            f" same => n,Set(__FLOODMAN_REC_DIR={recording_dir})\n"
+            f" same => n,Set(__FLOODMAN_REC_FILE=${{FLOODMAN_REC_DIR}}/${{EPOCH}}_${{UNIQUEID}}_inbound_${{FILTER(0-9+,${{CALLERID(num)}})}}.{recording_fmt})\n"
+            f" same => n,Set(__FLOODMAN_RECORDING_ENABLED=1)\n"
+            f" same => n,MixMonitor(${{FLOODMAN_REC_FILE}},{beep_flag})\n"
+        )
+        if recording_disclosure:
+            # Play disclosure BEFORE AVA agent picks up; after gate classification.
+            # The disclosure is a deterministic Playback — not an LLM decision.
+            rec_inbound_lines += (
+                " same => n,Set(__FLOODMAN_DISCLOSURE_PLAYED=0)\n"
+            )
+
+    # MixMonitor outbound lines — inserted at the start of the outbound context.
+    rec_outbound_lines = ""
+    if recording_enabled:
+        beep_flag = "bBr" if recording_beep else "bB"
+        rec_outbound_lines = (
+            f" same => n,Set(__FLOODMAN_REC_DIR={recording_dir})\n"
+            f" same => n,Set(__FLOODMAN_REC_FILE=${{FLOODMAN_REC_DIR}}/${{EPOCH}}_${{UNIQUEID}}_outbound_${{FILTER(0-9+,${{CALLERID(num)}})}}.{recording_fmt})\n"
+            f" same => n,Set(__FLOODMAN_RECORDING_ENABLED=1)\n"
+            f" same => n,MixMonitor(${{FLOODMAN_REC_FILE}},{beep_flag})\n"
+        )
+
     extensions = f"""
 [general]
 static=yes
@@ -522,6 +562,7 @@ exten => s,1,NoOp(Floodman inbound call gate)
  same => n,Set(__FLOODMAN_SOURCE_HINT=)
 {source_hint_lines.rstrip()}
  same => n,Answer()
+{rec_inbound_lines.rstrip()}
  same => n,AGI({agi / 'agi_gate_start.py'})
  same => n,GotoIf($["${{FLOODMAN_GATE_BYPASS}}"="1"]?ava)
  same => n,AudioSocket(${{FLOODMAN_GATE_UUID}},${{FLOODMAN_GATE_SERVICE}})
@@ -532,6 +573,18 @@ exten => s,1,NoOp(Floodman inbound call gate)
  same => n,GotoIf($["${{STASISSTATUS}}"="FAILED"]?provider-failure)
  same => n,Hangup()
  same => n(provider-failure),Goto(floodman-provider-failure,s,1)
+exten => h,1,NoOp(Floodman inbound hangup handler)
+ same => n,AGI({agi / 'agi_record_finalize.py'})
+
+[floodman-outbound]
+exten => s,1,NoOp(Floodman outbound call)
+ same => n,Set(__FLOODMAN_DIRECTION=outbound)
+{rec_outbound_lines.rstrip()}
+ same => n,Answer()
+ same => n,Stasis({safe(env('AVA_STASIS_APP','asterisk-ai-voice-agent'), r'[A-Za-z0-9_.-]+', 'Stasis app', False)})
+ same => n,Hangup()
+exten => h,1,NoOp(Floodman outbound hangup handler)
+ same => n,AGI({agi / 'agi_record_finalize.py'})
 
 [floodman-transfer]
 exten => s,1,NoOp(Floodman transfer pre-bridge)

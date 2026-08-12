@@ -55,6 +55,16 @@ docker compose exec floodman-voice \
   --include-media
 ```
 
+> **⚠ Recording files contain customer PII (voice audio).** A backup that
+> includes recordings must be encrypted before it leaves the host, access must
+> be restricted to authorised personnel, and a separate retention policy must
+> govern the encrypted archive. Recordings under legal or operational hold are
+> always preserved regardless of `CALL_RECORDING_RETENTION_DAYS`.
+>
+> Do not include recordings in a routine operational backup unless your
+> data-retention policy explicitly requires it and your encryption and access
+> controls are in place.
+
 Include generated runtime secrets only for a deliberately encrypted disaster-recovery archive:
 
 ```bash

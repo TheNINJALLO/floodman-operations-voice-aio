@@ -137,6 +137,18 @@ class Settings:
     ava_pipeline: str = "local_hybrid"
     ava_audio_profile: str = "telephony_enhanced_8k"
 
+    # ── Call recording ────────────────────────────────────────────────────────
+    call_recording_enabled: bool = False
+    call_recording_format: str = "wav"
+    call_recording_beep_enabled: bool = False
+    call_recording_disclosure_enabled: bool = True
+    call_recording_disclosure_message: str = (
+        "This call may be recorded for service and quality purposes."
+    )
+    call_recording_retention_days: int = 90
+    call_recording_include_transfers: bool = True
+    call_recording_storage_dir: Path = Path("/home/container/data/recordings")
+
     timezone: str = "America/Detroit"
     log_level: str = "INFO"
     max_upload_bytes: int = 25 * 1024 * 1024
@@ -263,6 +275,28 @@ class Settings:
             ),
             ava_pipeline=os.getenv("AVA_PIPELINE", "local_hybrid"),
             ava_audio_profile=os.getenv("AVA_AUDIO_PROFILE", "telephony_enhanced_8k"),
+            call_recording_enabled=_env_bool("CALL_RECORDING_ENABLED", False),
+            call_recording_format=os.getenv("CALL_RECORDING_FORMAT", "wav").strip().lower(),
+            call_recording_beep_enabled=_env_bool("CALL_RECORDING_BEEP_ENABLED", False),
+            call_recording_disclosure_enabled=_env_bool(
+                "CALL_RECORDING_DISCLOSURE_ENABLED", True
+            ),
+            call_recording_disclosure_message=os.getenv(
+                "CALL_RECORDING_DISCLOSURE_MESSAGE",
+                "This call may be recorded for service and quality purposes.",
+            ).strip(),
+            call_recording_retention_days=max(
+                1, _env_int("CALL_RECORDING_RETENTION_DAYS", 90)
+            ),
+            call_recording_include_transfers=_env_bool(
+                "CALL_RECORDING_INCLUDE_TRANSFERS", True
+            ),
+            call_recording_storage_dir=Path(
+                os.getenv(
+                    "CALL_RECORDING_STORAGE_DIR",
+                    data_dir / "recordings",
+                )
+            ),
             timezone=os.getenv("DEFAULT_TIMEZONE", "America/Detroit"),
             log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
             max_upload_bytes=_env_int("MAX_UPLOAD_BYTES", 25 * 1024 * 1024),
@@ -275,6 +309,7 @@ class Settings:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         self.agents_db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.call_recording_storage_dir.mkdir(parents=True, exist_ok=True)
         for name in ("gate-audio", "logs", "uploads", "recordings", "asterisk"):
             (self.data_dir / name).mkdir(parents=True, exist_ok=True)
 

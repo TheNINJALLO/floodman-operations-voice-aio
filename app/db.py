@@ -298,6 +298,41 @@ CREATE TABLE IF NOT EXISTS uploads (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_uploads_customer ON uploads(customer_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS recordings (
+    id TEXT PRIMARY KEY,
+    asterisk_unique_id TEXT NOT NULL,
+    call_id TEXT NOT NULL DEFAULT '',
+    direction TEXT NOT NULL DEFAULT 'inbound',
+    caller_number TEXT NOT NULL DEFAULT '',
+    called_number TEXT NOT NULL DEFAULT '',
+    agent TEXT NOT NULL DEFAULT '',
+    campaign_id TEXT NOT NULL DEFAULT '',
+    source TEXT NOT NULL DEFAULT 'unknown',
+    status TEXT NOT NULL DEFAULT 'recording',
+    file_path TEXT NOT NULL DEFAULT '',
+    file_size INTEGER NOT NULL DEFAULT 0,
+    mime_type TEXT NOT NULL DEFAULT 'audio/wav',
+    sha256 TEXT NOT NULL DEFAULT '',
+    duration_seconds REAL NOT NULL DEFAULT 0,
+    started_at TEXT,
+    ended_at TEXT,
+    retention_expires_at TEXT,
+    is_held INTEGER NOT NULL DEFAULT 0,
+    hold_reason TEXT NOT NULL DEFAULT '',
+    disclosure_played INTEGER NOT NULL DEFAULT 0,
+    disclosure_skipped_reason TEXT NOT NULL DEFAULT '',
+    protected_segment INTEGER NOT NULL DEFAULT 0,
+    roomflow_queued INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_recordings_asterisk_id ON recordings(asterisk_unique_id);
+CREATE INDEX IF NOT EXISTS idx_recordings_call_id ON recordings(call_id);
+CREATE INDEX IF NOT EXISTS idx_recordings_caller ON recordings(caller_number, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_recordings_status ON recordings(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_recordings_started ON recordings(started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_recordings_retention ON recordings(retention_expires_at, is_held, status);
 """
 
 
@@ -1418,3 +1453,193 @@ class Database:
             row = self.fetchone(sql, (_now(),)) if key == "upcoming_appointments" else self.fetchone(sql)
             result[key] = int(row["value"] if row else 0)
         return result
+
+    # ── Recording CRUD ────────────────────────────────────────────────────────
+
+    def create_recording(self, req: "Any") -> dict[str, Any]:
+        """Insert a new recording row when MixMonitor starts."""
+        rec_id = str(uuid.uuid4())
+        now = _now()
+        import datetime as _dt
+        expires_at = (_now_dt() + _dt.timedelta(days=90)).isoformat()
+        self.execute(
+            """
+            INSERT INTO recordings
+            (id,asterisk_unique_id,call_id,direction,caller_number,called_number,
+             agent,campaign_id,source,status,disclosure_played,disclosure_skipped_reason,
+             started_at,retention_expires_at,created_at,updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                rec_id,
+                str(req.asterisk_unique_id),
+                str(req.call_id),
+                str(req.direction.value if hasattr(req.direction, "value") else req.direction),
+                str(req.caller_number),
+                str(req.called_number),
+                str(req.agent),
+                str(req.campaign_id),
+                str(req.source.value if hasattr(req.source, "value") else req.source),
+                "recording",
+                int(bool(req.disclosure_played)),
+                str(req.disclosure_skipped_reason),
+                now,
+                expires_at,
+                now,
+                now,
+            ),
+        )
+        row = self.fetchone("SELECT * FROM recordings WHERE id=?", (rec_id,))
+        return dict(row) if row else {}
+
+    def finalize_recording(
+        self,
+        asterisk_unique_id: str,
+        *,
+        file_path: str = "",
+        file_size: int = 0,
+        mime_type: str = "audio/wav",
+        sha256: str = "",
+        duration_seconds: float = 0.0,
+        status: str = "completed",
+        protected_segment: bool = False,
+        error: str = "",
+        retention_days: int = 90,
+    ) -> "dict[str, Any] | None":
+        row = self.fetchone(
+            "SELECT id FROM recordings WHERE asterisk_unique_id=? AND status='recording'",
+            (asterisk_unique_id,),
+        )
+        if not row:
+            return None
+        rec_id = row["id"]
+        now = _now()
+        import datetime as _dt
+        expires_at = (_now_dt() + _dt.timedelta(days=max(1, retention_days))).isoformat()
+        final_status = "failed" if error else status
+        self.execute(
+            """
+            UPDATE recordings SET
+              status=?, file_path=?, file_size=?, mime_type=?, sha256=?,
+              duration_seconds=?, ended_at=?, retention_expires_at=?,
+              protected_segment=?, updated_at=?
+            WHERE id=?
+            """,
+            (
+                final_status, file_path, file_size, mime_type, sha256,
+                duration_seconds, now, expires_at, int(protected_segment), now, rec_id,
+            ),
+        )
+        result = self.fetchone("SELECT * FROM recordings WHERE id=?", (rec_id,))
+        return dict(result) if result else None
+
+    def get_recording(self, recording_id: str) -> "dict[str, Any] | None":
+        row = self.fetchone("SELECT * FROM recordings WHERE id=?", (recording_id,))
+        return dict(row) if row else None
+
+    def get_recording_by_asterisk_id(self, asterisk_unique_id: str) -> "dict[str, Any] | None":
+        row = self.fetchone(
+            "SELECT * FROM recordings WHERE asterisk_unique_id=? ORDER BY created_at DESC LIMIT 1",
+            (asterisk_unique_id,),
+        )
+        return dict(row) if row else None
+
+    def list_recordings(
+        self,
+        *,
+        direction: "str | None" = None,
+        source: "str | None" = None,
+        agent: "str | None" = None,
+        campaign_id: "str | None" = None,
+        status: "str | None" = None,
+        caller_number: "str | None" = None,
+        call_id: "str | None" = None,
+        date_from: "str | None" = None,
+        date_to: "str | None" = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> "list[dict[str, Any]]":
+        clauses: list[str] = []
+        params: list[Any] = []
+        if direction:
+            clauses.append("direction=?"); params.append(direction)
+        if source:
+            clauses.append("source=?"); params.append(source)
+        if agent:
+            clauses.append("agent=?"); params.append(agent)
+        if campaign_id:
+            clauses.append("campaign_id=?"); params.append(campaign_id)
+        if status:
+            clauses.append("status=?"); params.append(status)
+        if caller_number:
+            clauses.append("caller_number=?"); params.append(caller_number)
+        if call_id:
+            clauses.append("call_id=?"); params.append(call_id)
+        if date_from:
+            clauses.append("started_at>=?"); params.append(date_from)
+        if date_to:
+            clauses.append("started_at<=?"); params.append(date_to)
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        rows = self.fetchall(
+            f"SELECT * FROM recordings {where} ORDER BY started_at DESC LIMIT ? OFFSET ?",
+            (*params, limit, offset),
+        )
+        return [dict(r) for r in rows]
+
+    def set_recording_hold(
+        self,
+        recording_id: str,
+        *,
+        held: bool,
+        hold_reason: str = "",
+    ) -> "dict[str, Any] | None":
+        now = _now()
+        new_status = "held" if held else "completed"
+        self.execute(
+            "UPDATE recordings SET is_held=?, hold_reason=?, status=?, updated_at=? WHERE id=?",
+            (int(held), hold_reason, new_status, now, recording_id),
+        )
+        row = self.fetchone("SELECT * FROM recordings WHERE id=?", (recording_id,))
+        return dict(row) if row else None
+
+    def delete_recording_file(self, recording_id: str) -> "dict[str, Any] | None":
+        """Mark recording deleted; metadata row is preserved."""
+        now = _now()
+        self.execute(
+            "UPDATE recordings SET status='deleted', file_path='', updated_at=? WHERE id=?",
+            (now, recording_id),
+        )
+        row = self.fetchone("SELECT * FROM recordings WHERE id=?", (recording_id,))
+        return dict(row) if row else None
+
+    def expire_old_recordings(
+        self,
+        *,
+        dry_run: bool = False,
+        before_iso: "str | None" = None,
+    ) -> "list[dict[str, Any]]":
+        """Return expired recordings (held ones are skipped). Marks them expired unless dry_run."""
+        cutoff = before_iso or _now()
+        rows = self.fetchall(
+            """SELECT * FROM recordings
+               WHERE retention_expires_at < ?
+                 AND is_held = 0
+                 AND status NOT IN ('deleted','expired','failed')
+               ORDER BY retention_expires_at ASC""",
+            (cutoff,),
+        )
+        expired = [dict(r) for r in rows]
+        if not dry_run:
+            now = _now()
+            for rec in expired:
+                self.execute(
+                    "UPDATE recordings SET status='expired', file_path='', updated_at=? WHERE id=?",
+                    (now, rec["id"]),
+                )
+        return expired
+
+    def mark_recording_roomflow_queued(self, recording_id: str) -> None:
+        self.execute(
+            "UPDATE recordings SET roomflow_queued=1, updated_at=? WHERE id=?",
+            (_now(), recording_id),
+        )

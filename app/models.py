@@ -290,3 +290,115 @@ def normalize_phone_value(value: str) -> str:
     if cleaned and not cleaned.startswith("+") and len(cleaned) == 10:
         cleaned = "+1" + cleaned
     return cleaned
+
+
+# ── Call recording models ─────────────────────────────────────────────────────
+
+
+class RecordingStatus(StrEnum):
+    RECORDING = "recording"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    DELETED = "deleted"
+    EXPIRED = "expired"
+    HELD = "held"
+    PROTECTED_SEGMENT = "protected_segment"
+
+
+class RecordingDirection(StrEnum):
+    INBOUND = "inbound"
+    OUTBOUND = "outbound"
+
+
+class RecordingSource(StrEnum):
+    DIRECT = "direct"
+    GOOGLE_LSA = "google_lsa"
+    GOOGLE_BUSINESS = "google_business"
+    CALLBACK = "callback"
+    BILLING = "billing"
+    ESTIMATE = "estimate"
+    WINBACK = "winback"
+    TRANSFER = "transfer"
+    TEST = "test"
+    UNKNOWN = "unknown"
+
+
+class RecordingHoldReason(StrEnum):
+    LEGAL = "legal"
+    OPERATIONAL = "operational"
+    COMPLIANCE = "compliance"
+
+
+class RecordingCreate(BaseModel):
+    asterisk_unique_id: str
+    call_id: str = ""
+    direction: RecordingDirection = RecordingDirection.INBOUND
+    caller_number: str = ""
+    called_number: str = ""
+    agent: str = ""
+    campaign_id: str = ""
+    source: RecordingSource = RecordingSource.UNKNOWN
+    disclosure_played: bool = False
+    disclosure_skipped_reason: str = ""
+
+
+class RecordingMetadata(BaseModel):
+    id: str
+    asterisk_unique_id: str
+    call_id: str = ""
+    direction: str
+    caller_number: str = ""
+    called_number: str = ""
+    agent: str = ""
+    campaign_id: str = ""
+    source: str = "unknown"
+    status: str
+    file_path: str = ""
+    file_size: int = 0
+    mime_type: str = "audio/wav"
+    sha256: str = ""
+    duration_seconds: float = 0.0
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+    retention_expires_at: datetime | None = None
+    is_held: bool = False
+    hold_reason: str = ""
+    disclosure_played: bool = False
+    disclosure_skipped_reason: str = ""
+    protected_segment: bool = False
+    roomflow_queued: bool = False
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class RecordingListQuery(BaseModel):
+    direction: str | None = None
+    source: str | None = None
+    agent: str | None = None
+    campaign_id: str | None = None
+    status: str | None = None
+    caller_number: str | None = None
+    date_from: datetime | None = None
+    date_to: datetime | None = None
+    call_id: str | None = None
+    limit: int = Field(default=50, ge=1, le=500)
+    offset: int = Field(default=0, ge=0)
+
+
+class RecordingHoldRequest(BaseModel):
+    reason: RecordingHoldReason = RecordingHoldReason.LEGAL
+    note: str = ""
+
+
+class RecordingDeleteRequest(BaseModel):
+    confirm: bool = False
+
+
+class RecordingFinalizeEvent(BaseModel):
+    asterisk_unique_id: str
+    call_id: str = ""
+    file_path: str = ""
+    duration_seconds: float = 0.0
+    transfer_included: bool = False
+    protected_segment: bool = False
+    error: str = ""

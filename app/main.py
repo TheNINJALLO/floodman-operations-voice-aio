@@ -24,7 +24,7 @@ from fastapi import (
     UploadFile,
     status,
 )
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
@@ -61,6 +61,7 @@ from app.models import (
 )
 from app.outbound.ami import AMIClient
 from app.outbound.worker import OutboundWorker
+from app.recording import RecordingManager, resolve_recording_path
 from app.roomflow.client import RoomflowClient
 
 logger = logging.getLogger(__name__)
@@ -166,6 +167,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.gate_server = None
         app.state.worker = None
         app.state.worker_task = None
+        app.state.recording_manager = RecordingManager(settings, database)
 
         try:
             provisioned = provision_agents(settings) if settings.reconcile_ava_agents else []
@@ -1076,6 +1078,552 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         )
 
+    # ── Internal recording endpoints (called by AGI scripts) ─────────────────
+
+    @app.post("/internal/recordings/start", dependencies=[Depends(require_internal)])
+    async def recording_start(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
+        """Register a new recording row when MixMonitor starts."""
+        from app.models import RecordingCreate, RecordingDirection, RecordingSource  # noqa: PLC0415
+
+        db: Database = request.app.state.database
+        rm: RecordingManager = request.app.state.recording_manager
+        if not rm.enabled:
+            return {"ok": True, "recording_id": None, "enabled": False}
+        try:
+            direction_raw = str(payload.get("direction", "inbound")).lower()
+            source_raw = str(payload.get("source", "unknown")).lower()
+            try:
+                direction = RecordingDirection(direction_raw)
+            except ValueError:
+                direction = RecordingDirection.INBOUND
+            try:
+                source = RecordingSource(source_raw)
+            except ValueError:
+                source = RecordingSource.UNKNOWN
+            req = RecordingCreate(
+                asterisk_unique_id=str(payload.get("asterisk_unique_id") or ""),
+                call_id=str(payload.get("call_id") or ""),
+                direction=direction,
+                caller_number=str(payload.get("caller_number") or ""),
+                called_number=str(payload.get("called_number") or ""),
+                agent=str(payload.get("agent") or ""),
+                campaign_id=str(payload.get("campaign_id") or ""),
+                source=source,
+                disclosure_played=bool(payload.get("disclosure_played")),
+            )
+            row = db.create_recording(req)
+            # Persist the file_path from the dialplan so finalize can find it.
+            file_path = str(payload.get("file_path") or "")
+            if file_path and row.get("id"):
+                db.execute(
+                    "UPDATE recordings SET file_path=?, updated_at=? WHERE id=?",
+                    (file_path, datetime.now(timezone.utc).isoformat(), row["id"]),
+                )
+            return {"ok": True, "recording_id": row.get("id"), "enabled": True}
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("recording_start error: %s", exc)
+            return {"ok": False, "error": str(exc)[:200]}
+
+    @app.post("/internal/recordings/classify", dependencies=[Depends(require_internal)])
+    async def recording_classify(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
+        """Update the recording source classification after gate decision."""
+        db: Database = request.app.state.database
+        asterisk_id = str(payload.get("asterisk_unique_id") or "")
+        source = str(payload.get("source") or "unknown")
+        disclosure_skipped = bool(payload.get("disclosure_skipped"))
+        reason = str(payload.get("disclosure_skipped_reason") or "")
+        if not asterisk_id:
+            return {"ok": False}
+        try:
+            db.execute(
+                """UPDATE recordings SET source=?, disclosure_skipped_reason=?,
+                   disclosure_played=?, updated_at=?
+                   WHERE asterisk_unique_id=? AND status='recording'""",
+                (
+                    source,
+                    reason,
+                    int(not disclosure_skipped),
+                    datetime.now(timezone.utc).isoformat(),
+                    asterisk_id,
+                ),
+            )
+            return {"ok": True}
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("recording_classify error: %s", exc)
+            return {"ok": False}
+
+    @app.post("/internal/recordings/finalize", dependencies=[Depends(require_internal)])
+    async def recording_finalize(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
+        """Finalize a recording after hangup: compute SHA-256, size, duration."""
+        rm: RecordingManager = request.app.state.recording_manager
+        asterisk_id = str(payload.get("asterisk_unique_id") or "")
+        if not asterisk_id:
+            return {"ok": False, "error": "missing asterisk_unique_id"}
+        try:
+            row = rm.finalize(
+                asterisk_id,
+                call_id=str(payload.get("call_id") or ""),
+                protected_segment=bool(payload.get("protected_segment")),
+            )
+            if row and settings.roomflow_enabled:
+                db: Database = request.app.state.database
+                roomflow: RoomflowClient = request.app.state.roomflow
+                recording_id = row.get("id", "")
+                if recording_id:
+                    try:
+                        await roomflow.enqueue(
+                            "recording_completed",
+                            {
+                                "recording_id": recording_id,
+                                "asterisk_unique_id": asterisk_id,
+                                "call_id": row.get("call_id", ""),
+                                "duration_seconds": row.get("duration_seconds", 0),
+                                "status": row.get("status", ""),
+                            },
+                            idempotency_key=f"rec:{recording_id}",
+                        )
+                        db.mark_recording_roomflow_queued(recording_id)
+                    except Exception as rf_exc:  # noqa: BLE001
+                        logger.warning("Roomflow recording enqueue failed: %s", rf_exc)
+            return {"ok": True, "recording": row}
+        except Exception as exc:  # noqa: BLE001
+            logger.error("recording_finalize error for %s: %s", asterisk_id, exc)
+            return {"ok": False, "error": str(exc)[:200]}
+
+    # ── Admin recording endpoints ─────────────────────────────────────────────
+
+    @app.get("/api/v1/recordings", dependencies=[Depends(require_admin)])
+    async def list_recordings(
+        request: Request,
+        direction: str | None = None,
+        source: str | None = None,
+        agent: str | None = None,
+        campaign_id: str | None = None,
+        status: str | None = None,
+        caller_number: str | None = None,
+        call_id: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        db: Database = request.app.state.database
+        rows = db.list_recordings(
+            direction=direction,
+            source=source,
+            agent=agent,
+            campaign_id=campaign_id,
+            status=status,
+            caller_number=caller_number,
+            call_id=call_id,
+            date_from=date_from,
+            date_to=date_to,
+            limit=_safe_limit(limit, 500),
+            offset=max(0, offset),
+        )
+        return {"ok": True, "recordings": rows, "count": len(rows)}
+
+    @app.get("/api/v1/recordings/{recording_id}", dependencies=[Depends(require_admin)])
+    async def get_recording_meta(request: Request, recording_id: str) -> dict[str, Any]:
+        db: Database = request.app.state.database
+        row = db.get_recording(recording_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="Recording not found")
+        return {"ok": True, "recording": row}
+
+    @app.get("/api/v1/recordings/{recording_id}/stream", dependencies=[Depends(require_admin)])
+    async def stream_recording_audio(
+        request: Request,
+        recording_id: str,
+        range: str | None = Header(default=None),
+    ) -> StreamingResponse:
+        """Stream the audio file with HTTP Range support."""
+        db: Database = request.app.state.database
+        rm: RecordingManager = request.app.state.recording_manager
+        row = db.get_recording(recording_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="Recording not found")
+        if row.get("status") not in ("completed", "held"):
+            raise HTTPException(status_code=409, detail="Recording not available")
+        file_path_str = row.get("file_path") or ""
+        if not file_path_str:
+            raise HTTPException(status_code=404, detail="Recording file not found")
+        try:
+            path = resolve_recording_path(rm.storage_dir, Path(file_path_str).name)
+        except ValueError:
+            raise HTTPException(status_code=403, detail="Invalid recording path")
+        if not path.exists():
+            raise HTTPException(status_code=404, detail="Recording file missing")
+        file_size = path.stat().st_size
+        mime = row.get("mime_type") or "audio/wav"
+        start = 0
+        end = file_size - 1
+        status_code = 200
+        if range:
+            m = re.match(r"bytes=(\d+)-(\d*)", range)
+            if m:
+                start = int(m.group(1))
+                end = int(m.group(2)) if m.group(2) else file_size - 1
+                end = min(end, file_size - 1)
+                status_code = 206
+        from app.recording import stream_recording  # noqa: PLC0415
+
+        headers = {
+            "Content-Length": str(end - start + 1),
+            "Content-Range": f"bytes {start}-{end}/{file_size}",
+            "Accept-Ranges": "bytes",
+            "Content-Disposition": f'inline; filename="{Path(file_path_str).name}"',
+        }
+        return StreamingResponse(
+            stream_recording(path, start=start, end=end),
+            status_code=status_code,
+            media_type=mime,
+            headers=headers,
+        )
+
+    @app.get("/api/v1/recordings/{recording_id}/download", dependencies=[Depends(require_admin)])
+    async def download_recording(request: Request, recording_id: str) -> StreamingResponse:
+        """Download the raw recording file."""
+        db: Database = request.app.state.database
+        rm: RecordingManager = request.app.state.recording_manager
+        row = db.get_recording(recording_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="Recording not found")
+        if row.get("status") not in ("completed", "held"):
+            raise HTTPException(status_code=409, detail="Recording not available")
+        file_path_str = row.get("file_path") or ""
+        if not file_path_str:
+            raise HTTPException(status_code=404, detail="Recording file not found")
+        try:
+            path = resolve_recording_path(rm.storage_dir, Path(file_path_str).name)
+        except ValueError:
+            raise HTTPException(status_code=403, detail="Invalid recording path")
+        if not path.exists():
+            raise HTTPException(status_code=404, detail="Recording file missing")
+        from app.recording import stream_recording  # noqa: PLC0415
+
+        safe_name = re.sub(r"[^a-zA-Z0-9_.\-]", "_", path.name)
+        return StreamingResponse(
+            stream_recording(path),
+            media_type=row.get("mime_type") or "audio/wav",
+            headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
+        )
+
+    @app.delete("/api/v1/recordings/{recording_id}", dependencies=[Depends(require_admin)])
+    async def delete_recording(request: Request, recording_id: str) -> dict[str, Any]:
+        """Delete the audio file and mark the metadata row as deleted."""
+        db: Database = request.app.state.database
+        rm: RecordingManager = request.app.state.recording_manager
+        row = db.get_recording(recording_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="Recording not found")
+        if row.get("is_held"):
+            raise HTTPException(status_code=409, detail="Recording is under hold; release hold first")
+        file_path_str = row.get("file_path") or ""
+        if file_path_str:
+            try:
+                path = resolve_recording_path(rm.storage_dir, Path(file_path_str).name)
+                if path.exists():
+                    path.unlink()
+                    logger.info("Admin deleted recording file: %s", path)
+            except (ValueError, OSError) as exc:
+                logger.warning("delete_recording file removal error: %s", exc)
+        updated = db.delete_recording_file(recording_id)
+        return {"ok": True, "recording": updated}
+
+    @app.post("/api/v1/recordings/{recording_id}/hold", dependencies=[Depends(require_admin)])
+    async def hold_recording(request: Request, recording_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """Place or release a legal/operational hold on a recording."""
+        db: Database = request.app.state.database
+        row = db.get_recording(recording_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="Recording not found")
+        held = bool(payload.get("held", True))
+        reason = str(payload.get("reason") or ("legal" if held else ""))
+        updated = db.set_recording_hold(recording_id, held=held, hold_reason=reason)
+        return {"ok": True, "recording": updated}
+
+    @app.post("/api/v1/recordings/retention/cleanup", dependencies=[Depends(require_admin)])
+    async def run_retention_cleanup(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
+        """Trigger retention cleanup; supports dry_run=true."""
+        rm: RecordingManager = request.app.state.recording_manager
+        dry_run = bool(payload.get("dry_run", True))
+        before_iso = str(payload.get("before_iso") or "")
+        expired = rm.run_retention_cleanup(dry_run=dry_run, before_iso=before_iso or None)
+        return {
+            "ok": True,
+            "dry_run": dry_run,
+            "expired_count": len(expired),
+            "expired": [{"id": r["id"], "file_path": r.get("file_path")} for r in expired],
+        }
+
+    @app.get("/api/v1/call-history", dependencies=[Depends(require_admin)])
+    async def call_history(
+        request: Request,
+        direction: str | None = None,
+        source: str | None = None,
+        caller_number: str | None = None,
+        agent: str | None = None,
+        campaign_id: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """Searchable call history from gate sessions plus recording status."""
+        db: Database = request.app.state.database
+        clauses: list[str] = []
+        params: list[Any] = []
+        if direction:
+            clauses.append("g.direction=?"); params.append(direction)
+        if source:
+            clauses.append("g.classification=?"); params.append(source)
+        if caller_number:
+            clauses.append("g.caller_number=?"); params.append(caller_number)
+        if agent:
+            clauses.append("g.agent=?"); params.append(agent)
+        if date_from:
+            clauses.append("g.created_at>=?"); params.append(date_from)
+        if date_to:
+            clauses.append("g.created_at<=?"); params.append(date_to)
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        rows = db.fetchall(
+            f"""SELECT g.*,
+                   r.id AS recording_id, r.status AS recording_status,
+                   r.duration_seconds, r.file_path, r.sha256
+               FROM gate_sessions g
+               LEFT JOIN recordings r ON r.call_id = g.call_id
+               {where}
+               ORDER BY g.created_at DESC
+               LIMIT ? OFFSET ?""",
+            (*params, _safe_limit(limit, 500), max(0, offset)),
+        )
+        return {"ok": True, "calls": [dict(r) for r in rows], "count": len(rows)}
+
+    @app.get("/api/v1/recordings/dashboard", dependencies=[Depends(require_admin)],
+             response_class=HTMLResponse, include_in_schema=False)
+    async def recordings_dashboard(request: Request) -> HTMLResponse:
+        """Simple HTML5 call history / recording player dashboard."""
+        base = str(settings.public_base_url).rstrip("/")
+        page = f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Call Recordings — Floodman</title>
+<style>
+  body{{font-family:system-ui,sans-serif;margin:0;background:#f5f7fa;color:#1a1a1a}}
+  header{{background:#0a2240;color:#fff;padding:1rem 2rem;display:flex;align-items:center;gap:1rem}}
+  header h1{{margin:0;font-size:1.2rem}}
+  main{{padding:1.5rem 2rem;max-width:1400px;margin:0 auto}}
+  .filters{{display:flex;flex-wrap:wrap;gap:.75rem;margin-bottom:1.25rem;align-items:flex-end}}
+  .filters label{{display:flex;flex-direction:column;gap:.25rem;font-size:.85rem;font-weight:600}}
+  .filters input,.filters select{{padding:.35rem .6rem;border:1px solid #ccc;border-radius:4px;font-size:.9rem}}
+  button{{padding:.4rem .9rem;border:none;border-radius:4px;cursor:pointer;font-size:.85rem}}
+  .btn-primary{{background:#0a2240;color:#fff}}
+  .btn-danger{{background:#c0392b;color:#fff}}
+  .btn-hold{{background:#e67e22;color:#fff}}
+  table{{width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08)}}
+  th{{background:#0a2240;color:#fff;text-align:left;padding:.6rem .9rem;font-size:.8rem;text-transform:uppercase;letter-spacing:.05em}}
+  td{{padding:.55rem .9rem;border-bottom:1px solid #eee;font-size:.85rem;vertical-align:middle}}
+  tr:last-child td{{border-bottom:none}}
+  .badge{{display:inline-block;padding:.15rem .55rem;border-radius:20px;font-size:.75rem;font-weight:600}}
+  .badge-completed{{background:#d4edda;color:#155724}}
+  .badge-recording{{background:#fff3cd;color:#856404;animation:pulse 1.2s infinite}}
+  .badge-failed{{background:#f8d7da;color:#721c24}}
+  .badge-held{{background:#cce5ff;color:#004085}}
+  .badge-expired,.badge-deleted{{background:#e2e3e5;color:#383d41}}
+  @keyframes pulse{{0%,100%{{opacity:1}}50%{{opacity:.5}}}}
+  audio{{max-width:300px;height:36px}}
+  #status{{min-height:1.5rem;font-size:.85rem;color:#555;margin-bottom:.75rem}}
+  .pagination{{margin-top:1rem;display:flex;gap:.5rem;align-items:center}}
+</style>
+</head>
+<body>
+<header>
+  <div>🎙️</div>
+  <h1>Call Recordings</h1>
+</header>
+<main>
+  <div class="filters">
+    <label>Direction
+      <select id="f-direction">
+        <option value="">All</option>
+        <option value="inbound">Inbound</option>
+        <option value="outbound">Outbound</option>
+      </select>
+    </label>
+    <label>Source
+      <select id="f-source">
+        <option value="">All</option>
+        <option value="direct">Direct</option>
+        <option value="google_lsa">Google LSA</option>
+        <option value="google_business">Google Business</option>
+        <option value="callback">Callback</option>
+        <option value="billing">Billing</option>
+        <option value="estimate">Estimate</option>
+        <option value="winback">Winback</option>
+      </select>
+    </label>
+    <label>Caller number
+      <input id="f-caller" type="tel" placeholder="+1...">
+    </label>
+    <label>Agent
+      <input id="f-agent" type="text" placeholder="agent name">
+    </label>
+    <label>From date
+      <input id="f-from" type="date">
+    </label>
+    <label>To date
+      <input id="f-to" type="date">
+    </label>
+    <label>Status
+      <select id="f-status">
+        <option value="">All</option>
+        <option value="completed">Completed</option>
+        <option value="recording">In progress</option>
+        <option value="held">Held</option>
+        <option value="failed">Failed</option>
+        <option value="expired">Expired</option>
+        <option value="deleted">Deleted</option>
+      </select>
+    </label>
+    <button class="btn-primary" onclick="loadRecordings(0)">Search</button>
+  </div>
+  <div id="status">Loading…</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Time</th><th>Dir</th><th>Caller</th><th>Agent</th>
+        <th>Source</th><th>Duration</th><th>Status</th>
+        <th>Recording</th><th>Actions</th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+  <div class="pagination">
+    <button class="btn-primary" id="btn-prev" onclick="changePage(-1)" disabled>← Prev</button>
+    <span id="page-info"></span>
+    <button class="btn-primary" id="btn-next" onclick="changePage(1)" disabled>Next →</button>
+  </div>
+</main>
+<script>
+const BASE = {repr(base)};
+const TOKEN = sessionStorage.getItem('admin_token') || prompt('Admin token:');
+if (TOKEN) sessionStorage.setItem('admin_token', TOKEN);
+const LIMIT = 50;
+let currentOffset = 0;
+
+async function api(method, path, body) {{
+  const opts = {{method, headers: {{'Authorization': 'Bearer ' + TOKEN, 'Content-Type': 'application/json'}}}};
+  if (body !== undefined) opts.body = JSON.stringify(body);
+  const r = await fetch(BASE + path, opts);
+  if (!r.ok) throw new Error(r.status + ' ' + r.statusText);
+  return r.json();
+}}
+
+function badge(status) {{
+  const cls = 'badge badge-' + status;
+  return `<span class="${{cls}}">${{status}}</span>`;
+}}
+
+function fmtDuration(secs) {{
+  if (!secs) return '—';
+  const m = Math.floor(secs / 60), s = Math.round(secs % 60);
+  return m + ':' + String(s).padStart(2, '0');
+}}
+
+function fmtTime(ts) {{
+  if (!ts) return '—';
+  return new Date(ts).toLocaleString();
+}}
+
+async function loadRecordings(offset) {{
+  currentOffset = offset;
+  const params = new URLSearchParams({{limit: LIMIT, offset}});
+  const add = (k, id) => {{ const v = document.getElementById(id).value; if (v) params.append(k, v); }};
+  add('direction', 'f-direction'); add('source', 'f-source');
+  add('caller_number', 'f-caller'); add('agent', 'f-agent');
+  add('status', 'f-status');
+  const from = document.getElementById('f-from').value;
+  const to = document.getElementById('f-to').value;
+  if (from) params.append('date_from', from + 'T00:00:00Z');
+  if (to) params.append('date_to', to + 'T23:59:59Z');
+  document.getElementById('status').textContent = 'Loading…';
+  try {{
+    const data = await api('GET', '/api/v1/recordings?' + params.toString());
+    renderTable(data.recordings || []);
+    document.getElementById('status').textContent = `${{data.count}} result(s)`;
+    document.getElementById('btn-prev').disabled = offset <= 0;
+    document.getElementById('btn-next').disabled = (data.count || 0) < LIMIT;
+    document.getElementById('page-info').textContent = `Page ${{Math.floor(offset/LIMIT)+1}}`;
+  }} catch(e) {{
+    document.getElementById('status').textContent = 'Error: ' + e.message;
+  }}
+}}
+
+function renderTable(rows) {{
+  const tbody = document.getElementById('tbody');
+  tbody.innerHTML = '';
+  for (const r of rows) {{
+    const hasAudio = r.status === 'completed' || r.status === 'held';
+    const audioCell = hasAudio
+      ? `<audio controls preload="none" src="${{BASE}}/api/v1/recordings/${{r.id}}/stream"></audio>`
+      : (r.status === 'recording' ? '<em>in progress…</em>' : '—');
+    const actions = [];
+    if (hasAudio) {{
+      actions.push(`<a href="${{BASE}}/api/v1/recordings/${{r.id}}/download" download><button class="btn-primary">⬇</button></a>`);
+    }}
+    if (r.status !== 'deleted' && r.status !== 'expired') {{
+      if (r.is_held) {{
+        actions.push(`<button class="btn-hold" onclick="setHold('${{r.id}}', false)">Release hold</button>`);
+      }} else {{
+        actions.push(`<button class="btn-hold" onclick="setHold('${{r.id}}', true)">Hold</button>`);
+      }}
+    }}
+    if (r.status === 'completed') {{
+      actions.push(`<button class="btn-danger" onclick="deleteRec('${{r.id}}')">Delete</button>`);
+    }}
+    tbody.insertAdjacentHTML('beforeend', `<tr>
+      <td>${{fmtTime(r.started_at)}}</td>
+      <td>${{r.direction || '—'}}</td>
+      <td>${{r.caller_number || '—'}}</td>
+      <td>${{r.agent || '—'}}</td>
+      <td>${{r.source || '—'}}</td>
+      <td>${{fmtDuration(r.duration_seconds)}}</td>
+      <td>${{badge(r.status)}}</td>
+      <td>${{audioCell}}</td>
+      <td>${{actions.join(' ')}}</td>
+    </tr>`);
+  }}
+}}
+
+async function setHold(id, held) {{
+  const reason = held ? (prompt('Hold reason (legal/operational/compliance):', 'legal') || 'legal') : '';
+  try {{
+    await api('POST', `/api/v1/recordings/${{id}}/hold`, {{held, reason}});
+    loadRecordings(currentOffset);
+  }} catch(e) {{ alert('Error: ' + e.message); }}
+}}
+
+async function deleteRec(id) {{
+  if (!confirm('Delete this recording file permanently?')) return;
+  try {{
+    await api('DELETE', `/api/v1/recordings/${{id}}`);
+    loadRecordings(currentOffset);
+  }} catch(e) {{ alert('Error: ' + e.message); }}
+}}
+
+function changePage(dir) {{
+  loadRecordings(Math.max(0, currentOffset + dir * LIMIT));
+}}
+
+loadRecordings(0);
+</script>
+</body>
+</html>"""
+        return HTMLResponse(page)
+
     # Serve bundled admin UI last so API routes win.
     if settings.web_dir.exists():
         app.mount("/assets", StaticFiles(directory=settings.web_dir), name="assets")
@@ -1083,7 +1631,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         @app.get("/", include_in_schema=False)
         async def index() -> FileResponse:
             return FileResponse(settings.web_dir / "index.html")
-
     @app.exception_handler(Exception)
     async def unhandled_exception(request: Request, exc: Exception) -> JSONResponse:
         if isinstance(exc, HTTPException):
