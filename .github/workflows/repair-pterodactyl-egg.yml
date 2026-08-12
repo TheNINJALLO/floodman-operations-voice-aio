@@ -1,0 +1,85 @@
+name: Repair Pterodactyl Egg
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/repair-pterodactyl-egg.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    name: Synchronize canonical Pterodactyl egg
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Copy canonical egg into Pterodactyl folder
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp \
+            egg-floodman-operations-voice-aio-v1.1.1.json \
+            pterodactyl/egg-floodman-operations-voice-aio.json
+
+      - name: Verify both eggs are equivalent
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path('egg-floodman-operations-voice-aio-v1.1.1.json')
+          nested = Path('pterodactyl/egg-floodman-operations-voice-aio.json')
+
+          root_data = json.loads(root.read_text(encoding='utf-8'))
+          nested_data = json.loads(nested.read_text(encoding='utf-8'))
+
+          if root_data != nested_data:
+              raise SystemExit('Pterodactyl egg synchronization failed')
+
+          variables = root_data.get('variables', [])
+          if len(variables) != 64:
+              raise SystemExit(f'Expected 64 egg variables, found {len(variables)}')
+
+          required = {
+              'CALL_RECORDING_ENABLED',
+              'CALL_RECORDING_FORMAT',
+              'CALL_RECORDING_BEEP_ENABLED',
+              'CALL_RECORDING_DISCLOSURE_ENABLED',
+              'CALL_RECORDING_RETENTION_DAYS',
+              'CALL_RECORDING_INCLUDE_TRANSFERS',
+              'CALL_RECORDING_STORAGE_DIR',
+              'TWILIO_TERMINATION_URI',
+              'TWILIO_SIP_USERNAME',
+              'TWILIO_SIP_PASSWORD',
+          }
+          present = {item.get('env_variable') for item in variables}
+          missing = sorted(required - present)
+          if missing:
+              raise SystemExit(f'Missing required egg variables: {missing}')
+
+          print('Pterodactyl egg synchronization verified')
+          PY
+
+      - name: Commit synchronized egg
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add pterodactyl/egg-floodman-operations-voice-aio.json
+
+          if git diff --cached --quiet; then
+            echo 'Pterodactyl egg is already synchronized.'
+            exit 0
+          fi
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix: synchronize Pterodactyl egg with canonical configuration'
+          git push origin HEAD:main
