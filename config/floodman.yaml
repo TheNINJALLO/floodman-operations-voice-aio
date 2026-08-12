@@ -1,0 +1,176 @@
+business:
+  legal_name: Floodman
+  public_name: Floodman
+  website: https://floodman.com
+  primary_phone: 231-935-4921
+  emergency_availability: 24/7 emergency call intake
+  human_disclosure: I am Floodman's automated assistant.
+  services:
+  - basement waterproofing
+  - foundation repair
+  - crawl space encapsulation
+  - mold remediation
+  - water damage response
+  - sump pump and drainage services
+  pricing_policy:
+    phone_estimates: false
+    inspection_required: true
+    approved_response: Pricing depends on the property conditions and required repair.
+      Floodman can arrange an inspection.
+  service_area:
+    description: Northern and western Michigan; confirm each address before promising
+      service.
+    zip_codes: []
+    excluded_zip_codes: []
+    require_manual_confirmation_when_unknown: true
+  privacy:
+    never_request:
+    - Social Security number
+    - complete payment card number
+    - CVV or card security code
+    - online account password
+    - one-time authentication code
+    - bank account credentials
+transfer_destinations:
+  live_reception:
+    extension: '6000'
+    label: Floodman reception
+  emergency:
+    extension: '6001'
+    label: Emergency on-call
+  billing:
+    extension: '6002'
+    label: Billing
+  estimating:
+    extension: '6003'
+    label: Estimating
+scheduling:
+  timezone: America/Detroit
+  lead_time_hours: 4
+  duration_minutes: 90
+  slot_step_minutes: 30
+  days_ahead: 30
+  max_results: 8
+  blackout_dates: []
+  hours:
+    monday:
+      start: 09:00
+      end: '17:00'
+    tuesday:
+      start: 09:00
+      end: '17:00'
+    wednesday:
+      start: 09:00
+      end: '17:00'
+    thursday:
+      start: 09:00
+      end: '17:00'
+    friday:
+      start: 09:00
+      end: '17:00'
+    saturday: disabled
+    sunday: disabled
+call_gate:
+  save_audio: false
+  direct_customer_fail_open: true
+  preserve_opening_transcript: true
+  announcement_patterns_are_metadata_only: true
+compliance:
+  callback_request_valid_days: 30
+  allow_emergency_callbacks_anytime: true
+  identity_required_matches: 2
+  verification_ttl_minutes: 30
+  require_transactional_consent_evidence: true
+  require_marketing_consent_evidence: true
+  require_dnc_check: true
+  dnc_max_age_days: 31
+  require_reassignment_check: true
+  reassignment_max_age_days: 30
+  blackout_dates: []
+  transactional_hours:
+    monday:
+      start: 09:00
+      end: '19:30'
+    tuesday:
+      start: 09:00
+      end: '19:30'
+    wednesday:
+      start: 09:00
+      end: '19:30'
+    thursday:
+      start: 09:00
+      end: '19:30'
+    friday:
+      start: 09:00
+      end: '19:30'
+    saturday:
+      start: '10:00'
+      end: '16:00'
+    sunday: disabled
+  marketing_hours:
+    monday:
+      start: 09:30
+      end: '19:00'
+    tuesday:
+      start: 09:30
+      end: '19:00'
+    wednesday:
+      start: 09:30
+      end: '19:00'
+    thursday:
+      start: 09:30
+      end: '19:00'
+    friday:
+      start: 09:30
+      end: '19:00'
+    saturday:
+      start: '10:00'
+      end: '16:00'
+    sunday: disabled
+  frequency_caps:
+    requested_callback:
+      window_days: 7
+      max_attempts: 3
+      after_live_contact_days: 1
+    missed_call_callback:
+      window_days: 7
+      max_attempts: 3
+      after_live_contact_days: 1
+    billing_reminder:
+      window_days: 30
+      max_attempts: 4
+      after_live_contact_days: 7
+    payment_followup:
+      window_days: 30
+      max_attempts: 4
+      after_live_contact_days: 7
+    estimate_followup:
+      window_days: 30
+      max_attempts: 3
+      after_live_contact_days: 7
+    canceled_inspection:
+      window_days: 30
+      max_attempts: 3
+      after_live_contact_days: 7
+    winback:
+      window_days: 60
+      max_attempts: 2
+      after_live_contact_days: 30
+    maintenance:
+      window_days: 60
+      max_attempts: 2
+      after_live_contact_days: 30
+uploads:
+  link_ttl_hours: 168
+  max_files_per_request: 12
+  require_magic_match: true
+  allowed_content_types:
+  - image/jpeg
+  - image/png
+  - image/webp
+  - image/heic
+  - application/pdf
+asterisk:
+  outbound_channel_template: PJSIP/{phone}@{trunk}
+roomflow:
+  endpoints: {}

@@ -1,0 +1,10 @@
+# Host-installed Caddy example. Replace voice.example.com and keep the dashboard
+# bound to 127.0.0.1. Block internal AVA/AGI tool routes at the proxy boundary.
+voice.example.com {
+    encode zstd gzip
+
+    @internal path /internal/*
+    respond @internal 404
+
+    reverse_proxy 127.0.0.1:9000
+}

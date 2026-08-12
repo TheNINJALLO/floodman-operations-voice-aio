@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#071421">
+  <title>Floodman Operations Voice AIO</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <div id="login" class="login-shell">
+    <section class="login-card">
+      <div class="brand-mark">FM</div>
+      <p class="eyebrow">FLOODMAN OPERATIONS</p>
+      <h1>Voice AIO</h1>
+      <p class="muted">Never Miss A Call Again With Floodman’s 24/7 AI Receptionist</p>
+      <label for="token">Admin token</label>
+      <input id="token" type="password" autocomplete="current-password" placeholder="Paste ADMIN_TOKEN from data/runtime.env or your deployment secret">
+      <button id="loginButton" class="primary">Open operations</button>
+      <p id="loginError" class="error"></p>
+    </section>
+  </div>
+
+  <div id="app" class="app-shell hidden">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-mark small">FM</div>
+        <div><strong>Floodman</strong><span>Voice Operations</span></div>
+      </div>
+      <nav id="nav">
+        <button data-view="dashboard" class="active">Overview</button>
+        <button data-view="calls">Call Gate</button>
+        <button data-view="outbound">Outbound</button>
+        <button data-view="campaigns">Campaigns</button>
+        <button data-view="crm">Customers</button>
+        <button data-view="billing">Billing</button>
+        <button data-view="compliance">Compliance</button>
+        <button data-view="outbox">Roomflow Outbox</button>
+        <button data-view="system">System</button>
+      </nav>
+      <div class="sidebar-foot">
+        <span id="healthDot" class="status-dot"></span><span id="healthText">Checking system</span>
+        <button id="logoutButton" class="ghost tiny">Log out</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">FLOODMAN OPERATIONS VOICE AIO</p>
+          <h2 id="pageTitle">Overview</h2>
+        </div>
+        <div class="top-actions">
+          <span id="lastUpdated" class="muted">Not loaded</span>
+          <button id="refreshButton" class="ghost">Refresh</button>
+        </div>
+      </header>
+
+      <section id="view-dashboard" class="view active">
+        <div id="metrics" class="metric-grid"></div>
+        <div class="two-column">
+          <article class="panel"><div class="panel-head"><h3>System health</h3></div><div id="componentHealth" class="health-list"></div></article>
+          <article class="panel"><div class="panel-head"><h3>Recent activity</h3></div><div id="recentEvents" class="timeline"></div></article>
+        </div>
+        <article class="panel"><div class="panel-head"><h3>Recent calls</h3><span>Google-aware opening decisions</span></div><div id="recentCalls"></div></article>
+      </section>
+
+      <section id="view-calls" class="view">
+        <article class="panel"><div class="panel-head"><h3>Call gate sessions</h3><span>Announcement stripping, source classification, and safe routing</span></div><div id="callsTable"></div></article>
+        <article class="panel form-panel">
+          <div class="panel-head"><h3>Test the classifier</h3></div>
+          <form id="classifierForm" class="form-grid">
+            <label class="wide">Opening transcript<textarea name="transcript" rows="4" placeholder="This call may be recorded. Call from Google..."></textarea></label>
+            <label>Source hint<input name="source_hint" placeholder="google_lsa"></label>
+            <label>Elapsed seconds<input name="elapsed_seconds" type="number" step="0.1" value="5"></label>
+            <button class="primary" type="submit">Classify sample</button>
+          </form>
+          <pre id="classifierResult" class="result"></pre>
+        </article>
+      </section>
+
+      <section id="view-outbound" class="view">
+        <article class="panel form-panel">
+          <div class="panel-head"><h3>Run a two-way audio test</h3><span>Restricted to TEST_CALL_ALLOWLIST and disabled until explicitly enabled</span></div>
+          <form id="testCallForm" class="form-grid">
+            <label>Allowlisted phone<input name="phone" placeholder="+12315551234" required></label>
+            <label>Test label<input name="label" value="production_audio_test" maxlength="80"></label>
+            <button class="primary" type="submit">Place echo test call</button>
+          </form>
+          <p class="muted">Answer the call, follow the prompt, and confirm that your voice is returned. This proves signaling and both audio directions.</p>
+          <pre id="testCallResult" class="result"></pre>
+        </article>
+        <article class="panel form-panel">
+          <div class="panel-head"><h3>Queue an outbound call</h3><span>Eligibility is checked again immediately before dialing</span></div>
+          <form id="outboundForm" class="form-grid">
+            <label>Phone<input name="phone" placeholder="+12315551234" required></label>
+            <label>Purpose<select name="purpose"><option>requested_callback</option><option>missed_call_callback</option><option>billing_reminder</option><option>payment_followup</option><option>estimate_followup</option><option>canceled_inspection</option><option>winback</option><option>maintenance</option></select></label>
+            <label>Customer ID<input name="customer_id"></label>
+            <label>Scheduled time<input name="scheduled_for" type="datetime-local"></label>
+            <label>Requested time<input name="requested_at" type="datetime-local"></label>
+            <label>Timezone<input name="timezone" value="America/Detroit"></label>
+            <button class="primary" type="submit">Queue call</button>
+          </form>
+          <pre id="outboundResult" class="result"></pre>
+        </article>
+        <article class="panel"><div class="panel-head"><h3>Outbound jobs</h3></div><div id="outboundTable"></div></article>
+      </section>
+
+      <section id="view-campaigns" class="view">
+        <article class="panel form-panel">
+          <div class="panel-head"><h3>Create campaign</h3></div>
+          <form id="campaignForm" class="form-grid">
+            <label>Name<input name="name" required></label>
+            <label>Purpose<select name="purpose"><option>billing_reminder</option><option>payment_followup</option><option>estimate_followup</option><option>canceled_inspection</option><option>winback</option><option>maintenance</option></select></label>
+            <label>Status<select name="status"><option>draft</option><option>active</option><option>paused</option></select></label>
+            <button class="primary" type="submit">Create campaign</button>
+          </form>
+        </article>
+        <article class="panel form-panel">
+          <div class="panel-head"><h3>Load campaign audience</h3><span>One line per customer: phone, customer ID, timezone</span></div>
+          <form id="campaignEnqueueForm" class="form-grid">
+            <label>Campaign<select id="campaignAudienceSelect" name="campaign_id" required></select></label>
+            <label>Start time<input name="start_at" type="datetime-local"></label>
+            <label>Seconds between calls<input name="spacing_seconds" type="number" min="0" max="86400" value="20"></label>
+            <label>DNC status<select name="dnc_status"><option value="">Not checked</option><option value="clear">Clear</option><option value="exempt">Exempt</option></select></label>
+            <label>DNC checked at<input name="dnc_checked_at" type="datetime-local"></label>
+            <label>Reassignment status<select name="reassignment_status"><option value="">Not checked</option><option value="clear">Clear</option><option value="not_reassigned">Not reassigned</option><option value="safe_harbor">Safe harbor</option></select></label>
+            <label>Reassignment checked at<input name="reassignment_checked_at" type="datetime-local"></label>
+            <label class="wide">Audience<textarea name="audience" rows="7" placeholder="+12315551234, customer-id, America/Detroit&#10;+15865559876, another-id, America/Detroit" required></textarea></label>
+            <button class="primary" type="submit">Queue campaign audience</button>
+          </form>
+          <pre id="campaignEnqueueResult" class="result"></pre>
+        </article>
+        <article class="panel"><div class="panel-head"><h3>Campaigns</h3></div><div id="campaignsTable"></div></article>
+      </section>
+
+      <section id="view-crm" class="view">
+        <article class="panel form-panel">
+          <div class="panel-head"><h3>Add or update customer</h3><span>Local-first ledger with optional Roomflow synchronization</span></div>
+          <form id="customerForm" class="form-grid">
+            <label>Name<input name="name" required></label><label>Phone<input name="phone"></label>
+            <label>Email<input name="email" type="email"></label><label>External ID<input name="external_id"></label>
+            <button class="primary" type="submit">Save customer</button>
+          </form>
+        </article>
+        <article class="panel"><div class="panel-head"><h3>Customers</h3><input id="customerSearch" class="compact" placeholder="Search name, phone, or address"></div><div id="customersTable"></div></article>
+        <div class="two-column">
+          <article class="panel"><div class="panel-head"><h3>Appointments</h3></div><div id="appointmentsTable"></div></article>
+          <article class="panel"><div class="panel-head"><h3>Callback tasks</h3></div><div id="callbacksTable"></div></article>
+        </div>
+      </section>
+
+      <section id="view-billing" class="view">
+        <article class="panel form-panel">
+          <div class="panel-head"><h3>Import an invoice</h3><span>The AI only exposes billing after deterministic identity verification</span></div>
+          <form id="invoiceForm" class="form-grid">
+            <label>Customer ID<input name="customer_id" required></label><label>Invoice number<input name="invoice_number"></label>
+            <label>Amount due<input name="amount_due" type="number" step="0.01" required></label><label>Status<input name="status" value="open"></label>
+            <label>Due date<input name="due_date" type="date"></label><label>Secure payment URL<input name="payment_url" type="url"></label>
+            <button class="primary" type="submit">Save invoice</button>
+          </form>
+        </article>
+        <article class="panel"><div class="panel-head"><h3>Invoices</h3></div><div id="invoicesTable"></div></article>
+      </section>
+
+      <section id="view-compliance" class="view">
+        <div class="two-column">
+          <article class="panel form-panel"><div class="panel-head"><h3>Record consent</h3></div>
+            <form id="consentForm" class="stack-form">
+              <label>Phone<input name="phone" required></label><label>Customer ID<input name="customer_id"></label>
+              <label class="check"><input name="transactional_voice" type="checkbox"> Transactional artificial-voice calls</label>
+              <label class="check"><input name="marketing_voice_written" type="checkbox"> Written automated-marketing consent</label>
+              <label class="check"><input name="sms" type="checkbox"> SMS consent</label>
+              <label>Consent source<input name="source" placeholder="website form"></label>
+              <label>Text version<input name="text_version" placeholder="2026-08"></label>
+              <label>Exact consent text<textarea name="consent_text" rows="4"></textarea></label>
+              <button class="primary" type="submit">Save consent record</button>
+            </form>
+          </article>
+          <article class="panel form-panel"><div class="panel-head"><h3>Suppress a number</h3></div>
+            <form id="suppressionForm" class="stack-form">
+              <label>Phone<input name="phone" required></label><label>Reason<input name="reason" value="customer_request"></label>
+              <label>Categories<input name="categories" value="all" placeholder="all, marketing, callbacks"></label>
+              <button class="danger" type="submit">Add suppression</button>
+            </form>
+          </article>
+        </div>
+        <article class="panel"><div class="panel-head"><h3>Consent records</h3></div><div id="consentsTable"></div></article>
+        <article class="panel"><div class="panel-head"><h3>Suppression list</h3></div><div id="suppressionsTable"></div></article>
+      </section>
+
+      <section id="view-outbox" class="view">
+        <article class="panel"><div class="panel-head"><h3>Roomflow synchronization outbox</h3><span>Failed writes are held here instead of disappearing</span></div><div id="outboxTable"></div></article>
+      </section>
+
+      <section id="view-system" class="view">
+        <article class="panel"><div class="panel-head"><h3>Runtime and integrations</h3></div><pre id="systemJson" class="result large"></pre></article>
+      </section>
+
+      <div id="toast" class="toast"></div>
+    </main>
+  </div>
+  <script src="/assets/app.js" defer></script>
+</body>
+</html>

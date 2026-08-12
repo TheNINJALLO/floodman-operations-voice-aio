@@ -1,0 +1,434 @@
+# Floodman overlay for AVA v7.4+.
+# This file is deep-merged over AVA's tracked config/ai-agent.yaml.
+asterisk:
+  app_name: "asterisk-ai-voice-agent"
+
+default_provider: "${AVA_PROVIDER:-local_hybrid}"
+active_pipeline: "${AVA_PIPELINE:-local_hybrid}"
+
+audio_transport: "audiosocket"
+audiosocket:
+  host: "127.0.0.1"
+  advertise_host: "127.0.0.1"
+  port: 8090
+  format: "slin"
+
+downstream_mode: "stream"
+
+no_input:
+  enabled: true
+  inbound_enabled: true
+  outbound_enabled: true
+  initial_timeout_sec: 30
+  grace_timeout_sec: 15
+  max_check_ins: 1
+  check_in_message: "Are you still there?"
+  final_message: "I still can't hear you, so I'll end the call now. Goodbye."
+
+in_call_tools:
+  floodman_lookup_customer:
+    kind: in_call_http_lookup
+    enabled: true
+    is_global: true
+    description: "Look up an existing Floodman customer by phone, name, or property address."
+    timeout_ms: 6000
+    url: "${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/lookup-customer"
+    method: POST
+    headers:
+      Content-Type: "application/json"
+      X-Internal-Token: "${INTERNAL_TOKEN}"
+    body_template: |
+      {
+        "call_id": "{call_id}",
+        "caller_number": "{caller_number}",
+        "data": {
+          "phone": "{phone}",
+          "name": "{name}",
+          "address": "{address}"
+        }
+      }
+    parameters:
+      - {name: phone, type: string, description: "Customer phone number; use caller number when appropriate", required: false}
+      - {name: name, type: string, description: "Customer name", required: false}
+      - {name: address, type: string, description: "Property address", required: false}
+    return_raw_json: true
+    error_message: "I couldn't reach the customer system right now. I can still take the details for a callback."
+
+  floodman_create_lead:
+    kind: in_call_http_lookup
+    enabled: true
+    is_global: true
+    description: "Create a new Floodman lead after required customer and property details are confirmed."
+    timeout_ms: 7000
+    url: "${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/create-lead"
+    method: POST
+    headers: {Content-Type: "application/json", X-Internal-Token: "${INTERNAL_TOKEN}"}
+    body_template: |
+      {
+        "call_id": "{call_id}",
+        "caller_number": "{caller_number}",
+        "idempotency_key": "lead-{call_id}",
+        "data": {
+          "name": "{name}", "phone": "{phone}", "email": "{email}",
+          "address": "{address}", "service": "{service}", "problem": "{problem}",
+          "urgency": "{urgency}", "source": "voice"
+        }
+      }
+    parameters:
+      - {name: name, type: string, description: "Caller full name", required: true}
+      - {name: phone, type: string, description: "Confirmed callback number", required: true}
+      - {name: email, type: string, description: "Email when supplied", required: false}
+      - {name: address, type: string, description: "Confirmed property address", required: true}
+      - {name: service, type: string, description: "Requested Floodman service", required: true}
+      - {name: problem, type: string, description: "Concise problem description", required: true}
+      - {name: urgency, type: string, description: "normal, urgent, or emergency", required: true}
+    return_raw_json: true
+
+  floodman_create_emergency_case:
+    kind: in_call_http_lookup
+    enabled: true
+    is_global: true
+    description: "Create and immediately notify Floodman of an active water or safety emergency."
+    timeout_ms: 7000
+    url: "${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/create-emergency-case"
+    method: POST
+    headers: {Content-Type: "application/json", X-Internal-Token: "${INTERNAL_TOKEN}"}
+    body_template: |
+      {
+        "call_id": "{call_id}", "caller_number": "{caller_number}",
+        "idempotency_key": "emergency-{call_id}",
+        "data": {
+          "name": "{name}", "phone": "{phone}", "address": "{address}",
+          "hazard": "{hazard}", "water_status": "{water_status}",
+          "probable_source": "{probable_source}", "affected_area": "{affected_area}",
+          "access_notes": "{access_notes}", "source": "voice"
+        }
+      }
+    parameters:
+      - {name: name, type: string, description: "Caller full name", required: true}
+      - {name: phone, type: string, description: "Confirmed callback number", required: true}
+      - {name: address, type: string, description: "Property address", required: true}
+      - {name: hazard, type: string, description: "Electrical, sewage, structural, or other hazard", required: true}
+      - {name: water_status, type: string, description: "Active, rising, stopped, or unknown", required: true}
+      - {name: probable_source, type: string, description: "Likely water source", required: false}
+      - {name: affected_area, type: string, description: "Affected rooms or area", required: true}
+      - {name: access_notes, type: string, description: "Safe access instructions", required: false}
+    return_raw_json: true
+
+  floodman_check_service_area:
+    kind: in_call_http_lookup
+    enabled: true
+    is_global: true
+    description: "Check whether a property address is within Floodman's configured service area."
+    timeout_ms: 5000
+    url: "${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/check-service-area"
+    method: POST
+    headers: {Content-Type: "application/json", X-Internal-Token: "${INTERNAL_TOKEN}"}
+    body_template: '{"call_id":"{call_id}","data":{"address":"{address}","zip":"{zip}"}}'
+    parameters:
+      - {name: address, type: string, description: "Property address", required: true}
+      - {name: zip, type: string, description: "Property ZIP code", required: false}
+    return_raw_json: true
+
+  floodman_public_business_information:
+    kind: in_call_http_lookup
+    enabled: true
+    is_global: true
+    description: "Retrieve approved public Floodman hours, services, policies, and service-area facts."
+    timeout_ms: 3000
+    url: "${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/public-business-information"
+    method: POST
+    headers: {Content-Type: "application/json", X-Internal-Token: "${INTERNAL_TOKEN}"}
+    body_template: '{"call_id":"{call_id}","data":{"question":"{question}"}}'
+    parameters:
+      - {name: question, type: string, description: "Business-information question", required: true}
+    return_raw_json: true
+
+  floodman_check_availability:
+    kind: in_call_http_lookup
+    enabled: true
+    is_global: true
+    description: "Check approved inspection appointment availability without booking."
+    timeout_ms: 7000
+    url: "${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/check-availability"
+    method: POST
+    headers: {Content-Type: "application/json", X-Internal-Token: "${INTERNAL_TOKEN}"}
+    body_template: |
+      {"call_id":"{call_id}","caller_number":"{caller_number}","data":{
+        "address":"{address}","service":"{service}","preferred_date":"{preferred_date}",
+        "timezone":"{timezone}"}}
+    parameters:
+      - {name: address, type: string, description: "Property address", required: true}
+      - {name: service, type: string, description: "Inspection or service type", required: true}
+      - {name: preferred_date, type: string, description: "Preferred date or range in ISO form when possible", required: false}
+      - {name: timezone, type: string, description: "Customer timezone", required: false}
+    return_raw_json: true
+
+  floodman_schedule_inspection:
+    kind: in_call_http_lookup
+    enabled: true
+    is_global: true
+    description: "Book a confirmed Floodman inspection slot. Never call before reading the exact slot back."
+    timeout_ms: 8000
+    url: "${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/schedule-inspection"
+    method: POST
+    headers: {Content-Type: "application/json", X-Internal-Token: "${INTERNAL_TOKEN}"}
+    body_template: |
+      {"call_id":"{call_id}","caller_number":"{caller_number}","idempotency_key":"appointment-{call_id}-{slot_id}","data":{
+        "customer_id":"{customer_id}","name":"{name}","phone":"{phone}","email":"{email}",
+        "address":"{address}","service":"{service}","slot_id":"{slot_id}",
+        "start":"{start}","end":"{end}","timezone":"{timezone}"}}
+    parameters:
+      - {name: customer_id, type: string, description: "Roomflow customer ID when known", required: false}
+      - {name: name, type: string, description: "Confirmed customer name", required: true}
+      - {name: phone, type: string, description: "Confirmed callback number", required: true}
+      - {name: email, type: string, description: "Email when supplied", required: false}
+      - {name: address, type: string, description: "Confirmed property address", required: true}
+      - {name: service, type: string, description: "Inspection type", required: true}
+      - {name: slot_id, type: string, description: "Slot identifier returned by availability check", required: true}
+      - {name: start, type: string, description: "Confirmed ISO start", required: true}
+      - {name: end, type: string, description: "Confirmed ISO end", required: true}
+      - {name: timezone, type: string, description: "Customer timezone", required: true}
+    return_raw_json: true
+
+  floodman_reschedule_inspection:
+    kind: in_call_http_lookup
+    enabled: true
+    is_global: true
+    description: "Reschedule an existing inspection after caller verification and exact slot confirmation."
+    timeout_ms: 8000
+    url: "${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/reschedule-inspection"
+    method: POST
+    headers: {Content-Type: "application/json", X-Internal-Token: "${INTERNAL_TOKEN}"}
+    body_template: '{"call_id":"{call_id}","idempotency_key":"reschedule-{appointment_id}-{slot_id}","data":{"appointment_id":"{appointment_id}","slot_id":"{slot_id}","start":"{start}","end":"{end}","timezone":"{timezone}"}}'
+    parameters:
+      - {name: appointment_id, type: string, description: "Existing appointment ID", required: true}
+      - {name: slot_id, type: string, description: "New slot ID", required: true}
+      - {name: start, type: string, description: "Confirmed new ISO start", required: true}
+      - {name: end, type: string, description: "Confirmed new ISO end", required: true}
+      - {name: timezone, type: string, description: "Customer timezone", required: true}
+    return_raw_json: true
+
+  floodman_send_photo_upload_link:
+    kind: in_call_http_lookup
+    enabled: true
+    is_global: true
+    description: "Send a secure Floodman photo-upload link after consent to text or email."
+    timeout_ms: 6000
+    url: "${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/send-photo-upload-link"
+    method: POST
+    headers: {Content-Type: "application/json", X-Internal-Token: "${INTERNAL_TOKEN}"}
+    body_template: '{"call_id":"{call_id}","idempotency_key":"photo-link-{call_id}","data":{"customer_id":"{customer_id}","phone":"{phone}","email":"{email}","channel":"{channel}"}}'
+    parameters:
+      - {name: customer_id, type: string, description: "Customer or lead ID", required: false}
+      - {name: phone, type: string, description: "Confirmed mobile number", required: false}
+      - {name: email, type: string, description: "Confirmed email", required: false}
+      - {name: channel, type: string, description: "sms or email", required: true}
+    return_raw_json: true
+
+  floodman_verify_customer:
+    kind: in_call_http_lookup
+    enabled: true
+    is_global: true
+    description: "Verify an existing customer using approved account facts before private information is disclosed."
+    timeout_ms: 7000
+    url: "${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/verify-customer"
+    method: POST
+    headers: {Content-Type: "application/json", X-Internal-Token: "${INTERNAL_TOKEN}"}
+    body_template: |
+      {"call_id":"{call_id}","caller_number":"{caller_number}","customer_id":"{customer_id}","data":{
+        "customer_id":"{customer_id}","phone":"{phone}","name":"{name}",
+        "street_number":"{street_number}","zip":"{zip}"}}
+    parameters:
+      - {name: customer_id, type: string, description: "Customer ID returned by lookup", required: true}
+      - {name: phone, type: string, description: "Confirmed phone number", required: false}
+      - {name: name, type: string, description: "Confirmed customer name", required: true}
+      - {name: street_number, type: string, description: "Street number only", required: false}
+      - {name: zip, type: string, description: "Property ZIP code", required: false}
+    return_raw_json: true
+
+  floodman_get_billing_summary:
+    kind: in_call_http_lookup
+    enabled: true
+    is_global: true
+    description: "Retrieve a minimal billing summary only after identity verification."
+    timeout_ms: 6000
+    url: "${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/get-billing-summary"
+    method: POST
+    headers: {Content-Type: "application/json", X-Internal-Token: "${INTERNAL_TOKEN}"}
+    body_template: '{"call_id":"{call_id}","caller_number":"{caller_number}","customer_id":"{customer_id}","data":{"customer_id":"{customer_id}","invoice_id":"{invoice_id}"}}'
+    parameters:
+      - {name: customer_id, type: string, description: "Verified Roomflow customer ID", required: true}
+      - {name: invoice_id, type: string, description: "Invoice ID when known", required: false}
+    return_raw_json: true
+
+  floodman_send_payment_link:
+    kind: in_call_http_lookup
+    enabled: true
+    is_global: true
+    description: "Send a secure payment link. Never collect payment-card data in the voice conversation."
+    timeout_ms: 7000
+    url: "${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/send-payment-link"
+    method: POST
+    headers: {Content-Type: "application/json", X-Internal-Token: "${INTERNAL_TOKEN}"}
+    body_template: '{"call_id":"{call_id}","caller_number":"{caller_number}","customer_id":"{customer_id}","idempotency_key":"payment-link-{invoice_id}-{channel}","data":{"customer_id":"{customer_id}","invoice_id":"{invoice_id}","channel":"{channel}","destination":"{destination}"}}'
+    parameters:
+      - {name: customer_id, type: string, description: "Verified customer ID", required: true}
+      - {name: invoice_id, type: string, description: "Invoice ID", required: true}
+      - {name: channel, type: string, description: "sms or email", required: true}
+      - {name: destination, type: string, description: "Confirmed phone or email", required: true}
+    return_raw_json: true
+
+  floodman_create_callback_task:
+    kind: in_call_http_lookup
+    enabled: true
+    is_global: true
+    description: "Create a human callback task with reason, urgency, and preferred time."
+    timeout_ms: 6000
+    url: "${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/create-callback-task"
+    method: POST
+    headers: {Content-Type: "application/json", X-Internal-Token: "${INTERNAL_TOKEN}"}
+    body_template: '{"call_id":"{call_id}","caller_number":"{caller_number}","idempotency_key":"callback-{call_id}-{department}","data":{"customer_id":"{customer_id}","name":"{name}","phone":"{phone}","department":"{department}","reason":"{reason}","urgency":"{urgency}","preferred_time":"{preferred_time}"}}'
+    parameters:
+      - {name: customer_id, type: string, description: "Customer ID when known", required: false}
+      - {name: name, type: string, description: "Caller name", required: true}
+      - {name: phone, type: string, description: "Confirmed callback number", required: true}
+      - {name: department, type: string, description: "billing, estimating, emergency, scheduling, or support", required: true}
+      - {name: reason, type: string, description: "Concise callback reason", required: true}
+      - {name: urgency, type: string, description: "normal, urgent, or emergency", required: true}
+      - {name: preferred_time, type: string, description: "Preferred callback time", required: false}
+    return_raw_json: true
+
+  floodman_record_disposition:
+    kind: in_call_http_lookup
+    enabled: true
+    is_global: true
+    description: "Record a call result, objection, lost reason, or next action."
+    timeout_ms: 5000
+    url: "${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/record-disposition"
+    method: POST
+    headers: {Content-Type: "application/json", X-Internal-Token: "${INTERNAL_TOKEN}"}
+    body_template: '{"call_id":"{call_id}","caller_number":"{caller_number}","idempotency_key":"disposition-{call_id}","data":{"customer_id":"{customer_id}","outcome":"{outcome}","reason":"{reason}","next_action":"{next_action}"}}'
+    parameters:
+      - {name: customer_id, type: string, description: "Customer ID when known", required: false}
+      - {name: outcome, type: string, description: "Call outcome", required: true}
+      - {name: reason, type: string, description: "Factual reason or objection", required: false}
+      - {name: next_action, type: string, description: "Next action", required: false}
+    return_raw_json: true
+
+  floodman_opt_out:
+    kind: in_call_http_lookup
+    enabled: true
+    is_global: true
+    description: "Immediately record a customer's do-not-call or category-specific opt-out."
+    timeout_ms: 5000
+    url: "${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/opt-out"
+    method: POST
+    headers: {Content-Type: "application/json", X-Internal-Token: "${INTERNAL_TOKEN}"}
+    body_template: '{"call_id":"{call_id}","caller_number":"{caller_number}","data":{"phone":"{phone}","categories":"{categories}","reason":"{reason}"}}'
+    parameters:
+      - {name: phone, type: string, description: "Number to suppress", required: true}
+      - {name: categories, type: string, description: "all, marketing, transactional, callbacks, or a purpose", required: true}
+      - {name: reason, type: string, description: "Customer's request in concise terms", required: true}
+    return_raw_json: true
+
+  floodman_record_security_event:
+    kind: in_call_http_lookup
+    enabled: true
+    is_global: true
+    description: "Record a suspected Google impersonation, credential request, or payment scam."
+    timeout_ms: 5000
+    url: "${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/security-event"
+    method: POST
+    headers: {Content-Type: "application/json", X-Internal-Token: "${INTERNAL_TOKEN}"}
+    body_template: '{"call_id":"{call_id}","caller_number":"{caller_number}","idempotency_key":"security-{call_id}","data":{"summary":"{summary}","requested_secret":"{requested_secret}","claimed_identity":"{claimed_identity}"}}'
+    parameters:
+      - {name: summary, type: string, description: "Factual summary", required: true}
+      - {name: requested_secret, type: string, description: "Credential, payment, access, or keypad request", required: false}
+      - {name: claimed_identity, type: string, description: "Claimed organization or identity", required: false}
+    return_raw_json: true
+
+tools:
+  floodman_pre_call_context:
+    kind: generic_http_lookup
+    phase: pre_call
+    enabled: true
+    is_global: true
+    timeout_ms: 6000
+    hold_audio_threshold_ms: 400
+    url: "${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/ava/pre-call"
+    method: POST
+    headers:
+      Content-Type: "application/json"
+      X-Internal-Token: "${INTERNAL_TOKEN}"
+    body_template: |
+      {"call_id":"{call_id}","caller_number":"{caller_number}","campaign_id":"{campaign_id}","lead_id":"{lead_id}"}
+    output_variables:
+      floodman_call_class: "gate_classification"
+      floodman_call_source: "source_hint"
+      floodman_opening_transcript: "opening_transcript"
+      floodman_customer_found: "customer_found"
+      floodman_customer: "customer"
+      floodman_call_purpose: "call_purpose"
+      floodman_outbound_job: "outbound_job"
+
+  floodman_post_call:
+    kind: generic_webhook
+    phase: post_call
+    enabled: true
+    is_global: true
+    timeout_ms: 7000
+    url: "${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/ava/call-completed"
+    method: POST
+    headers:
+      Content-Type: "application/json"
+      X-Internal-Token: "${INTERNAL_TOKEN}"
+    payload_template: |
+      {
+        "call_id": "{call_id}",
+        "caller_number": "{caller_number}",
+        "direction": "{direction}",
+        "agent": "{agent}",
+        "provider": "{provider}",
+        "campaign_id": "{campaign_id}",
+        "lead_id": "{lead_id}",
+        "conversation_id": "{conversation_id}",
+        "duration": {call_duration},
+        "outcome": "{call_outcome}",
+        "summary": "{summary}",
+        "transcript": {transcript_json},
+        "metadata": {"context": "{context_name}", "ended_at": "{call_end_time}"}
+      }
+    generate_summary: true
+
+  transfer:
+    enabled: true
+    extension_context: "from-internal"
+    queue_context: "ext-queues"
+    ringgroup_context: "ext-group"
+    destinations:
+      floodman_reception:
+        type: extension
+        target: "${FLOODMAN_LIVE_EXTENSION:-6000}"
+        description: "Floodman live receptionist"
+        dialplan_context: "from-internal"
+      floodman_emergency:
+        type: extension
+        target: "${FLOODMAN_EMERGENCY_EXTENSION:-6001}"
+        description: "Floodman emergency on-call"
+        dialplan_context: "from-internal"
+      floodman_billing:
+        type: extension
+        target: "${FLOODMAN_BILLING_EXTENSION:-6002}"
+        description: "Floodman billing"
+        dialplan_context: "from-internal"
+      floodman_estimating:
+        type: extension
+        target: "${FLOODMAN_ESTIMATING_EXTENSION:-6003}"
+        description: "Floodman estimating"
+        dialplan_context: "from-internal"
+
+  hangup_call:
+    enabled: true
+    farewell_message: "Thank you for calling Floodman. Goodbye."
+    require_confirmation: false
