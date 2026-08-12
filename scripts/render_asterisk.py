@@ -350,6 +350,35 @@ def main() -> None:
     if not module_dir.is_absolute():
         raise ValueError("ASTERISK_MODULE_DIR must be an absolute path")
 
+    # Asterisk packaged data directory discovery. XML documentation and
+    # built-in sounds live here and must remain readable even when runtime
+    # state is redirected into DATA_DIR.
+    asterisk_data_override = line(env("ASTERISK_DATA_DIR"), "Asterisk data directory")
+    if asterisk_data_override:
+        asterisk_data_dir = Path(asterisk_data_override)
+    else:
+        data_candidates = (
+            Path("/usr/share/asterisk"),
+            Path("/var/lib/asterisk"),
+        )
+        asterisk_data_dir = next(
+            (
+                candidate
+                for candidate in data_candidates
+                if (candidate / "documentation/core-en_US.xml").is_file()
+            ),
+            Path("/usr/share/asterisk"),
+        )
+    if not asterisk_data_dir.is_absolute():
+        raise ValueError("ASTERISK_DATA_DIR must be an absolute path")
+    documentation_file = asterisk_data_dir / "documentation/core-en_US.xml"
+    if asterisk_data_override and not documentation_file.is_file():
+        raise RuntimeError(
+            "Could not locate Asterisk core XML documentation at "
+            f"{documentation_file}. Set ASTERISK_DATA_DIR to the packaged "
+            "Asterisk data directory."
+        )
+
     trunk = safe(env("ASTERISK_TRUNK", "floodman-trunk"), r"[A-Za-z0-9_.-]+", "trunk", False)
     sip_port = int(env("SIP_PORT", env("SIP_ALLOCATION", "5060")))
     ari_port = int(env("ARI_PORT", "8088"))
@@ -380,7 +409,7 @@ astmoddir => {module_dir}
 astvarlibdir => {varlib}
 astdbdir => {db}
 astkeydir => {keys}
-astdatadir => {varlib}
+astdatadir => {asterisk_data_dir}
 astagidir => {agi}
 astspooldir => {spool}
 astrundir => {run}
@@ -399,6 +428,12 @@ lockconfdir = no
 [modules]
 autoload=yes
 noload=chan_sip.so
+""")
+    write(destination / "stasis.conf", """
+[threadpool]
+initial_size=5
+idle_timeout_sec=20
+max_size=50
 """)
     write(destination / "logger.conf", """
 [general]

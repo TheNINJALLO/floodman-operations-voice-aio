@@ -98,6 +98,23 @@ export PRINT_BOOTSTRAP_SECRETS="${PRINT_BOOTSTRAP_SECRETS:-false}"
 export STARTUP_PREFLIGHT="${STARTUP_PREFLIGHT:-warn}"
 export AVA_IMAGE_DIR="${AVA_IMAGE_DIR:-/opt/ava}"
 export AVA_RUNTIME_DIR="${AVA_RUNTIME_DIR:-${DATA_DIR}/runtime/ava}"
+
+# Floodman writable runtime cache normalization. The image seeds model caches
+# under /opt/model-cache, but Pterodactyl may mount /opt read-only.
+normalize_writable_cache_path() {
+  local current="$1"
+  local fallback="$2"
+  case "${current}" in
+    ""|/opt/model-cache|/opt/model-cache/*) printf '%s\n' "${fallback}" ;;
+    *) printf '%s\n' "${current}" ;;
+  esac
+}
+
+export HF_HOME="$(normalize_writable_cache_path "${HF_HOME:-}" "${DATA_DIR}/model-cache/huggingface")"
+export XDG_CACHE_HOME="$(normalize_writable_cache_path "${XDG_CACHE_HOME:-}" "${DATA_DIR}/cache")"
+export HF_HUB_CACHE="$(normalize_writable_cache_path "${HF_HUB_CACHE:-}" "${HF_HOME}/hub")"
+export HUGGINGFACE_HUB_CACHE="$(normalize_writable_cache_path "${HUGGINGFACE_HUB_CACHE:-}" "${HF_HUB_CACHE}")"
+mkdir -p "${HF_HOME}" "${XDG_CACHE_HOME}" "${HF_HUB_CACHE}"
 if [[ -z "${TRUSTED_HOSTS:-}" ]]; then
   PUBLIC_HOST="$(/opt/venv/bin/python - <<'PYHOST'
 import os
