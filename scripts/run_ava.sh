@@ -12,5 +12,7 @@ if [[ "${ASTERISK_MODE:-embedded}" == "embedded" ]]; then
     sleep 1
   done
 fi
-cd /opt/ava
-exec /opt/venv/bin/python /opt/ava/main.py
+AVA_RUNTIME_DIR="${AVA_RUNTIME_DIR:-${DATA_DIR:-/home/container/data}/runtime/ava}"
+test -f "${AVA_RUNTIME_DIR}/main.py"
+cd "${AVA_RUNTIME_DIR}"
+exec /opt/venv/bin/python "${AVA_RUNTIME_DIR}/main.py"

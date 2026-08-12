@@ -96,6 +96,8 @@ export TRUSTED_PROXY_IPS="${TRUSTED_PROXY_IPS:-127.0.0.1}"
 export ENABLE_API_DOCS="${ENABLE_API_DOCS:-false}"
 export PRINT_BOOTSTRAP_SECRETS="${PRINT_BOOTSTRAP_SECRETS:-false}"
 export STARTUP_PREFLIGHT="${STARTUP_PREFLIGHT:-warn}"
+export AVA_IMAGE_DIR="${AVA_IMAGE_DIR:-/opt/ava}"
+export AVA_RUNTIME_DIR="${AVA_RUNTIME_DIR:-${DATA_DIR}/runtime/ava}"
 if [[ -z "${TRUSTED_HOSTS:-}" ]]; then
   PUBLIC_HOST="$(/opt/venv/bin/python - <<'PYHOST'
 import os
@@ -112,16 +114,11 @@ fi
 if [[ ! -f "${CONFIG_DIR}/ava/ai-agent.local.yaml" ]]; then
   cp /opt/floodman/config/ava/ai-agent.local.yaml "${CONFIG_DIR}/ava/ai-agent.local.yaml"
 fi
-cp "${CONFIG_DIR}/ava/ai-agent.local.yaml" /opt/ava/config/ai-agent.local.yaml
 
-# Keep model downloads and AVA state on persistent storage.
-if [[ ! -f "${DATA_DIR}/models/registry.json" && -f /opt/ava/models/registry.json ]]; then
-  cp /opt/ava/models/registry.json "${DATA_DIR}/models/registry.json"
-fi
-if [[ ! -L /opt/ava/models ]]; then
-  rm -rf /opt/ava/models
-  ln -s "${DATA_DIR}/models" /opt/ava/models
-fi
+# Never mutate /opt/ava at runtime. Pterodactyl may mount the image root read-only.
+/opt/floodman/scripts/prepare_ava_runtime.sh
+
+# AVA config and model persistence are prepared in the writable runtime worktree.
 if [[ -d /opt/model-cache && ! -f "${DATA_DIR}/model-cache/.seeded" ]]; then
   cp -a /opt/model-cache/. "${DATA_DIR}/model-cache/" 2>/dev/null || true
   touch "${DATA_DIR}/model-cache/.seeded"
@@ -134,6 +131,7 @@ if [[ "${ASTERISK_MODE:-embedded}" == "embedded" ]]; then
   cp /opt/floodman/scripts/agi_common.py "${AGI_DIR}/"
   cp /opt/floodman/scripts/agi_gate_start.py "${AGI_DIR}/"
   cp /opt/floodman/scripts/agi_gate_finish.py "${AGI_DIR}/"
+  cp /opt/floodman/scripts/agi_record_finalize.py "${AGI_DIR}/"
   chmod 755 "${AGI_DIR}"/agi_*.py
   mkdir -p "${DATA_DIR}/asterisk/varlib"
   SOUND_SOURCE=""
@@ -146,7 +144,7 @@ if [[ "${ASTERISK_MODE:-embedded}" == "embedded" ]]; then
 fi
 
 if [[ "${AUTO_INSTALL_LOCAL_MODELS:-false}" == "true" && ! -f "${DATA_DIR}/models/.floodman-models-ready" ]]; then
-  /opt/ava/scripts/model_setup.sh \
+  "${AVA_RUNTIME_DIR}/scripts/model_setup.sh" \
     --tier "${LOCAL_MODEL_TIER:-LIGHT}" \
     --assume-yes \
     --language "${LOCAL_MODEL_LANGUAGE:-en-US}"
@@ -175,6 +173,7 @@ cat <<BANNER
  SIP mode: ${SIP_TRUNK_MODE:-disabled}
  Asterisk mode: ${ASTERISK_MODE:-embedded}
  AVA provider: ${AVA_PROVIDER:-local_hybrid}
+ AVA writable runtime: ${AVA_RUNTIME_DIR}
  Persistent data: ${DATA_DIR}
 ============================================================
 BANNER
