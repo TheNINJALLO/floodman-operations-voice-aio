@@ -28,8 +28,22 @@ mkdir -p \
 
 RUNTIME_ENV="${DATA_DIR}/runtime.env"
 if [[ -f "${RUNTIME_ENV}" ]]; then
-  # shellcheck disable=SC1090
-  source "${RUNTIME_ENV}"
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    export "${line}"
+  done < <(
+    PYTHONPATH=/opt/floodman/scripts /opt/venv/bin/python - "${RUNTIME_ENV}" <<'PY'
+import os
+import sys
+
+from envfile import load_env_file
+
+before = dict(os.environ)
+load_env_file(sys.argv[1], override=True, required=True)
+for key, value in sorted(os.environ.items()):
+    if before.get(key) != value:
+        print(f"{key}={value}")
+PY
+  )
 fi
 
 touch "${RUNTIME_ENV}"
