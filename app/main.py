@@ -1122,7 +1122,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return {"ok": True, "recording_id": row.get("id"), "enabled": True}
         except Exception as exc:  # noqa: BLE001
             logger.warning("recording_start error: %s", exc)
-            return {"ok": False, "error": str(exc)[:200]}
+            return {"ok": False, "error": "recording_start_failed"}
 
     @app.post("/internal/recordings/classify", dependencies=[Depends(require_internal)])
     async def recording_classify(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
@@ -1188,7 +1188,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return {"ok": True, "recording": row}
         except Exception as exc:  # noqa: BLE001
             logger.error("recording_finalize error for %s: %s", asterisk_id, exc)
-            return {"ok": False, "error": str(exc)[:200]}
+            return {"ok": False, "error": "recording_finalize_failed"}
 
     # ── Admin recording endpoints ─────────────────────────────────────────────
 
