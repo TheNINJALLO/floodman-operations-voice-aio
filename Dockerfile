@@ -3,6 +3,8 @@ FROM ubuntu:24.04 AS base
 ARG DEBIAN_FRONTEND=noninteractive
 ARG AVA_COMMIT=18d4e769335f3b643aca80e084c7e66f0969491e
 ARG PRELOAD_WHISPER_MODEL=tiny.en
+ARG PIPER_TTS_VERSION=1.6.0
+ARG LLAMA_CPP_PYTHON_VERSION=0.3.34
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
@@ -28,6 +30,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     libportaudio2 \
     libsndfile1 \
+    ninja-build \
     pkg-config \
     python3 \
     python3-dev \
@@ -47,7 +50,10 @@ RUN git init /opt/ava \
     && git -C /opt/ava fetch --depth 1 origin ${AVA_COMMIT} \
     && git -C /opt/ava checkout --detach FETCH_HEAD \
     && test "$(git -C /opt/ava rev-parse HEAD)" = "${AVA_COMMIT}" \
+    && test -f /opt/ava/local_ai_server/server.py \
     && python3 /opt/floodman-build/patch_ava.py --ava-root /opt/ava \
+    && grep -q "Floodman JSON body safety patch" /opt/ava/src/tools/http/in_call_lookup.py \
+    && grep -q "Floodman Piper API compatibility patch" /opt/ava/local_ai_server/server.py \
     && rm -f /opt/floodman-build/patch_ava.py
 
 RUN pip install --no-cache-dir -r /opt/ava/requirements.txt \
@@ -85,9 +91,11 @@ ENTRYPOINT ["/opt/floodman/scripts/entrypoint.sh"]
 
 FROM runtime-base AS full
 
-RUN pip install --no-cache-dir vosk==0.3.45 piper-tts==1.2.0 \
+RUN pip install --no-cache-dir vosk==0.3.45 "piper-tts==${PIPER_TTS_VERSION}" \
+    && python -c "from piper import PiperVoice; assert callable(getattr(PiperVoice, 'load', None)); assert callable(getattr(PiperVoice, 'synthesize_wav', None))" \
     && CMAKE_ARGS="-DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_TOOLS=OFF" \
-       pip install --no-cache-dir llama-cpp-python==0.3.34 \
+       pip install --no-cache-dir "llama-cpp-python==${LLAMA_CPP_PYTHON_VERSION}" \
+    && python -c "from llama_cpp import Llama; assert Llama is not None" \
     && if [ -n "$PRELOAD_WHISPER_MODEL" ]; then \
          /opt/venv/bin/python -c "from faster_whisper import WhisperModel; WhisperModel('${PRELOAD_WHISPER_MODEL}', device='cpu', compute_type='int8')"; \
        fi \

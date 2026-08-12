@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """Apply narrow, deterministic Floodman compatibility patches to pinned AVA.
 
-AVA's generic HTTP tool templates substitute values directly into JSON strings.
-A customer value containing quotes, backslashes, tabs, or newlines can therefore
-produce invalid JSON. Floodman's tool templates place dynamic values inside JSON
-string literals, so this patch adds JSON-string-safe substitution for request
-bodies while preserving AVA's existing URL/header substitution behavior.
+The patch set provides two protections:
 
-The patch is intentionally exact and idempotent. It exits non-zero when the
-pinned upstream source no longer matches the expected structure, forcing a
-review before an AVA pin is changed.
+1. JSON-safe substitutions for AVA's pre-call and in-call HTTP request bodies.
+2. Compatibility with the current Piper Python API, which writes WAV output via
+   ``PiperVoice.synthesize_wav`` instead of the legacy two-argument
+   ``PiperVoice.synthesize`` call.
+
+Every transformation is exact and idempotent. The script exits non-zero when a
+required source location in the pinned AVA checkout no longer matches, forcing a
+review instead of silently building an unpatched image.
 """
 
 from __future__ import annotations
@@ -17,7 +18,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-PATCH_MARKER = "Floodman JSON body safety patch"
+JSON_PATCH_MARKER = "Floodman JSON body safety patch"
+PIPER_PATCH_MARKER = "Floodman Piper API compatibility patch"
 
 
 class PatchError(RuntimeError):
@@ -34,7 +36,7 @@ def _replace_once(text: str, old: str, new: str, *, label: str) -> str:
 def patch_in_call(path: Path) -> bool:
     """Patch AVA's in-call HTTP tool to JSON-escape body substitutions."""
     text = path.read_text(encoding="utf-8")
-    if PATCH_MARKER in text:
+    if JSON_PATCH_MARKER in text:
         return False
 
     text = _replace_once(
@@ -61,7 +63,7 @@ def patch_in_call(path: Path) -> bool:
 def patch_pre_call(path: Path) -> bool:
     """Patch AVA's pre-call HTTP body substitution with the same safety rule."""
     text = path.read_text(encoding="utf-8")
-    if PATCH_MARKER in text:
+    if JSON_PATCH_MARKER in text:
         return False
 
     text = _replace_once(
@@ -85,6 +87,34 @@ def patch_pre_call(path: Path) -> bool:
     return True
 
 
+def patch_piper_server(path: Path) -> bool:
+    """Use Piper's current WAV-writing API while preserving legacy support."""
+    text = path.read_text(encoding="utf-8")
+    if PIPER_PATCH_MARKER in text:
+        return False
+
+    old_call = "                self.tts_model.synthesize(text, wav_file)\n"
+    new_call = '''                # Floodman Piper API compatibility patch. Piper 1.3+ returns\n                # chunks from synthesize(), so passing wav_file to it can produce\n                # a valid but silent WAV. Prefer synthesize_wav() when available.\n                synthesize_wav = getattr(self.tts_model, \"synthesize_wav\", None)\n                if callable(synthesize_wav):\n                    synthesize_wav(text, wav_file)\n                else:\n                    self.tts_model.synthesize(text, wav_file)\n'''
+    text = _replace_once(
+        text,
+        old_call,
+        new_call,
+        label=f"{path} Piper synthesis call",
+    )
+
+    old_hint = "Build with INCLUDE_PIPER=true or install piper-tts==1.2.0."
+    new_hint = "Install the pinned Floodman Piper package or enable another TTS backend."
+    text = _replace_once(
+        text,
+        old_hint,
+        new_hint,
+        label=f"{path} Piper installation hint",
+    )
+
+    path.write_text(text, encoding="utf-8")
+    return True
+
+
 def patch_ava(ava_root: Path) -> list[Path]:
     targets = [
         (ava_root / "src/tools/http/in_call_lookup.py", patch_in_call),
@@ -96,6 +126,18 @@ def patch_ava(ava_root: Path) -> list[Path]:
             raise PatchError(f"required AVA source file is missing: {path}")
         if patcher(path):
             changed.append(path)
+
+    # The small unit fixtures used by this project model only AVA's HTTP tools.
+    # A real AVA checkout always has local_ai_server/, and in that case the
+    # server.py compatibility patch is mandatory and fails closed if missing.
+    local_ai_dir = ava_root / "local_ai_server"
+    if local_ai_dir.exists():
+        piper_server = local_ai_dir / "server.py"
+        if not piper_server.is_file():
+            raise PatchError(f"required AVA source file is missing: {piper_server}")
+        if patch_piper_server(piper_server):
+            changed.append(piper_server)
+
     return changed
 
 
