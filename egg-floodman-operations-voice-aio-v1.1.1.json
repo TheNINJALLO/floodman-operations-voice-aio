@@ -1,0 +1,605 @@
+{
+    "_comment": "DO NOT EDIT: FILE GENERATED FOR PTERODACTYL PANEL - PTERODACTYL.IO",
+    "_meta": {
+        "version": "PTDL_v2",
+        "update_url": null
+    },
+    "exported_at": "2026-08-11T23:59:00-04:00",
+    "name": "Floodman Operations Voice AIO v1.1.1",
+    "author": "operations@floodman.com",
+    "description": "Production-hardened all-in-one Floodman AI phone operations stack with embedded Asterisk, AVA, a Google-aware call gate, Twilio Elastic SIP Trunking runtime profiles with external one-time provisioning, controlled two-way test calls, inbound intake, scheduling, billing callbacks, customer recovery campaigns, Roomflow synchronization, diagnostics, and a responsive operations dashboard. The primary allocation is the HTTPS dashboard. Add SIP signaling and the configured RTP UDP range as separate allocations.",
+    "features": [],
+    "docker_images": {
+        "Floodman AIO v1.1.1-lite (recommended)": "ghcr.io/theninjallo/floodman-operations-voice-aio:v1.1.1-lite",
+        "Floodman AIO latest": "ghcr.io/theninjallo/floodman-operations-voice-aio:latest",
+        "Floodman AIO lite": "ghcr.io/theninjallo/floodman-operations-voice-aio:lite",
+        "Floodman AIO v1.1.1": "ghcr.io/theninjallo/floodman-operations-voice-aio:v1.1.1"
+    },
+    "file_denylist": [],
+    "startup": "bash /opt/floodman/scripts/entrypoint.sh",
+    "config": {
+        "files": "{}",
+        "startup": "{\r\n  \"done\": \"Floodman Operations Voice AIO\",\r\n  \"userInteraction\": []\r\n}",
+        "logs": "{}",
+        "stop": "^C"
+    },
+    "scripts": {
+        "installation": {
+            "script": "#!/bin/bash\nset -e\nmkdir -p /mnt/server/data /mnt/server/data/tls\ncat > /mnt/server/README-PTERODACTYL.txt <<'EOF'\nFloodman Operations Voice AIO v1.1.1 is included in its Docker image.\nPersistent data is created under /home/container/data at first launch.\nFor the first boot keep SIP_TRUNK_MODE=disabled, OUTBOUND_ENABLED=false,\nTEST_CALLS_ENABLED=false, and STARTUP_PREFLIGHT=warn.\n\nTwilio testing requires:\n- the dashboard allocation\n- UDP 5060 for initial SIP testing, or TCP 5061 for secure trunking\n- every UDP port in RTP_START through RTP_END\n- PUBLIC_IP set to the public address advertised in SIP and SDP\n- Twilio trunk/domain, credential, number, and origination URI settings\n\nThe generated ADMIN_TOKEN is stored in /home/container/data/runtime.env and is\nnot printed unless PRINT_BOOTSTRAP_SECRETS=true.\nEOF\n",
+            "container": "ghcr.io/pterodactyl/installers:debian",
+            "entrypoint": "bash"
+        }
+    },
+    "variables": [
+        {
+            "name": "Runtime Environment",
+            "description": "Use production for live calls.",
+            "env_variable": "ENVIRONMENT",
+            "default_value": "production",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|in:production,staging,development",
+            "field_type": "text"
+        },
+        {
+            "name": "Public Dashboard URL",
+            "description": "Externally reachable HTTPS base URL used for the dashboard and signed customer upload links, without a trailing slash.",
+            "env_variable": "PUBLIC_BASE_URL",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|url|max:255",
+            "field_type": "text"
+        },
+        {
+            "name": "Trusted Dashboard Hosts",
+            "description": "Comma-separated Host header allowlist. Include the PUBLIC_BASE_URL hostname.",
+            "env_variable": "TRUSTED_HOSTS",
+            "default_value": "localhost,127.0.0.1",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:1024",
+            "field_type": "text"
+        },
+        {
+            "name": "Trusted Reverse Proxy IPs",
+            "description": "Comma-separated proxy IPs allowed to supply forwarded headers. Never use * in production.",
+            "env_variable": "TRUSTED_PROXY_IPS",
+            "default_value": "127.0.0.1",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:1024",
+            "field_type": "text"
+        },
+        {
+            "name": "Force HTTPS Redirect",
+            "description": "Enable only after the reverse proxy supplies a trusted X-Forwarded-Proto header.",
+            "env_variable": "FORCE_HTTPS",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "Enable API Documentation",
+            "description": "Expose OpenAPI and Swagger only during controlled testing.",
+            "env_variable": "ENABLE_API_DOCS",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "Print Bootstrap Secrets",
+            "description": "Keep false so the admin token is stored only in data/runtime.env.",
+            "env_variable": "PRINT_BOOTSTRAP_SECRETS",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "Startup Preflight",
+            "description": "warn reports incomplete production settings; strict blocks startup; off disables the check.",
+            "env_variable": "STARTUP_PREFLIGHT",
+            "default_value": "warn",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|in:off,warn,strict",
+            "field_type": "text"
+        },
+        {
+            "name": "Default Time Zone",
+            "description": "IANA time zone used for scheduling and calling windows.",
+            "env_variable": "DEFAULT_TIMEZONE",
+            "default_value": "America/Detroit",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:64",
+            "field_type": "text"
+        },
+        {
+            "name": "SIP Trunk Mode",
+            "description": "Leave disabled for the first boot. Use twilio for Twilio Elastic SIP Trunking, registration for registered carriers, or ip for IP-authenticated carriers.",
+            "env_variable": "SIP_TRUNK_MODE",
+            "default_value": "disabled",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|in:disabled,registration,ip,twilio",
+            "field_type": "text"
+        },
+        {
+            "name": "SIP Port",
+            "description": "Public UDP allocation used for SIP signaling. Add this allocation to the Pterodactyl server.",
+            "env_variable": "SIP_PORT",
+            "default_value": "5060",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|numeric|min:1|max:65535",
+            "field_type": "text"
+        },
+        {
+            "name": "SIP TLS Port",
+            "description": "Asterisk TLS signaling port used by the secure Twilio profile.",
+            "env_variable": "SIP_TLS_PORT",
+            "default_value": "5061",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|numeric|min:1|max:65535",
+            "field_type": "text"
+        },
+        {
+            "name": "RTP Start Port",
+            "description": "First UDP media allocation. The full range through RTP_END must be assigned to this server.",
+            "env_variable": "RTP_START",
+            "default_value": "10000",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|numeric|min:1024|max:65535",
+            "field_type": "text"
+        },
+        {
+            "name": "RTP End Port",
+            "description": "Last UDP media allocation. Must be greater than or equal to RTP_START.",
+            "env_variable": "RTP_END",
+            "default_value": "10040",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|numeric|min:1024|max:65535",
+            "field_type": "text"
+        },
+        {
+            "name": "Public IP",
+            "description": "Public IPv4 or IPv6 address advertised to the SIP carrier for NAT traversal.",
+            "env_variable": "PUBLIC_IP",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|ip",
+            "field_type": "text"
+        },
+        {
+            "name": "Local Network CIDR",
+            "description": "Container or Wings network CIDR used by Asterisk NAT configuration.",
+            "env_variable": "LOCAL_NET",
+            "default_value": "172.16.0.0/12",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:64",
+            "field_type": "text"
+        },
+        {
+            "name": "SIP Codecs",
+            "description": "Comma-separated codecs. Twilio testing should begin with ulaw.",
+            "env_variable": "SIP_CODECS",
+            "default_value": "ulaw",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:128",
+            "field_type": "text"
+        },
+        {
+            "name": "Twilio Termination URI",
+            "description": "Same Twilio FQDN used by Asterisk for outbound calls.",
+            "env_variable": "TWILIO_TERMINATION_URI",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:255",
+            "field_type": "text"
+        },
+        {
+            "name": "Twilio SIP Username",
+            "description": "Digest-auth username attached to the Twilio trunk credential list.",
+            "env_variable": "TWILIO_SIP_USERNAME",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:32",
+            "field_type": "text"
+        },
+        {
+            "name": "Twilio SIP Password",
+            "description": "Runtime SIP digest password. Provision the Twilio trunk outside the long-running server and paste only this SIP secret here.",
+            "env_variable": "TWILIO_SIP_PASSWORD",
+            "default_value": "",
+            "user_viewable": false,
+            "user_editable": true,
+            "rules": "nullable|string|min:12|max:255",
+            "field_type": "text"
+        },
+        {
+            "name": "Twilio Phone Number",
+            "description": "Twilio-owned E.164 DID associated with the Elastic SIP Trunk.",
+            "env_variable": "TWILIO_PHONE_NUMBER",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:32",
+            "field_type": "text"
+        },
+        {
+            "name": "Twilio Caller ID Number",
+            "description": "Twilio-owned or verified E.164 number used for outbound calls.",
+            "env_variable": "TWILIO_FROM_NUMBER",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:32",
+            "field_type": "text"
+        },
+        {
+            "name": "Twilio Secure Trunking",
+            "description": "Enable TLS signaling and SDES-SRTP after certificate paths and TCP 5061 are ready.",
+            "env_variable": "TWILIO_SECURE_TRUNKING",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "Twilio Symmetric RTP",
+            "description": "Keep false when PUBLIC_IP and SDP are correct. Enable only as a diagnosed NAT workaround because source-address latching weakens media-path restrictions.",
+            "env_variable": "TWILIO_RTP_SYMMETRIC",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "SIP TLS Certificate Path",
+            "description": "Absolute path to the full certificate chain inside the server.",
+            "env_variable": "SIP_TLS_CERT_FILE",
+            "default_value": "/home/container/data/tls/fullchain.pem",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:512",
+            "field_type": "text"
+        },
+        {
+            "name": "SIP TLS Private Key Path",
+            "description": "Absolute path to the matching private key inside the server.",
+            "env_variable": "SIP_TLS_KEY_FILE",
+            "default_value": "/home/container/data/tls/privkey.pem",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:512",
+            "field_type": "text"
+        },
+        {
+            "name": "SIP TLS CA Bundle",
+            "description": "CA bundle used to verify Twilio TLS certificates.",
+            "env_variable": "SIP_TLS_CA_FILE",
+            "default_value": "/etc/ssl/certs/ca-certificates.crt",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:512",
+            "field_type": "text"
+        },
+        {
+            "name": "Verify Twilio TLS Certificate",
+            "description": "Keep enabled in production.",
+            "env_variable": "SIP_TLS_VERIFY_SERVER",
+            "default_value": "1",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "Enable Controlled Test Calls",
+            "description": "Allows only numbers listed in TEST_CALL_ALLOWLIST to receive the built-in two-way echo test.",
+            "env_variable": "TEST_CALLS_ENABLED",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "Test Call Allowlist",
+            "description": "Comma-separated operator-owned E.164 numbers. Leave blank while test calls are disabled.",
+            "env_variable": "TEST_CALL_ALLOWLIST",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:1024",
+            "field_type": "text"
+        },
+        {
+            "name": "Enable Twilio Play Test Extensions",
+            "description": "Adds internal extensions 8990 and 8991 for Twilio free trunk verification numbers.",
+            "env_variable": "ENABLE_CARRIER_TEST_EXTENSIONS",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "SIP Server",
+            "description": "Carrier SIP hostname or IP address.",
+            "env_variable": "SIP_SERVER",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:255",
+            "field_type": "text"
+        },
+        {
+            "name": "SIP Username",
+            "description": "Registration username when SIP trunk mode is registration.",
+            "env_variable": "SIP_USERNAME",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:255",
+            "field_type": "text"
+        },
+        {
+            "name": "SIP Password",
+            "description": "Registration password. Stored as a Pterodactyl environment variable and never written to repository files.",
+            "env_variable": "SIP_PASSWORD",
+            "default_value": "",
+            "user_viewable": false,
+            "user_editable": true,
+            "rules": "nullable|string|max:255",
+            "field_type": "text"
+        },
+        {
+            "name": "SIP From User",
+            "description": "DID or carrier account identifier used in outbound SIP requests.",
+            "env_variable": "SIP_FROM_USER",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:64",
+            "field_type": "text"
+        },
+        {
+            "name": "SIP From Domain",
+            "description": "Optional carrier From domain.",
+            "env_variable": "SIP_FROM_DOMAIN",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:255",
+            "field_type": "text"
+        },
+        {
+            "name": "SIP Match Address",
+            "description": "Carrier signaling IP or CIDR used for an IP-authenticated trunk.",
+            "env_variable": "SIP_MATCH",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:255",
+            "field_type": "text"
+        },
+        {
+            "name": "SIP Outbound Proxy",
+            "description": "Optional carrier outbound proxy URI.",
+            "env_variable": "SIP_OUTBOUND_PROXY",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:255",
+            "field_type": "text"
+        },
+        {
+            "name": "Google Tracking DIDs",
+            "description": "Comma-separated DIDs primarily used by Google Ads or Local Services. These supplement audio classification and do not replace it.",
+            "env_variable": "GOOGLE_DIDS",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:1024",
+            "field_type": "text"
+        },
+        {
+            "name": "Live Transfer Number",
+            "description": "E.164 number used when a caller requests a human representative.",
+            "env_variable": "FLOODMAN_LIVE_NUMBER",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:32",
+            "field_type": "text"
+        },
+        {
+            "name": "Emergency Transfer Number",
+            "description": "E.164 number used for urgent active-water and safety escalations.",
+            "env_variable": "FLOODMAN_EMERGENCY_NUMBER",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:32",
+            "field_type": "text"
+        },
+        {
+            "name": "Billing Transfer Number",
+            "description": "E.164 number used when billing assistance requires a person.",
+            "env_variable": "FLOODMAN_BILLING_NUMBER",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:32",
+            "field_type": "text"
+        },
+        {
+            "name": "Estimating Transfer Number",
+            "description": "E.164 number used for estimating and project-scope escalations.",
+            "env_variable": "FLOODMAN_ESTIMATING_NUMBER",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:32",
+            "field_type": "text"
+        },
+        {
+            "name": "Outbound Caller ID Number",
+            "description": "Floodman-controlled caller ID number approved by the selected carrier.",
+            "env_variable": "OUTBOUND_CALLER_ID_NUMBER",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:32",
+            "field_type": "text"
+        },
+        {
+            "name": "AVA Provider",
+            "description": "AVA provider/pipeline identifier. The supplied default uses AVA's local-hybrid pipeline.",
+            "env_variable": "AVA_PROVIDER",
+            "default_value": "local_hybrid",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:64",
+            "field_type": "text"
+        },
+        {
+            "name": "Auto-install AVA Local Models",
+            "description": "Downloads the selected AVA model tier into persistent storage at first launch. Leave false until resources have been reviewed.",
+            "env_variable": "AUTO_INSTALL_LOCAL_MODELS",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "AVA Local Model Tier",
+            "description": "AVA model installation tier used when auto-install is enabled.",
+            "env_variable": "LOCAL_MODEL_TIER",
+            "default_value": "LIGHT",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|in:LIGHT,BALANCED,QUALITY",
+            "field_type": "text"
+        },
+        {
+            "name": "Call Gate Enabled",
+            "description": "Enables the pre-greeting Google announcement and automated-caller classifier.",
+            "env_variable": "GATE_ENABLED",
+            "default_value": "1",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "Direct Caller Greeting Delay",
+            "description": "Maximum silence before the call gate fails open to the normal Floodman greeting. Google announcements can continue through the full gate window.",
+            "env_variable": "GATE_NO_SPEECH_TIMEOUT_SECONDS",
+            "default_value": "3.5",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|numeric|min:1|max:8",
+            "field_type": "text"
+        },
+        {
+            "name": "Call Gate Whisper Model",
+            "description": "faster-whisper model used for the opening call classifier.",
+            "env_variable": "FASTER_WHISPER_MODEL",
+            "default_value": "tiny.en",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:128",
+            "field_type": "text"
+        },
+        {
+            "name": "Roomflow Enabled",
+            "description": "Enables remote Roomflow synchronization. The local operational ledger remains active either way.",
+            "env_variable": "ROOMFLOW_ENABLED",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "Roomflow Base URL",
+            "description": "Base URL for the Floodman Roomflow deployment.",
+            "env_variable": "ROOMFLOW_BASE_URL",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|url|max:255",
+            "field_type": "text"
+        },
+        {
+            "name": "Roomflow API Token",
+            "description": "Bearer token used by the configurable Roomflow adapter.",
+            "env_variable": "ROOMFLOW_TOKEN",
+            "default_value": "",
+            "user_viewable": false,
+            "user_editable": true,
+            "rules": "nullable|string|max:2048",
+            "field_type": "text"
+        },
+        {
+            "name": "Roomflow Company ID",
+            "description": "Company identifier sent through X-COMPANY-ID.",
+            "env_variable": "ROOMFLOW_COMPANY_ID",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:128",
+            "field_type": "text"
+        },
+        {
+            "name": "AMI Enabled",
+            "description": "Enables Asterisk Manager Interface access for scheduled outbound calls. Keep false until outbound configuration is complete.",
+            "env_variable": "AMI_ENABLED",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "Outbound Campaigns Enabled",
+            "description": "Master switch for automated outbound calling. Compliance eligibility checks still run on every job.",
+            "env_variable": "OUTBOUND_ENABLED",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "Outbound Concurrency",
+            "description": "Maximum simultaneous outbound jobs attempted by the worker.",
+            "env_variable": "OUTBOUND_CONCURRENCY",
+            "default_value": "3",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|numeric|min:1|max:20",
+            "field_type": "text"
+        }
+    ]
+}

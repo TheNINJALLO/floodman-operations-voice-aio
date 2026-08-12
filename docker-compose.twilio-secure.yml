@@ -1,0 +1,5 @@
+services:
+  floodman-voice:
+    volumes:
+      - floodman_data:/home/container/data
+      - ./secrets/sip:/run/secrets/floodman-sip:ro

@@ -1,0 +1,29 @@
+services:
+  floodman-voice:
+    environment:
+      PUBLIC_BASE_URL: "https://${VOICE_DOMAIN}"
+      TRUSTED_HOSTS: "${VOICE_DOMAIN},localhost,127.0.0.1"
+      TRUSTED_PROXY_IPS: "${TRUSTED_PROXY_IPS:-127.0.0.1,172.16.0.0/12}"
+      FORCE_HTTPS: "true"
+
+  caddy:
+    image: caddy:2.11.4-alpine
+    restart: unless-stopped
+    depends_on:
+      - floodman-voice
+    environment:
+      VOICE_DOMAIN: "${VOICE_DOMAIN}"
+    ports:
+      - "80:80/tcp"
+      - "443:443/tcp"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/caddy/Caddyfile.docker:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  caddy_data:
+  caddy_config:

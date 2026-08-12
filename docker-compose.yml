@@ -1,0 +1,39 @@
+services:
+  floodman-voice:
+    build:
+      context: .
+      args:
+        AVA_COMMIT: 18d4e769335f3b643aca80e084c7e66f0969491e
+        PRELOAD_WHISPER_MODEL: "tiny.en"
+      target: full
+    image: floodman-operations-voice-aio:1.1.1
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 35s
+    env_file: .env
+    ports:
+      - "${DASHBOARD_BIND_IP:-127.0.0.1}:${DASHBOARD_PORT:-9000}:9000/tcp"
+      - "${SIP_BIND_IP:-0.0.0.0}:${SIP_PORT:-5060}:${SIP_PORT:-5060}/udp"
+      - "${SIP_BIND_IP:-0.0.0.0}:${SIP_TLS_PORT:-5061}:${SIP_TLS_PORT:-5061}/tcp"
+      - "${SIP_BIND_IP:-0.0.0.0}:${RTP_START:-10000}-${RTP_END:-10040}:${RTP_START:-10000}-${RTP_END:-10040}/udp"
+    volumes:
+      - floodman_data:/home/container/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "25m"
+        max-file: "5"
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    pids_limit: 1024
+
+volumes:
+  floodman_data:

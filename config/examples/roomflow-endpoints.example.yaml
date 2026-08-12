@@ -1,0 +1,52 @@
+# Merge the endpoint mappings below into config/floodman.yaml under roomflow.endpoints.
+# Replace every placeholder path with the exact route from your Roomflow deployment.
+roomflow:
+  endpoints:
+    lookup_customer:
+      method: GET
+      path: "/api/v1/REPLACE_WITH_CUSTOMER_SEARCH_ROUTE"
+      query_keys: [phone, name, address]
+    create_lead:
+      method: POST
+      path: "/api/v1/REPLACE_WITH_LEAD_CREATE_ROUTE"
+    create_emergency_case:
+      method: POST
+      path: "/api/v1/REPLACE_WITH_EMERGENCY_ROUTE"
+    check_availability:
+      method: GET
+      path: "/api/v1/REPLACE_WITH_AVAILABILITY_ROUTE"
+      query_keys: [service, preferred_date, address, timezone]
+    schedule_inspection:
+      method: POST
+      path: "/api/v1/REPLACE_WITH_APPOINTMENT_CREATE_ROUTE"
+    reschedule_inspection:
+      method: PATCH
+      path: "/api/v1/REPLACE_WITH_APPOINTMENT_ROUTE/{appointment_id}"
+    verify_customer_identity:
+      method: POST
+      path: "/api/v1/REPLACE_WITH_VERIFICATION_ROUTE"
+    get_billing_summary:
+      method: GET
+      path: "/api/v1/REPLACE_WITH_INVOICE_ROUTE"
+      query_keys: [customer_id, invoice_id]
+    send_payment_link:
+      method: POST
+      path: "/api/v1/REPLACE_WITH_PAYMENT_LINK_ROUTE"
+    create_callback_task:
+      method: POST
+      path: "/api/v1/REPLACE_WITH_CALLBACK_TASK_ROUTE"
+    send_photo_upload_link:
+      method: POST
+      path: "/api/v1/REPLACE_WITH_MESSAGE_ROUTE"
+    record_upload:
+      method: POST
+      path: "/api/v1/REPLACE_WITH_ATTACHMENT_ROUTE"
+    record_call_outcome:
+      method: POST
+      path: "/api/v1/REPLACE_WITH_CALL_LOG_ROUTE"
+    record_opt_out:
+      method: POST
+      path: "/api/v1/REPLACE_WITH_CONSENT_ROUTE"
+    record_security_event:
+      method: POST
+      path: "/api/v1/REPLACE_WITH_SECURITY_EVENT_ROUTE"
