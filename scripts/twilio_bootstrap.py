@@ -624,7 +624,17 @@ def verify(api: TwilioAPI, desired: Desired) -> dict[str, Any]:
 
 
 def print_json(value: Any) -> None:
-    print(json.dumps(value, indent=2, sort_keys=True, default=str))
+    def redact(item: Any, *, key: str = "") -> Any:
+        if isinstance(item, dict):
+            return {sub_key: redact(sub_value, key=sub_key) for sub_key, sub_value in item.items()}
+        if isinstance(item, list):
+            return [redact(entry, key=key) for entry in item]
+        lowered = key.lower()
+        if any(token in lowered for token in ("password", "secret", "token", "auth", "origination_uri")):
+            return "******" if item not in {"", None} else item
+        return item
+
+    print(json.dumps(redact(value), indent=2, sort_keys=True, default=str))
 
 
 def main() -> int:

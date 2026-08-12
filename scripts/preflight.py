@@ -23,21 +23,53 @@ from app.diagnostics import static_configuration_checks
 from envfile import EnvFileError, load_env_files
 
 E164 = re.compile(r"^\+[1-9][0-9]{7,14}$")
-SIP_URI = re.compile(
-    r"^sip:(?:[^@;\s]+@)?(?P<host>\[[0-9A-Fa-f:]+\]|[A-Za-z0-9.-]+)"
-    r"(?::(?P<port>[0-9]{1,5}))?(?P<params>(?:;[^?\s]+)*)?(?:\?.*)?$",
-    re.IGNORECASE,
-)
+SIP_HOST = re.compile(r"^(?:\[[0-9A-Fa-f:]+\]|[A-Za-z0-9.-]+)$")
 
 
 def parse_sip_uri(value: str) -> tuple[str, int | None, dict[str, str]] | None:
-    match = SIP_URI.fullmatch(value.strip())
-    if not match:
+    raw = value.strip()
+    if not raw.lower().startswith("sip:"):
         return None
-    host = match.group("host").strip("[]").lower()
-    port = int(match.group("port")) if match.group("port") else None
+    remainder = raw[4:].split("?", 1)[0]
+    if not remainder or any(char.isspace() for char in remainder):
+        return None
+
+    address, _, params_text = remainder.partition(";")
+    if "@" in address:
+        _, address = address.rsplit("@", 1)
+    if not address:
+        return None
+
+    port: int | None = None
+    if address.startswith("["):
+        closing = address.find("]")
+        if closing <= 0:
+            return None
+        host = address[1:closing].lower()
+        if not SIP_HOST.fullmatch(f"[{host}]"):
+            return None
+        suffix = address[closing + 1 :]
+        if suffix:
+            if not suffix.startswith(":") or not suffix[1:].isdigit():
+                return None
+            port = int(suffix[1:])
+    else:
+        if ":" in address:
+            host, port_text = address.rsplit(":", 1)
+            if not host or not port_text.isdigit():
+                return None
+            host = host.lower()
+            port = int(port_text)
+        else:
+            host = address.lower()
+        if not SIP_HOST.fullmatch(host):
+            return None
+
+    if port is not None and not 1 <= port <= 65535:
+        return None
+
     params: dict[str, str] = {}
-    for item in (match.group("params") or "").split(";"):
+    for item in params_text.split(";") if params_text else ():
         if not item:
             continue
         key, _, raw_value = item.partition("=")

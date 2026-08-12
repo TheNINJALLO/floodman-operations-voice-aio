@@ -137,6 +137,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--include-runtime-secrets",
+        dest="include_runtime_env_file",
         action="store_true",
         help="Include DATA_DIR/runtime.env; encrypt and tightly restrict the resulting archive",
     )
@@ -190,10 +191,10 @@ def main() -> int:
             included.append("config/")
         if copy_file(data_dir / "twilio/provisioning.json", staging_root / "twilio/provisioning.json"):
             included.append("twilio/provisioning.json")
-        if args.include_runtime_secrets and copy_file(
-            data_dir / "runtime.env", staging_root / "secrets/runtime.env"
+        if args.include_runtime_env_file and copy_file(
+            data_dir / "runtime.env", staging_root / "runtime/runtime.env"
         ):
-            included.append("secrets/runtime.env")
+            included.append("runtime/runtime.env")
         if args.include_media:
             for folder in ("uploads", "recordings"):
                 if copy_tree(data_dir / folder, staging_root / folder):
@@ -218,7 +219,7 @@ def main() -> int:
             "created_at": datetime.now(timezone.utc).isoformat(),
             "data_dir": str(data_dir),
             "includes_media": args.include_media,
-            "includes_runtime_secrets": args.include_runtime_secrets,
+            "includes_runtime_env_file": args.include_runtime_env_file,
             "included_sections": included,
             "files": files,
             "restore_note": (
@@ -252,7 +253,7 @@ def main() -> int:
                 "size_bytes": final_archive.stat().st_size,
                 "pruned": removed,
                 "includes_media": args.include_media,
-                "includes_runtime_secrets": args.include_runtime_secrets,
+                "includes_runtime_env_file": args.include_runtime_env_file,
             },
             indent=2,
         )

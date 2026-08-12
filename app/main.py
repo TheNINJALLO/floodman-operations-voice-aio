@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import hashlib
 import hmac
 import logging
@@ -126,8 +127,11 @@ def _matches_upload_signature(content_type: str, header: bytes) -> bool:
 
 
 def _upload_page(title: str, message: str, *, success: bool = False, token: str = "") -> str:
+    safe_title = html.escape(title, quote=True)
+    safe_message = html.escape(message, quote=True)
+    safe_token = html.escape(token, quote=True)
     button = (
-        f'<form action="/upload/{token}" method="post" enctype="multipart/form-data">'
+        f'<form action="/upload/{safe_token}" method="post" enctype="multipart/form-data">'
         '<label>Property photos or documents</label>'
         '<input type="file" name="files" accept="image/*,application/pdf" multiple required>'
         '<label>Optional note</label><textarea name="note" rows="4" placeholder="Tell us what the photos show"></textarea>'
@@ -138,10 +142,10 @@ def _upload_page(title: str, message: str, *, success: bool = False, token: str 
     state_class = "success" if success else ""
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{title}</title><style>
+<title>{safe_title}</title><style>
 :root{{color-scheme:dark}}*{{box-sizing:border-box}}body{{margin:0;background:#07111d;color:#e9f2f7;font-family:Inter,system-ui,sans-serif;min-height:100vh;display:grid;place-items:center;padding:24px}}
 main{{width:min(680px,100%);background:#0d1c2a;border:1px solid #21425a;border-radius:22px;padding:28px;box-shadow:0 24px 70px #0008}}h1{{margin:0 0 8px;font-size:clamp(1.8rem,5vw,2.8rem)}}p{{color:#b9cbd6;line-height:1.55}}label{{display:block;margin:20px 0 8px;font-weight:700}}input,textarea{{width:100%;background:#07111d;color:#fff;border:1px solid #315a73;border-radius:12px;padding:13px}}button{{width:100%;margin-top:20px;border:0;border-radius:12px;padding:14px 18px;font-weight:800;background:#38bdf8;color:#032033;cursor:pointer}}.brand{{font-weight:900;letter-spacing:.08em;color:#7dd3fc}}.success{{color:#86efac}}</style></head>
-<body><main><div class="brand">FLOODMAN</div><h1 class="{state_class}">{title}</h1><p>{message}</p>{button}</main></body></html>"""
+<body><main><div class="brand">FLOODMAN</div><h1 class="{state_class}">{safe_title}</h1><p>{safe_message}</p>{button}</main></body></html>"""
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:

@@ -63,7 +63,7 @@ def test_backup_creates_verified_archive_without_secrets_or_media_by_default(
         manifest_name = next(name for name in names if name.endswith("/manifest.json"))
         manifest = json.load(handle.extractfile(manifest_name))
         assert manifest["includes_media"] is False
-        assert manifest["includes_runtime_secrets"] is False
+        assert manifest["includes_runtime_env_file"] is False
 
 
 def test_backup_can_explicitly_include_runtime_secrets_and_media(
@@ -97,5 +97,5 @@ def test_backup_can_explicitly_include_runtime_secrets_and_media(
     archive = Path(json.loads(completed.stdout)["archive"])
     with tarfile.open(archive, "r:gz") as handle:
         names = handle.getnames()
-        assert any(name.endswith("/secrets/runtime.env") for name in names)
+        assert any(name.endswith("/runtime/runtime.env") for name in names)
         assert any(name.endswith("/uploads/photo.jpg") for name in names)
