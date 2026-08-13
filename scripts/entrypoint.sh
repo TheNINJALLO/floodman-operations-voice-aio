@@ -137,7 +137,7 @@ fi
 # Install the reviewed website knowledge pack once per version. Existing operational
 # settings and custom knowledge are preserved, and managed files are backed up first.
 /opt/venv/bin/python /opt/floodman/scripts/install_knowledge_pack.py \
-  --pack-version "${KNOWLEDGE_PACK_VERSION:-2026-08-12.1}"
+  --pack-version "${KNOWLEDGE_PACK_VERSION:-2026-08-13.1}"
 
 # Never mutate /opt/ava at runtime. Pterodactyl may mount the image root read-only.
 /opt/floodman/scripts/prepare_ava_runtime.sh
@@ -167,12 +167,59 @@ if [[ "${ASTERISK_MODE:-embedded}" == "embedded" ]]; then
   fi
 fi
 
-if [[ "${AUTO_INSTALL_LOCAL_MODELS:-false}" == "true" && ! -f "${DATA_DIR}/models/.floodman-models-ready" ]]; then
+truthy() {
+  case "${1,,}" in
+    1|true|yes|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+normalize_local_model_tier() {
+  case "${1^^}" in
+    LIGHT|LIGHT_CPU) printf '%s\n' "LIGHT_CPU" ;;
+    BALANCED|MEDIUM|MEDIUM_CPU) printf '%s\n' "MEDIUM_CPU" ;;
+    QUALITY|HEAVY|HEAVY_CPU) printf '%s\n' "HEAVY_CPU" ;;
+    *)
+      echo "Invalid LOCAL_MODEL_TIER=$1; use LIGHT, BALANCED, QUALITY, LIGHT_CPU, MEDIUM_CPU, or HEAVY_CPU" >&2
+      return 1
+      ;;
+  esac
+}
+
+export LOCAL_STT_MODEL_PATH="${LOCAL_STT_MODEL_PATH:-${DATA_DIR}/models/stt/vosk-model-small-en-us-0.15}"
+export LOCAL_LLM_MODEL_PATH="${LOCAL_LLM_MODEL_PATH:-${DATA_DIR}/models/llm/qwen2.5-1.5b-instruct-q4_k_m.gguf}"
+export LOCAL_TTS_MODEL_PATH="${LOCAL_TTS_MODEL_PATH:-${DATA_DIR}/models/tts/en_US-lessac-medium.onnx}"
+export LOCAL_TTS_BACKEND="${LOCAL_TTS_BACKEND:-piper}"
+
+MODEL_READY_MARKER="${DATA_DIR}/models/.floodman-models-ready"
+if [[ -f "${MODEL_READY_MARKER}" ]]; then
+  if [[ ! -d "${LOCAL_STT_MODEL_PATH}" || ! -f "${LOCAL_LLM_MODEL_PATH}" || ! -f "${LOCAL_TTS_MODEL_PATH}" || ! -f "${LOCAL_TTS_MODEL_PATH}.json" ]]; then
+    echo "Local model marker is stale; required model files are missing" >&2
+    rm -f "${MODEL_READY_MARKER}"
+  fi
+fi
+
+if truthy "${AUTO_INSTALL_LOCAL_MODELS:-false}" && [[ ! -f "${MODEL_READY_MARKER}" ]]; then
+  if [[ "${IMAGE_FLAVOR:-full}" != "full" ]]; then
+    echo "AUTO_INSTALL_LOCAL_MODELS requires the full image, not the lite image" >&2
+    exit 1
+  fi
+  RESOLVED_MODEL_TIER="$(normalize_local_model_tier "${LOCAL_MODEL_TIER:-LIGHT}")"
   "${AVA_RUNTIME_DIR}/scripts/model_setup.sh" \
-    --tier "${LOCAL_MODEL_TIER:-LIGHT}" \
+    --tier "${RESOLVED_MODEL_TIER}" \
     --assume-yes \
     --language "${LOCAL_MODEL_LANGUAGE:-en-US}"
-  touch "${DATA_DIR}/models/.floodman-models-ready"
+  test -d "${LOCAL_STT_MODEL_PATH}"
+  test -f "${LOCAL_LLM_MODEL_PATH}"
+  test -f "${LOCAL_TTS_MODEL_PATH}"
+  test -f "${LOCAL_TTS_MODEL_PATH}.json"
+  touch "${MODEL_READY_MARKER}"
+fi
+
+if [[ -f "${MODEL_READY_MARKER}" && "${IMAGE_FLAVOR:-full}" == "full" ]]; then
+  export LOCAL_AI_MODE="${LOCAL_AI_MODE:-full}"
+else
+  export LOCAL_AI_MODE="${LOCAL_AI_MODE:-minimal}"
 fi
 
 case "${STARTUP_PREFLIGHT,,}" in

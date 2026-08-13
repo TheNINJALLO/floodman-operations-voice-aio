@@ -6,6 +6,25 @@ asterisk:
 default_provider: "${AVA_PROVIDER:-local_hybrid}"
 active_pipeline: "${AVA_PIPELINE:-local_hybrid}"
 
+on_provider_failure: "dialplan_redirect"
+provider_failure_redirect_context: "floodman-provider-failure"
+provider_failure_redirect_extension: "s"
+provider_failure_redirect_priority: 1
+
+llm:
+  initial_greeting: "Thank you for calling Floodman. I'm Floodman's automated assistant. How can I help with your property today?"
+
+pipelines:
+  local_hybrid:
+    llm: local_llm
+
+providers:
+  local_llm:
+    enabled: true
+    ws_url: "${LOCAL_WS_URL:-ws://127.0.0.1:8765}"
+    auth_token: "${LOCAL_WS_AUTH_TOKEN:-}"
+
+
 audio_transport: "audiosocket"
 audiosocket:
   host: "127.0.0.1"

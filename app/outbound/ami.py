@@ -54,7 +54,33 @@ class AMIClient:
         payload = "".join(f"{key}: {value}\r\n" for key, value in fields) + "\r\n"
         writer.write(payload.encode("utf-8"))
         await writer.drain()
-        return await AMIClient._read_block(reader, timeout)
+
+        expected_action_id = next(
+            (
+                value
+                for key, value in fields
+                if key.strip().lower() == "actionid"
+            ),
+            "",
+        )
+        deadline = asyncio.get_running_loop().time() + timeout
+        while True:
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                raise asyncio.TimeoutError(
+                    "Timed out waiting for AMI action response"
+                )
+            block = await AMIClient._read_block(reader, remaining)
+            if not block.get("Response"):
+                continue
+            response_action_id = block.get("ActionID", "")
+            if (
+                expected_action_id
+                and response_action_id
+                and response_action_id != expected_action_id
+            ):
+                continue
+            return block
 
     @staticmethod
     async def _wait_for_originate_response(
@@ -149,7 +175,7 @@ class AMIClient:
                     ("Action", "Login"),
                     ("Username", self.settings.ami_username),
                     ("Secret", self.settings.ami_secret),
-                    ("Events", "on"),
+                    ("Events", "call"),
                     ("ActionID", f"login-{action_id}"),
                 ],
                 min(10.0, self.settings.ami_timeout_seconds),
@@ -190,7 +216,7 @@ class AMIClient:
                     channel=channel,
                 )
             event = await self._wait_for_originate_response(
-                reader, action_id, self.settings.ami_timeout_seconds + 5.0
+                reader, action_id, min(3.0, self.settings.ami_timeout_seconds)
             )
             if event is None:
                 return OriginateResult(
@@ -280,7 +306,7 @@ class AMIClient:
                     ("Action", "Login"),
                     ("Username", self.settings.ami_username),
                     ("Secret", self.settings.ami_secret),
-                    ("Events", "on"),
+                    ("Events", "call"),
                     ("ActionID", f"login-{action_id}"),
                 ],
                 min(10.0, self.settings.ami_timeout_seconds),
@@ -319,7 +345,7 @@ class AMIClient:
                 )
 
             event = await self._wait_for_originate_response(
-                reader, action_id, self.settings.ami_timeout_seconds + 5.0
+                reader, action_id, min(3.0, self.settings.ami_timeout_seconds)
             )
             if event is None:
                 return OriginateResult(

@@ -536,6 +536,25 @@ exten => 8991,1,NoOp(Twilio Play termination test two)
     recording_beep = env_bool("CALL_RECORDING_BEEP_ENABLED", False)
     recording_disclosure = env_bool("CALL_RECORDING_DISCLOSURE_ENABLED", True)
 
+    inbound_test_mode = env("INBOUND_TEST_MODE", "off").strip().lower()
+    if inbound_test_mode not in {"off", "playback", "echo"}:
+        raise ValueError("INBOUND_TEST_MODE must be off, playback, or echo")
+    inbound_test_lines = ""
+    if inbound_test_mode == "playback":
+        inbound_test_lines = (
+            " same => n,Wait(1)\n"
+            " same => n,Playback(demo-congrats)\n"
+            " same => n,Hangup()\n"
+        )
+    elif inbound_test_mode == "echo":
+        inbound_test_lines = (
+            " same => n,Wait(1)\n"
+            " same => n,Playback(demo-echotest)\n"
+            " same => n,Echo()\n"
+            " same => n,Hangup()\n"
+        )
+
+
     # MixMonitor inbound lines — inserted after Answer(), before AGI gate_start.
     # Uses Asterisk UNIQUEID (digits and dots only) and FILTER to mask caller.
     # 'b' flag: record from bridge-start.  'B' flag: also capture pre-bridge.
@@ -597,6 +616,7 @@ exten => s,1,NoOp(Floodman inbound call gate)
  same => n,Set(__FLOODMAN_SOURCE_HINT=)
 {source_hint_lines.rstrip()}
  same => n,Answer()
+{inbound_test_lines.rstrip()}
 {rec_inbound_lines.rstrip()}
  same => n,AGI({agi / 'agi_gate_start.py'})
  same => n,GotoIf($["${{FLOODMAN_GATE_BYPASS}}"="1"]?ava)
@@ -637,7 +657,8 @@ include => from-internal
 
 [floodman-provider-failure]
 exten => s,1,NoOp(Floodman AVA provider failure fallback)
- same => n,Goto(from-internal,{env('FLOODMAN_LIVE_EXTENSION','6000')},1)
+ same => n,Gosub(from-internal,{env('FLOODMAN_LIVE_EXTENSION','6000')},1)
+ same => n,Hangup()
 
 [floodman-test-call]
 exten => s,1,NoOp(Floodman controlled two-way audio test)
