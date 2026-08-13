@@ -94,11 +94,12 @@ FROM runtime-base AS full
 
 RUN pip install --no-cache-dir vosk==0.3.45 "piper-tts==${PIPER_TTS_VERSION}" \
     && python -c "from piper import PiperVoice; assert callable(getattr(PiperVoice, 'load', None)); assert callable(getattr(PiperVoice, 'synthesize_wav', None))" \
+    && pip install --no-cache-dir "diskcache>=5.6.1,<6" \
     && CFLAGS="-O3 -march=x86-64 -mtune=generic" \
        CXXFLAGS="-O3 -march=x86-64 -mtune=generic" \
        CMAKE_ARGS="-DGGML_NATIVE=OFF -DGGML_SSE42=OFF -DGGML_AVX=OFF -DGGML_AVX_VNNI=OFF -DGGML_AVX2=OFF -DGGML_BMI2=OFF -DGGML_FMA=OFF -DGGML_F16C=OFF -DGGML_AVX512=OFF -DGGML_AVX512_VBMI=OFF -DGGML_AVX512_VNNI=OFF -DGGML_AVX512_BF16=OFF -DGGML_AMX_TILE=OFF -DGGML_AMX_INT8=OFF -DGGML_AMX_BF16=OFF -DGGML_LTO=OFF -DGGML_BLAS=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_TOOLS=OFF" \
        pip install --no-cache-dir --force-reinstall --no-deps --no-binary=llama-cpp-python "llama-cpp-python==${LLAMA_CPP_PYTHON_VERSION}" \
-    && python -c "from llama_cpp import Llama; assert Llama is not None" \
+    && python -c "import diskcache, jinja2, numpy, typing_extensions; from llama_cpp import Llama; assert Llama is not None" \
     && if [ -n "$PRELOAD_WHISPER_MODEL" ]; then \
          /opt/venv/bin/python -c "from faster_whisper import WhisperModel; WhisperModel('${PRELOAD_WHISPER_MODEL}', device='cpu', compute_type='int8')"; \
        fi \
