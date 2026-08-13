@@ -33,6 +33,17 @@ AUDIO_SAMPLE_RATES = {
 }
 
 
+GOOGLE_SOURCE_MARKERS = ("google", "lsa", "local services", "ads")
+
+
+def opening_silence_timeout(settings: Settings, source_hint: str) -> float:
+    # Return the silent opening window without weakening Google screening.
+    normalized = (source_hint or "").strip().lower()
+    if any(marker in normalized for marker in GOOGLE_SOURCE_MARKERS):
+        return float(settings.gate_max_seconds)
+    return float(settings.gate_no_speech_timeout_seconds)
+
+
 async def read_frame(reader: asyncio.StreamReader) -> tuple[int, bytes]:
     header = await reader.readexactly(3)
     frame_type = header[0]
@@ -112,6 +123,12 @@ class AudioSocketGateServer:
             source_hint = str(session.get("source_hint") or "")
             did = str(session.get("did") or "")
             caller_number = str(session.get("caller_number") or "")
+            silence_timeout = opening_silence_timeout(self.settings, source_hint)
+            logger.debug(
+                "Call gate opening silence timeout %.2fs for source_hint=%r",
+                silence_timeout,
+                source_hint,
+            )
 
             while True:
                 elapsed = time.monotonic() - started
@@ -180,7 +197,7 @@ class AudioSocketGateServer:
                             transcript = candidate
                         elif (
                             not transcript
-                            and elapsed >= self.settings.gate_no_speech_timeout_seconds
+                            and elapsed >= silence_timeout
                         ):
                             decision = machine.feed(
                                 "",

@@ -34,7 +34,7 @@ AGENTS: tuple[AgentDefinition, ...] = (
         slug="floodman_inbound",
         display_name="Floodman Inbound Receptionist",
         role_label="Customer intake and emergency triage",
-        greeting="Thank you for calling Floodman. I'm Floodman's automated assistant. How can I help with your property today?",
+        greeting="Hi, thanks for calling Floodman. This is Ava, Floodman's automated assistant. How can I help today?",
         prompt=(
             COMMON_POLICY
             + """

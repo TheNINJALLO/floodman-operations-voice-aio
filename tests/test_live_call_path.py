@@ -61,7 +61,7 @@ def test_live_call_runtime_contract(project_root: Path) -> None:
     assert "LOCAL_STT_MODEL_PATH" in entrypoint
     assert "LOCAL_LLM_MODEL_PATH" in entrypoint
     assert "LOCAL_TTS_MODEL_PATH" in entrypoint
-    assert "2026-08-13.1" in entrypoint
+    assert "2026-08-13.2" in entrypoint
     assert 'INBOUND_TEST_MODE", "off"' in renderer
     assert "{inbound_test_lines.rstrip()}" in renderer
     assert "Gosub(from-internal" in renderer

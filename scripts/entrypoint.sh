@@ -137,7 +137,7 @@ fi
 # Install the reviewed website knowledge pack once per version. Existing operational
 # settings and custom knowledge are preserved, and managed files are backed up first.
 /opt/venv/bin/python /opt/floodman/scripts/install_knowledge_pack.py \
-  --pack-version "${KNOWLEDGE_PACK_VERSION:-2026-08-13.1}"
+  --pack-version "${KNOWLEDGE_PACK_VERSION:-2026-08-13.2}"
 
 # Never mutate /opt/ava at runtime. Pterodactyl may mount the image root read-only.
 /opt/floodman/scripts/prepare_ava_runtime.sh
@@ -173,6 +173,33 @@ truthy() {
     *) return 1 ;;
   esac
 }
+
+# Floodman telephone responsiveness profile.
+#
+# Direct calls fail open to the greeting quickly, while the call-gate
+# server keeps Google-hinted calls on the longer inspection window.
+# Vosk's old 5000 ms idle finalizer made a completed caller turn feel
+# unanswered; 700 ms is long enough for natural pauses but fast enough
+# for telephone turn-taking.
+if truthy "${FLOODMAN_LOW_LATENCY_MODE:-true}"; then
+  export GATE_MIN_SECONDS="${FLOODMAN_GATE_MIN_SECONDS:-0.55}"
+  export GATE_TRANSCRIBE_INTERVAL_SECONDS="${FLOODMAN_GATE_TRANSCRIBE_INTERVAL_SECONDS:-0.55}"
+  export GATE_NO_SPEECH_TIMEOUT_SECONDS="${FLOODMAN_DIRECT_GREETING_DELAY_SECONDS:-1.4}"
+
+  export LOCAL_STT_BACKEND="${LOCAL_STT_BACKEND:-vosk}"
+  export LOCAL_STT_IDLE_MS="${LOCAL_STT_IDLE_MS:-700}"
+
+  export LOCAL_LLM_CHAT_FORMAT="${LOCAL_LLM_CHAT_FORMAT:-auto}"
+  export LOCAL_LLM_CONTEXT="${LOCAL_LLM_CONTEXT:-2048}"
+  export LOCAL_LLM_MAX_TOKENS="${LOCAL_LLM_MAX_TOKENS:-48}"
+  export LOCAL_LLM_INFER_TIMEOUT_SEC="${LOCAL_LLM_INFER_TIMEOUT_SEC:-30}"
+  export LOCAL_LLM_STREAMING_TTS_OVERLAP="${LOCAL_LLM_STREAMING_TTS_OVERLAP:-1}"
+
+  export LOCAL_ENABLE_FILLER_AUDIO="${LOCAL_ENABLE_FILLER_AUDIO:-1}"
+  export LOCAL_FILLER_PHRASES="${LOCAL_FILLER_PHRASES:-Absolutely. Give me just a moment.,I can help with that.,Let me check that for you.}"
+  export LOCAL_TTS_PHRASE_CACHE_ENABLED="${LOCAL_TTS_PHRASE_CACHE_ENABLED:-1}"
+  export LOCAL_TTS_PHRASE_CACHE_MAX_LEN="${LOCAL_TTS_PHRASE_CACHE_MAX_LEN:-240}"
+fi
 
 normalize_local_model_tier() {
   case "${1^^}" in
@@ -214,6 +241,21 @@ if truthy "${AUTO_INSTALL_LOCAL_MODELS:-false}" && [[ ! -f "${MODEL_READY_MARKER
   test -f "${LOCAL_TTS_MODEL_PATH}"
   test -f "${LOCAL_TTS_MODEL_PATH}.json"
   touch "${MODEL_READY_MARKER}"
+fi
+
+# Install or select a persistent Piper receptionist voice. Downloading
+# is atomic and happens only when the chosen profile is not already
+# present. Failure falls back to the existing Lessac medium voice so a
+# temporary model-host outage never blocks telephone startup.
+if [[ -f "${MODEL_READY_MARKER}" && "${IMAGE_FLAVOR:-full}" == "full" ]]; then
+  if VOICE_PATH="$(
+    /opt/venv/bin/python /opt/floodman/scripts/prepare_floodman_voice.py       --profile "${FLOODMAN_VOICE_PROFILE:-warm_female}"       --models-dir "${DATA_DIR}/models/tts"
+  )"; then
+    export LOCAL_TTS_MODEL_PATH="${VOICE_PATH}"
+    echo "Floodman voice profile ${FLOODMAN_VOICE_PROFILE:-warm_female}: ${LOCAL_TTS_MODEL_PATH}"
+  else
+    echo "Floodman voice profile download failed; retaining ${LOCAL_TTS_MODEL_PATH}" >&2
+  fi
 fi
 
 if [[ -f "${MODEL_READY_MARKER}" && "${IMAGE_FLAVOR:-full}" == "full" ]]; then

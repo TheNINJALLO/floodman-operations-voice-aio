@@ -12,7 +12,7 @@ provider_failure_redirect_extension: "s"
 provider_failure_redirect_priority: 1
 
 llm:
-  initial_greeting: "Thank you for calling Floodman. I'm Floodman's automated assistant. How can I help with your property today?"
+  initial_greeting: "Hi, thanks for calling Floodman. This is Ava, Floodman's automated assistant. How can I help today?"
 
 pipelines:
   local_hybrid:
@@ -38,11 +38,11 @@ no_input:
   enabled: true
   inbound_enabled: true
   outbound_enabled: true
-  initial_timeout_sec: 30
-  grace_timeout_sec: 15
+  initial_timeout_sec: 8
+  grace_timeout_sec: 6
   max_check_ins: 1
-  check_in_message: "Are you still there?"
-  final_message: "I still can't hear you, so I'll end the call now. Goodbye."
+  check_in_message: "I didn't quite catch that. Could you say that again?"
+  final_message: "I'm still not hearing you, so I'll end the call now. Please call us back when you're ready. Goodbye."
 
 in_call_tools:
   floodman_lookup_customer:

@@ -513,12 +513,12 @@
     },
     {
       "name": "Direct Caller Greeting Delay",
-      "description": "Maximum silence before the call gate fails open to the normal Floodman greeting. Google announcements can continue through the full gate window.",
-      "env_variable": "GATE_NO_SPEECH_TIMEOUT_SECONDS",
-      "default_value": "3.5",
+      "description": "Seconds before an ordinary silent caller reaches the greeting. Google-hinted calls retain the full screening window.",
+      "env_variable": "FLOODMAN_DIRECT_GREETING_DELAY_SECONDS",
+      "default_value": "1.4",
       "user_viewable": true,
       "user_editable": true,
-      "rules": "required|numeric|min:1|max:8",
+      "rules": "required|numeric|min:0.8|max:4",
       "field_type": "text"
     },
     {
@@ -669,6 +669,46 @@
       "user_viewable": true,
       "user_editable": false,
       "rules": "required|string",
+      "field_type": "text"
+    },
+    {
+      "name": "Low-Latency Voice Mode",
+      "description": "Enables telephone-tuned greeting, STT, LLM streaming, filler, and phrase-cache defaults.",
+      "env_variable": "FLOODMAN_LOW_LATENCY_MODE",
+      "default_value": "1",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|boolean",
+      "field_type": "text"
+    },
+    {
+      "name": "Floodman Receptionist Voice",
+      "description": "current, warm_female, clear_female, or warm_male. Voice files are downloaded once into persistent storage.",
+      "env_variable": "FLOODMAN_VOICE_PROFILE",
+      "default_value": "warm_female",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|in:current,warm_female,clear_female,warm_male",
+      "field_type": "text"
+    },
+    {
+      "name": "Caller End-of-Speech Delay",
+      "description": "Milliseconds of silence before the local STT turn is finalized and sent to the AI.",
+      "env_variable": "LOCAL_STT_IDLE_MS",
+      "default_value": "700",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|numeric|min:300|max:3000",
+      "field_type": "text"
+    },
+    {
+      "name": "Local LLM Context",
+      "description": "Qwen context window. 2048 fits the managed Floodman prompt and tool schemas more reliably than 768.",
+      "env_variable": "LOCAL_LLM_CONTEXT",
+      "default_value": "2048",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|numeric|min:1024|max:4096",
       "field_type": "text"
     }
   ]
