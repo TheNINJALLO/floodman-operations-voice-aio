@@ -1,0 +1,799 @@
+name: Repair Floodman Responsiveness and Natural Voice
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/repair-responsive-voice.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: floodman-responsive-voice-repair
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    name: Patch call timing, speech finalization, and voice profiles
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Apply responsiveness and voice repair
+        shell: bash
+        run: |
+          python - <<'PY_PATCH'
+          from __future__ import annotations
+
+          import json
+          from pathlib import Path
+
+          root = Path(".").resolve()
+
+          def replace_once(path: Path, old: str, new: str, label: str) -> None:
+              text = path.read_text(encoding="utf-8")
+              if new in text:
+                  return
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected exactly one anchor, found {count}")
+              path.write_text(text.replace(old, new, 1), encoding="utf-8", newline="\n")
+
+          def upsert_egg_variable(variables: list[dict], value: dict) -> None:
+              env_name = value["env_variable"]
+              for index, current in enumerate(variables):
+                  if current.get("env_variable") == env_name:
+                      variables[index] = {**current, **value}
+                      return
+              variables.append(value)
+
+          # ------------------------------------------------------------------
+          # 1. Low-latency runtime defaults and selectable persistent voice.
+          # ------------------------------------------------------------------
+          entrypoint = root / "scripts/entrypoint.sh"
+
+          replace_once(
+              entrypoint,
+              '--pack-version "${KNOWLEDGE_PACK_VERSION:-2026-08-13.1}"',
+              '--pack-version "${KNOWLEDGE_PACK_VERSION:-2026-08-13.2}"',
+              "managed AVA overlay migration version",
+          )
+
+          truthy_anchor = '''truthy() {
+            case "${1,,}" in
+              1|true|yes|on) return 0 ;;
+              *) return 1 ;;
+            esac
+          }
+
+          normalize_local_model_tier() {
+          '''
+          truthy_replacement = '''truthy() {
+            case "${1,,}" in
+              1|true|yes|on) return 0 ;;
+              *) return 1 ;;
+            esac
+          }
+
+          # Floodman telephone responsiveness profile.
+          #
+          # Direct calls fail open to the greeting quickly, while the call-gate
+          # server keeps Google-hinted calls on the longer inspection window.
+          # Vosk's old 5000 ms idle finalizer made a completed caller turn feel
+          # unanswered; 700 ms is long enough for natural pauses but fast enough
+          # for telephone turn-taking.
+          if truthy "${FLOODMAN_LOW_LATENCY_MODE:-true}"; then
+            export GATE_MIN_SECONDS="${FLOODMAN_GATE_MIN_SECONDS:-0.55}"
+            export GATE_TRANSCRIBE_INTERVAL_SECONDS="${FLOODMAN_GATE_TRANSCRIBE_INTERVAL_SECONDS:-0.55}"
+            export GATE_NO_SPEECH_TIMEOUT_SECONDS="${FLOODMAN_DIRECT_GREETING_DELAY_SECONDS:-1.4}"
+
+            export LOCAL_STT_BACKEND="${LOCAL_STT_BACKEND:-vosk}"
+            export LOCAL_STT_IDLE_MS="${LOCAL_STT_IDLE_MS:-700}"
+
+            export LOCAL_LLM_CHAT_FORMAT="${LOCAL_LLM_CHAT_FORMAT:-auto}"
+            export LOCAL_LLM_CONTEXT="${LOCAL_LLM_CONTEXT:-2048}"
+            export LOCAL_LLM_MAX_TOKENS="${LOCAL_LLM_MAX_TOKENS:-48}"
+            export LOCAL_LLM_INFER_TIMEOUT_SEC="${LOCAL_LLM_INFER_TIMEOUT_SEC:-30}"
+            export LOCAL_LLM_STREAMING_TTS_OVERLAP="${LOCAL_LLM_STREAMING_TTS_OVERLAP:-1}"
+
+            export LOCAL_ENABLE_FILLER_AUDIO="${LOCAL_ENABLE_FILLER_AUDIO:-1}"
+            export LOCAL_FILLER_PHRASES="${LOCAL_FILLER_PHRASES:-Absolutely. Give me just a moment.,I can help with that.,Let me check that for you.}"
+            export LOCAL_TTS_PHRASE_CACHE_ENABLED="${LOCAL_TTS_PHRASE_CACHE_ENABLED:-1}"
+            export LOCAL_TTS_PHRASE_CACHE_MAX_LEN="${LOCAL_TTS_PHRASE_CACHE_MAX_LEN:-240}"
+          fi
+
+          normalize_local_model_tier() {
+          '''
+          replace_once(
+              entrypoint,
+              truthy_anchor,
+              truthy_replacement,
+              "low-latency runtime defaults",
+          )
+
+          model_anchor = '''  touch "${MODEL_READY_MARKER}"
+          fi
+
+          if [[ -f "${MODEL_READY_MARKER}" && "${IMAGE_FLAVOR:-full}" == "full" ]]; then
+          '''
+          model_replacement = '''  touch "${MODEL_READY_MARKER}"
+          fi
+
+          # Install or select a persistent Piper receptionist voice. Downloading
+          # is atomic and happens only when the chosen profile is not already
+          # present. Failure falls back to the existing Lessac medium voice so a
+          # temporary model-host outage never blocks telephone startup.
+          if [[ -f "${MODEL_READY_MARKER}" && "${IMAGE_FLAVOR:-full}" == "full" ]]; then
+            if VOICE_PATH="$(
+              /opt/venv/bin/python /opt/floodman/scripts/prepare_floodman_voice.py \
+                --profile "${FLOODMAN_VOICE_PROFILE:-warm_female}" \
+                --models-dir "${DATA_DIR}/models/tts"
+            )"; then
+              export LOCAL_TTS_MODEL_PATH="${VOICE_PATH}"
+              echo "Floodman voice profile ${FLOODMAN_VOICE_PROFILE:-warm_female}: ${LOCAL_TTS_MODEL_PATH}"
+            else
+              echo "Floodman voice profile download failed; retaining ${LOCAL_TTS_MODEL_PATH}" >&2
+            fi
+          fi
+
+          if [[ -f "${MODEL_READY_MARKER}" && "${IMAGE_FLAVOR:-full}" == "full" ]]; then
+          '''
+          replace_once(
+              entrypoint,
+              model_anchor,
+              model_replacement,
+              "persistent voice selection",
+          )
+
+          # ------------------------------------------------------------------
+          # 2. Source-aware opening-call gate.
+          # ------------------------------------------------------------------
+          gate = root / "app/call_gate/audio_socket.py"
+
+          helper_anchor = '''}
+
+
+          async def read_frame(reader: asyncio.StreamReader) -> tuple[int, bytes]:
+          '''
+          helper_replacement = '''}
+
+
+          GOOGLE_SOURCE_MARKERS = ("google", "lsa", "local services", "ads")
+
+
+          def opening_silence_timeout(settings: Settings, source_hint: str) -> float:
+              # Return the silent opening window without weakening Google screening.
+              normalized = (source_hint or "").strip().lower()
+              if any(marker in normalized for marker in GOOGLE_SOURCE_MARKERS):
+                  return float(settings.gate_max_seconds)
+              return float(settings.gate_no_speech_timeout_seconds)
+
+
+          async def read_frame(reader: asyncio.StreamReader) -> tuple[int, bytes]:
+          '''
+          replace_once(
+              gate,
+              helper_anchor,
+              helper_replacement,
+              "source-aware gate helper",
+          )
+
+          caller_anchor = (
+              '            caller_number = str(session.get("caller_number") or "")\n\n'
+              '            while True:\n'
+          )
+          caller_replacement = (
+              '            caller_number = str(session.get("caller_number") or "")\n'
+              '            silence_timeout = opening_silence_timeout(self.settings, source_hint)\n'
+              '            logger.debug(\n'
+              '                "Call gate opening silence timeout %.2fs for source_hint=%r",\n'
+              '                silence_timeout,\n'
+              '                source_hint,\n'
+              '            )\n\n'
+              '            while True:\n'
+          )
+          replace_once(
+              gate,
+              caller_anchor,
+              caller_replacement,
+              "per-call opening timeout",
+          )
+
+          replace_once(
+              gate,
+              '''                            and elapsed >= self.settings.gate_no_speech_timeout_seconds
+          ''',
+              '''                            and elapsed >= silence_timeout
+          ''',
+              "direct caller fail-open timeout",
+          )
+
+          # ------------------------------------------------------------------
+          # 3. Natural managed greeting and quicker no-input feedback.
+          # ------------------------------------------------------------------
+          old_greeting = (
+              "Thank you for calling Floodman. I'm Floodman's automated assistant. "
+              "How can I help with your property today?"
+          )
+          new_greeting = (
+              "Hi, thanks for calling Floodman. This is Ava, Floodman's automated "
+              "assistant. How can I help today?"
+          )
+
+          agents = root / "app/ava/agents.py"
+          replace_once(
+              agents,
+              f'greeting="{old_greeting}",',
+              f'greeting="{new_greeting}",',
+              "managed inbound greeting",
+          )
+
+          overlay = root / "config/ava/ai-agent.local.yaml"
+          replace_once(
+              overlay,
+              f'  initial_greeting: "{old_greeting}"',
+              f'  initial_greeting: "{new_greeting}"',
+              "AVA initial greeting",
+          )
+          replace_once(
+              overlay,
+              '''  initial_timeout_sec: 30
+            grace_timeout_sec: 15
+            max_check_ins: 1
+            check_in_message: "Are you still there?"
+            final_message: "I still can't hear you, so I'll end the call now. Goodbye."
+          ''',
+              '''  initial_timeout_sec: 8
+            grace_timeout_sec: 6
+            max_check_ins: 1
+            check_in_message: "I didn't quite catch that. Could you say that again?"
+            final_message: "I'm still not hearing you, so I'll end the call now. Please call us back when you're ready. Goodbye."
+          ''',
+              "no-input feedback timing",
+          )
+
+          # ------------------------------------------------------------------
+          # 4. Persistent official Piper voice-profile downloader.
+          # ------------------------------------------------------------------
+          voice_script = root / "scripts/prepare_floodman_voice.py"
+          voice_script.write_text(
+              '''#!/usr/bin/env python3
+          # Download and select an approved persistent Floodman Piper voice.
+
+          from __future__ import annotations
+
+          import argparse
+          import hashlib
+          import json
+          import os
+          import sys
+          import tempfile
+          import urllib.request
+          from dataclasses import dataclass
+          from pathlib import Path
+
+
+          BASE = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0"
+
+
+          @dataclass(frozen=True, slots=True)
+          class VoiceProfile:
+              filename: str
+              relative_dir: str
+              sha256: str
+              quality: str
+
+              @property
+              def model_url(self) -> str:
+                  return f"{BASE}/{self.relative_dir}/{self.filename}"
+
+              @property
+              def config_url(self) -> str:
+                  return f"{self.model_url}.json"
+
+              @property
+              def model_card_url(self) -> str:
+                  return f"{BASE}/{self.relative_dir}/MODEL_CARD"
+
+
+          PROFILES: dict[str, VoiceProfile] = {
+              "warm_female": VoiceProfile(
+                  filename="en_US-hfc_female-medium.onnx",
+                  relative_dir="en/en_US/hfc_female/medium",
+                  sha256="914c473788fc1fa8b63ace1cdcdb44588f4ae523d3ab37df1536616835a140b7",
+                  quality="medium",
+              ),
+              "clear_female": VoiceProfile(
+                  filename="en_US-lessac-high.onnx",
+                  relative_dir="en/en_US/lessac/high",
+                  sha256="4cabf7c3a638017137f34a1516522032d4fe3f38228a843cc9b764ddcbcd9e09",
+                  quality="high",
+              ),
+              "warm_male": VoiceProfile(
+                  filename="en_US-ryan-high.onnx",
+                  relative_dir="en/en_US/ryan/high",
+                  sha256="b3990d7606e183ec8dbfba70a4607074f162de1a0c412e0180d1ff60bb154eca",
+                  quality="high",
+              ),
+          }
+
+          ALIASES = {
+              "default": "warm_female",
+              "female": "warm_female",
+              "hfc_female": "warm_female",
+              "lessac_high": "clear_female",
+              "male": "warm_male",
+              "ryan_high": "warm_male",
+              "lessac_medium": "current",
+          }
+
+
+          def normalize_profile(value: str) -> str:
+              normalized = (value or "warm_female").strip().lower().replace("-", "_")
+              normalized = ALIASES.get(normalized, normalized)
+              if normalized != "current" and normalized not in PROFILES:
+                  choices = ", ".join(["current", *sorted(PROFILES)])
+                  raise ValueError(f"Unknown voice profile {value!r}; choose {choices}")
+              return normalized
+
+
+          def sha256_file(path: Path) -> str:
+              digest = hashlib.sha256()
+              with path.open("rb") as handle:
+                  for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              return digest.hexdigest()
+
+
+          def download_atomic(url: str, destination: Path) -> None:
+              destination.parent.mkdir(parents=True, exist_ok=True)
+              fd, temp_name = tempfile.mkstemp(
+                  prefix=f".{destination.name}.",
+                  dir=str(destination.parent),
+              )
+              temp_path = Path(temp_name)
+              try:
+                  request = urllib.request.Request(
+                      url,
+                      headers={"User-Agent": "Floodman-Voice-AIO/1.2"},
+                  )
+                  with os.fdopen(fd, "wb") as output, urllib.request.urlopen(
+                      request,
+                      timeout=180,
+                  ) as response:
+                      while True:
+                          chunk = response.read(1024 * 1024)
+                          if not chunk:
+                              break
+                          output.write(chunk)
+                      output.flush()
+                      os.fsync(output.fileno())
+                  os.chmod(temp_path, 0o600)
+                  os.replace(temp_path, destination)
+              finally:
+                  temp_path.unlink(missing_ok=True)
+
+
+          def ensure_profile(profile_name: str, models_dir: Path) -> Path:
+              profile_name = normalize_profile(profile_name)
+              models_dir.mkdir(parents=True, exist_ok=True)
+              os.chmod(models_dir, 0o700)
+
+              if profile_name == "current":
+                  current = models_dir / "en_US-lessac-medium.onnx"
+                  current_config = current.with_suffix(current.suffix + ".json")
+                  if not current.is_file() or not current_config.is_file():
+                      raise FileNotFoundError(
+                          "The current Lessac medium voice model is not installed"
+                      )
+                  return current
+
+              spec = PROFILES[profile_name]
+              model = models_dir / spec.filename
+              config = model.with_suffix(model.suffix + ".json")
+              card = models_dir / f"{profile_name}-MODEL_CARD"
+
+              valid_model = (
+                  model.is_file()
+                  and model.stat().st_size > 1_000_000
+                  and sha256_file(model) == spec.sha256
+              )
+              if not valid_model:
+                  print(
+                      f"Downloading Floodman voice {profile_name} ({spec.quality})...",
+                      file=sys.stderr,
+                  )
+                  download_atomic(spec.model_url, model)
+                  actual = sha256_file(model)
+                  if actual != spec.sha256:
+                      model.unlink(missing_ok=True)
+                      raise RuntimeError(
+                          f"Voice checksum mismatch for {profile_name}: {actual}"
+                      )
+
+              valid_config = False
+              if config.is_file():
+                  try:
+                      parsed = json.loads(config.read_text(encoding="utf-8"))
+                      valid_config = (
+                          int(parsed.get("audio", {}).get("sample_rate", 0)) > 0
+                      )
+                  except (OSError, ValueError, TypeError):
+                      valid_config = False
+              if not valid_config:
+                  download_atomic(spec.config_url, config)
+                  parsed = json.loads(config.read_text(encoding="utf-8"))
+                  if int(parsed.get("audio", {}).get("sample_rate", 0)) <= 0:
+                      config.unlink(missing_ok=True)
+                      raise RuntimeError(
+                          f"Invalid Piper configuration for {profile_name}"
+                      )
+
+              if not card.is_file():
+                  try:
+                      download_atomic(spec.model_card_url, card)
+                  except Exception as exc:
+                      print(
+                          f"Warning: could not retain voice MODEL_CARD: {exc}",
+                          file=sys.stderr,
+                      )
+
+              return model
+
+
+          def main() -> int:
+              parser = argparse.ArgumentParser(description=__doc__)
+              parser.add_argument("--profile", default="warm_female")
+              parser.add_argument(
+                  "--models-dir",
+                  type=Path,
+                  default=Path("/home/container/data/models/tts"),
+              )
+              args = parser.parse_args()
+              try:
+                  selected = ensure_profile(args.profile, args.models_dir.resolve())
+              except (OSError, ValueError, RuntimeError) as exc:
+                  print(f"Floodman voice preparation failed: {exc}", file=sys.stderr)
+                  return 1
+              print(selected)
+              return 0
+
+
+          if __name__ == "__main__":
+              raise SystemExit(main())
+          ''',
+              encoding="utf-8",
+              newline="\n",
+          )
+
+          # ------------------------------------------------------------------
+          # 5. Keep future egg imports aligned with the runtime behavior.
+          # ------------------------------------------------------------------
+          egg_paths = (
+              root / "pterodactyl/egg-floodman-operations-voice-aio.json",
+              root / "egg-floodman-operations-voice-aio-v1.1.1.json",
+          )
+          for egg_path in egg_paths:
+              if not egg_path.is_file():
+                  continue
+              data = json.loads(egg_path.read_text(encoding="utf-8"))
+              variables = data.setdefault("variables", [])
+
+              # Replace the old field with the source-aware direct-call setting.
+              for variable in variables:
+                  if variable.get("env_variable") == "GATE_NO_SPEECH_TIMEOUT_SECONDS":
+                      variable.update(
+                          {
+                              "name": "Direct Caller Greeting Delay",
+                              "description": (
+                                  "Seconds before an ordinary silent caller reaches "
+                                  "the greeting. Google-hinted calls retain the full "
+                                  "screening window."
+                              ),
+                              "env_variable": "FLOODMAN_DIRECT_GREETING_DELAY_SECONDS",
+                              "default_value": "1.4",
+                              "rules": "required|numeric|min:0.8|max:4",
+                          }
+                      )
+                      break
+
+              upsert_egg_variable(
+                  variables,
+                  {
+                      "name": "Low-Latency Voice Mode",
+                      "description": (
+                          "Enables telephone-tuned greeting, STT, LLM streaming, "
+                          "filler, and phrase-cache defaults."
+                      ),
+                      "env_variable": "FLOODMAN_LOW_LATENCY_MODE",
+                      "default_value": "1",
+                      "user_viewable": True,
+                      "user_editable": True,
+                      "rules": "required|boolean",
+                      "field_type": "text",
+                  },
+              )
+              upsert_egg_variable(
+                  variables,
+                  {
+                      "name": "Floodman Receptionist Voice",
+                      "description": (
+                          "current, warm_female, clear_female, or warm_male. "
+                          "Voice files are downloaded once into persistent storage."
+                      ),
+                      "env_variable": "FLOODMAN_VOICE_PROFILE",
+                      "default_value": "warm_female",
+                      "user_viewable": True,
+                      "user_editable": True,
+                      "rules": (
+                          "required|in:current,warm_female,clear_female,warm_male"
+                      ),
+                      "field_type": "text",
+                  },
+              )
+              upsert_egg_variable(
+                  variables,
+                  {
+                      "name": "Caller End-of-Speech Delay",
+                      "description": (
+                          "Milliseconds of silence before the local STT turn is "
+                          "finalized and sent to the AI."
+                      ),
+                      "env_variable": "LOCAL_STT_IDLE_MS",
+                      "default_value": "700",
+                      "user_viewable": True,
+                      "user_editable": True,
+                      "rules": "required|numeric|min:300|max:3000",
+                      "field_type": "text",
+                  },
+              )
+              upsert_egg_variable(
+                  variables,
+                  {
+                      "name": "Local LLM Context",
+                      "description": (
+                          "Qwen context window. 2048 fits the managed Floodman "
+                          "prompt and tool schemas more reliably than 768."
+                      ),
+                      "env_variable": "LOCAL_LLM_CONTEXT",
+                      "default_value": "2048",
+                      "user_viewable": True,
+                      "user_editable": True,
+                      "rules": "required|numeric|min:1024|max:4096",
+                      "field_type": "text",
+                  },
+              )
+
+              egg_path.write_text(
+                  json.dumps(data, indent=2) + "\n",
+                  encoding="utf-8",
+                  newline="\n",
+              )
+
+          # Existing contract test follows the versioned persistent migration.
+          live_test = root / "tests/test_live_call_path.py"
+          if live_test.is_file():
+              replace_once(
+                  live_test,
+                  '"2026-08-13.1"',
+                  '"2026-08-13.2"',
+                  "live-call migration contract",
+              )
+
+          # ------------------------------------------------------------------
+          # 6. Focused regression tests.
+          # ------------------------------------------------------------------
+          (root / "tests/test_responsive_voice_runtime.py").write_text(
+              '''from __future__ import annotations
+
+          import importlib.util
+          import json
+          import sys
+          from pathlib import Path
+          from types import SimpleNamespace
+
+          from app.call_gate.audio_socket import opening_silence_timeout
+
+
+          def _load_voice_module(project_root: Path):
+              path = project_root / "scripts/prepare_floodman_voice.py"
+              spec = importlib.util.spec_from_file_location(
+                  "prepare_floodman_voice",
+                  path,
+              )
+              assert spec and spec.loader
+              module = importlib.util.module_from_spec(spec)
+              # Dataclasses with postponed annotations inspect sys.modules while
+              # the class is being created. Register the dynamic module before
+              # executing it, matching Python's normal import machinery.
+              sys.modules[spec.name] = module
+              spec.loader.exec_module(module)
+              return module
+
+
+          def test_direct_and_google_opening_windows_are_separate() -> None:
+              settings = SimpleNamespace(
+                  gate_no_speech_timeout_seconds=1.4,
+                  gate_max_seconds=11.0,
+              )
+              assert opening_silence_timeout(settings, "") == 1.4
+              assert opening_silence_timeout(settings, "direct") == 1.4
+              assert opening_silence_timeout(settings, "Google LSA") == 11.0
+
+
+          def test_entrypoint_uses_telephone_latency_defaults(
+              project_root: Path,
+          ) -> None:
+              entrypoint = (
+                  project_root / "scripts/entrypoint.sh"
+              ).read_text(encoding="utf-8")
+              assert "FLOODMAN_LOW_LATENCY_MODE" in entrypoint
+              assert 'LOCAL_STT_IDLE_MS:-700' in entrypoint
+              assert 'LOCAL_LLM_CHAT_FORMAT:-auto' in entrypoint
+              assert 'LOCAL_LLM_CONTEXT:-2048' in entrypoint
+              assert "LOCAL_ENABLE_FILLER_AUDIO" in entrypoint
+              assert "LOCAL_TTS_PHRASE_CACHE_ENABLED" in entrypoint
+              assert "prepare_floodman_voice.py" in entrypoint
+              assert "2026-08-13.2" in entrypoint
+
+
+          def test_official_voice_profiles_are_pinned_and_checksummed(
+              project_root: Path,
+          ) -> None:
+              module = _load_voice_module(project_root)
+              assert set(module.PROFILES) == {
+                  "warm_female",
+                  "clear_female",
+                  "warm_male",
+              }
+              for profile in module.PROFILES.values():
+                  assert profile.model_url.startswith(
+                      "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/"
+                  )
+                  assert len(profile.sha256) == 64
+                  int(profile.sha256, 16)
+              assert module.normalize_profile("female") == "warm_female"
+              assert module.normalize_profile("ryan-high") == "warm_male"
+
+
+          def test_managed_greeting_is_natural_but_disclosed(
+              project_root: Path,
+          ) -> None:
+              agents = (
+                  project_root / "app/ava/agents.py"
+              ).read_text(encoding="utf-8")
+              overlay = (
+                  project_root / "config/ava/ai-agent.local.yaml"
+              ).read_text(encoding="utf-8")
+              greeting = (
+                  "Hi, thanks for calling Floodman. This is Ava, Floodman's "
+                  "automated assistant. How can I help today?"
+              )
+              assert greeting in agents
+              assert greeting in overlay
+              assert "initial_timeout_sec: 8" in overlay
+              assert "Could you say that again?" in overlay
+
+
+          def test_eggs_expose_responsiveness_controls(
+              project_root: Path,
+          ) -> None:
+              for relative in (
+                  "pterodactyl/egg-floodman-operations-voice-aio.json",
+                  "egg-floodman-operations-voice-aio-v1.1.1.json",
+              ):
+                  path = project_root / relative
+                  if not path.is_file():
+                      continue
+                  data = json.loads(path.read_text(encoding="utf-8"))
+                  by_env = {
+                      item["env_variable"]: item
+                      for item in data.get("variables", [])
+                  }
+                  assert (
+                      by_env["FLOODMAN_DIRECT_GREETING_DELAY_SECONDS"][
+                          "default_value"
+                      ]
+                      == "1.4"
+                  )
+                  assert (
+                      by_env["FLOODMAN_VOICE_PROFILE"]["default_value"]
+                      == "warm_female"
+                  )
+                  assert by_env["LOCAL_STT_IDLE_MS"]["default_value"] == "700"
+          ''',
+              encoding="utf-8",
+              newline="\n",
+          )
+          PY_PATCH
+
+      - name: Verify generated syntax
+        run: |
+          python -m py_compile \
+            app/call_gate/audio_socket.py \
+            app/ava/agents.py \
+            scripts/prepare_floodman_voice.py \
+            tests/test_responsive_voice_runtime.py
+          bash -n scripts/entrypoint.sh
+
+      - name: Install project test dependencies
+        run: pip install -e '.[dev]'
+
+      - name: Run focused responsiveness tests
+        run: python -m pytest tests/test_responsive_voice_runtime.py -q
+
+      - name: Run complete repository test suite
+        run: python -m pytest tests/ -x -q
+
+      - name: Compile and validate repository
+        shell: bash
+        run: |
+          python -m compileall app scripts tests
+          bash -n scripts/*.sh
+          python scripts/validate_configs.py
+          git diff --check
+
+      - name: Commit tested repair
+        id: commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add \
+            app/ava/agents.py \
+            app/call_gate/audio_socket.py \
+            config/ava/ai-agent.local.yaml \
+            scripts/entrypoint.sh \
+            scripts/prepare_floodman_voice.py \
+            tests/test_live_call_path.py \
+            tests/test_responsive_voice_runtime.py
+
+          for egg in \
+            pterodactyl/egg-floodman-operations-voice-aio.json \
+            egg-floodman-operations-voice-aio-v1.1.1.json
+          do
+            if [[ -f "$egg" ]]; then
+              git add "$egg"
+            fi
+          done
+
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Responsive voice repair is already installed."
+          else
+            git commit -m "fix: make Floodman calls responsive and improve local voice"
+            git push origin HEAD:main
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Launch full and lite container builds
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run ci-container.yml --ref main
+
+      - name: Summary
+        run: |
+          echo "### Floodman responsive voice repair" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Direct silent callers reach the greeting in about 1.4 seconds" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Google-hinted calls keep the full screening window" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Vosk finalizes a caller turn after about 700 ms of silence" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Qwen uses its embedded chat template with a 2048-token context" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Same-voice filler and phrase caching reduce dead air" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Added persistent warm female, clear female, and warm male Piper profiles" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Managed greeting remains clearly disclosed as automated" >> "$GITHUB_STEP_SUMMARY"
