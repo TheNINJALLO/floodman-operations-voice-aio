@@ -188,7 +188,27 @@ class AudioSocketGateServer:
                 elapsed = time.monotonic() - started
                 audio_seconds = len(pcm) / max(1, sample_rate * 2)
                 due = elapsed - last_transcription >= self.settings.gate_transcribe_interval_seconds
-                enough_audio = audio_seconds >= max(0.7, self.settings.gate_min_seconds)
+                minimum_audio_seconds = max(0.35, self.settings.gate_min_seconds)
+                enough_audio = audio_seconds >= minimum_audio_seconds
+
+                if not transcript and elapsed >= silence_timeout and not enough_audio:
+                    decision = machine.feed(
+                        "",
+                        source_hint=source_hint,
+                        did=did,
+                        caller_number=caller_number,
+                        elapsed_seconds=elapsed,
+                        timed_out=True,
+                    )
+                    decision.metadata["no_audio_fail_open"] = True
+                    self.database.save_gate_decision(gate_uuid, decision)
+                    logger.info(
+                        "Call gate failed open after %.2fs without enough opening audio for %s",
+                        elapsed,
+                        gate_uuid,
+                    )
+                    break
+
                 if due and enough_audio:
                     last_transcription = elapsed
                     try:

@@ -137,6 +137,20 @@ allow_reload=no
 """
 
 
+def twilio_security_global() -> str:
+    return (
+        "\n[global]\n"
+        "type=global\n"
+        "endpoint_identifier_order=ip\n"
+        "unidentified_request_count=2\n"
+        "unidentified_request_period=5\n"
+        "unidentified_request_prune_interval=30\n"
+        "disable_multi_domain=yes\n"
+        "max_forwards=70\n"
+        "user_agent=Floodman-Voice-Gateway\n"
+    )
+
+
 def twilio_pjsip(trunk: str, public_ip: str, local_net: str) -> str:
     termination_uri = safe(
         env("TWILIO_TERMINATION_URI"),
@@ -179,7 +193,7 @@ def twilio_pjsip(trunk: str, public_ip: str, local_net: str) -> str:
         safe(cidr, r"[A-Fa-f0-9:.]+/[0-9]{1,3}", "Twilio signaling CIDR", False)
     matches = "\n".join(f"match={cidr}" for cidr in cidrs)
 
-    return transport + f"""
+    return twilio_security_global() + transport + f"""
 
 [{trunk}]
 type=endpoint
