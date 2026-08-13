@@ -262,3 +262,17 @@ python3 scripts/validate_configs.py
 - Real `.env` files, databases, recordings, uploads, and private keys must never be committed
 - Twilio provisioning credentials should stay off the long-running container
 - The lite image is appropriate for first GHCR/Pterodactyl rollout when local LLM packaging is not required
+
+
+<!-- FLOODMAN_KNOWLEDGE_LIBRARY -->
+## Approved website knowledge library
+
+Floodman public answers are grounded through two persistent layers:
+
+- `data/config/floodman.yaml` for structured services, policies, and the published service area
+- `data/knowledge/managed` and `data/knowledge/custom` for detailed approved Markdown
+
+The managed August 12, 2026 pack was built from Floodman.com. Only documents with `approved: true`
+are searchable. The local search returns excerpts and provenance to AVA and does not browse the
+internet or learn from callers during a call. Custom operator documents survive managed-pack updates.
+See `docs/KNOWLEDGE_LIBRARY.md` and `docs/WEBSITE_CONTENT_AUDIT.md`.

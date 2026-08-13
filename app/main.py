@@ -38,6 +38,7 @@ from app.compliance.engine import ComplianceEngine, normalize_phone
 from app.config import Settings
 from app.db import Database
 from app.diagnostics import collect_diagnostics
+from app.knowledge import KnowledgeBase, resolve_service_area
 from app.models import (
     CallCompletedEvent,
     CampaignCreate,
@@ -164,6 +165,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.compliance = ComplianceEngine(settings, database)
         app.state.ami = AMIClient(settings)
         app.state.classifier = CallGateClassifier(settings)
+        app.state.knowledge = KnowledgeBase(
+            settings.knowledge_dir,
+            require_approved=settings.knowledge_require_approved,
+            default_top_k=settings.knowledge_top_k,
+            max_context_chars=settings.knowledge_max_chars,
+            min_score=settings.knowledge_min_score,
+        )
         app.state.gate_server = None
         app.state.worker = None
         app.state.worker_task = None
@@ -348,6 +356,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "agents_db_path": str(settings.agents_db_path),
             "public_base_url": settings.public_base_url,
             "timezone": settings.timezone,
+            "knowledge": request.app.state.knowledge.status(),
             "agents": [
                 {
                     "slug": agent.slug,
@@ -364,6 +373,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "compliance": settings.compliance_config,
             "health": await diagnostic_payload(request, include_network=False),
         }
+
+    @app.get("/api/v1/knowledge/status", dependencies=[Depends(require_admin)])
+    async def knowledge_status(request: Request) -> dict[str, Any]:
+        return request.app.state.knowledge.status()
+
+    @app.post("/api/v1/knowledge/search", dependencies=[Depends(require_admin)])
+    async def knowledge_search(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
+        question = str(payload.get("question") or "").strip()
+        category = str(payload.get("category") or "").strip()
+        try:
+            top_k = int(payload.get("top_k") or settings.knowledge_top_k)
+        except (TypeError, ValueError):
+            top_k = settings.knowledge_top_k
+        return request.app.state.knowledge.search(question, category=category, top_k=top_k)
 
     # Call gate ---------------------------------------------------------
     @app.post("/api/v1/gate/classify", response_model=GateDecision, dependencies=[Depends(require_admin)])
@@ -933,37 +956,58 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         return {"ok": True, "business": result}
 
+    @app.post("/internal/tools/search-knowledge", dependencies=[Depends(require_internal)])
+    async def tool_search_knowledge(
+        request: Request, payload: RoomflowToolRequest
+    ) -> dict[str, Any]:
+        question = str(payload.data.get("question") or "").strip()
+        category = str(payload.data.get("category") or "").strip()
+        try:
+            top_k = int(payload.data.get("top_k") or settings.knowledge_top_k)
+        except (TypeError, ValueError):
+            top_k = settings.knowledge_top_k
+        return request.app.state.knowledge.search(question, category=category, top_k=top_k)
+
     @app.post("/internal/tools/public-business-information", dependencies=[Depends(require_internal)])
-    async def tool_business_information() -> dict[str, Any]:
-        return {"ok": True, "business": settings.service_information}
+    async def tool_business_information(
+        request: Request, payload: RoomflowToolRequest
+    ) -> dict[str, Any]:
+        business = settings.service_information
+        services = business.get("services", {}) if isinstance(business, dict) else {}
+        question = str(payload.data.get("question") or "").strip()
+        knowledge = (
+            request.app.state.knowledge.search(question, top_k=settings.knowledge_top_k)
+            if question
+            else {"found": False, "results": [], "answer_context": ""}
+        )
+        return {
+            "ok": True,
+            "business": {
+                "public_name": business.get("public_name", "Floodman") if isinstance(business, dict) else "Floodman",
+                "website": business.get("website", "https://floodman.com") if isinstance(business, dict) else "https://floodman.com",
+                "primary_phone": business.get("primary_phone", "231-935-4921") if isinstance(business, dict) else "231-935-4921",
+                "emergency_availability": business.get("emergency_availability", "") if isinstance(business, dict) else "",
+                "services": [
+                    str(value.get("public_name") or key)
+                    for key, value in services.items()
+                    if isinstance(value, dict) and value.get("website_advertises", True)
+                ],
+                "inspection_policy": business.get("inspection_policy", {}) if isinstance(business, dict) else {},
+                "pricing_policy": business.get("pricing_policy", {}) if isinstance(business, dict) else {},
+            },
+            "knowledge": knowledge,
+        }
 
     @app.post("/internal/tools/check-service-area", dependencies=[Depends(require_internal)])
     async def tool_service_area(payload: RoomflowToolRequest) -> dict[str, Any]:
         business = settings.service_information
         service_area = business.get("service_area", {}) if isinstance(business, dict) else {}
-        zip_code = str(payload.data.get("zip") or "").strip()
-        allowed_zips = (
-            {str(value) for value in service_area.get("zip_codes", [])}
-            if isinstance(service_area, dict)
-            else set()
+        return resolve_service_area(
+            service_area,
+            zip_code=str(payload.data.get("zip") or ""),
+            city=str(payload.data.get("city") or ""),
+            address=str(payload.data.get("address") or ""),
         )
-        excluded_zips = (
-            {str(value) for value in service_area.get("excluded_zip_codes", [])}
-            if isinstance(service_area, dict)
-            else set()
-        )
-        if zip_code and zip_code in excluded_zips:
-            eligible: bool | None = False
-        elif zip_code and allowed_zips:
-            eligible = zip_code in allowed_zips
-        else:
-            eligible = None
-        return {
-            "ok": True,
-            "eligible": eligible,
-            "requires_manual_confirmation": eligible is None,
-            "service_area": service_area,
-        }
 
     # Public upload portal ---------------------------------------------
     @app.get("/upload/{token}", response_class=HTMLResponse, include_in_schema=False)

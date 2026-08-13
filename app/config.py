@@ -51,6 +51,7 @@ class Settings:
     data_dir: Path
     config_dir: Path
     web_dir: Path
+    knowledge_dir: Path
 
     app_name: str = "Floodman Operations Voice AIO"
     environment: str = "production"
@@ -153,6 +154,11 @@ class Settings:
     log_level: str = "INFO"
     max_upload_bytes: int = 25 * 1024 * 1024
 
+    knowledge_require_approved: bool = True
+    knowledge_top_k: int = 4
+    knowledge_max_chars: int = 5200
+    knowledge_min_score: float = 0.8
+
     config: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -165,6 +171,9 @@ class Settings:
             data_dir = root / data_dir
         config_dir = Path(os.getenv("CONFIG_DIR", root / "config"))
         web_dir = Path(os.getenv("WEB_DIR", root / "web"))
+        knowledge_dir = Path(os.getenv("KNOWLEDGE_DIR", data_dir / "knowledge"))
+        if not knowledge_dir.is_absolute():
+            knowledge_dir = data_dir / knowledge_dir
         config = _load_yaml(config_dir / "floodman.yaml")
 
         admin_token = os.getenv("ADMIN_TOKEN", "").strip() or secrets.token_urlsafe(32)
@@ -178,6 +187,7 @@ class Settings:
             data_dir=data_dir,
             config_dir=config_dir,
             web_dir=web_dir,
+            knowledge_dir=knowledge_dir,
             app_name=os.getenv("APP_NAME", "Floodman Operations Voice AIO"),
             environment=os.getenv("ENVIRONMENT", "production"),
             web_host=os.getenv("WEB_HOST", "0.0.0.0"),
@@ -300,6 +310,10 @@ class Settings:
             timezone=os.getenv("DEFAULT_TIMEZONE", "America/Detroit"),
             log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
             max_upload_bytes=_env_int("MAX_UPLOAD_BYTES", 25 * 1024 * 1024),
+            knowledge_require_approved=_env_bool("KNOWLEDGE_REQUIRE_APPROVED", True),
+            knowledge_top_k=max(1, min(8, _env_int("KNOWLEDGE_TOP_K", 4))),
+            knowledge_max_chars=max(800, min(12000, _env_int("KNOWLEDGE_MAX_CHARS", 5200))),
+            knowledge_min_score=max(0.0, _env_float("KNOWLEDGE_MIN_SCORE", 0.8)),
             config=config,
         )
         settings.ensure_directories()
@@ -310,6 +324,7 @@ class Settings:
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         self.agents_db_path.parent.mkdir(parents=True, exist_ok=True)
         self.call_recording_storage_dir.mkdir(parents=True, exist_ok=True)
+        self.knowledge_dir.mkdir(parents=True, exist_ok=True)
         for name in ("gate-audio", "logs", "uploads", "recordings", "asterisk"):
             (self.data_dir / name).mkdir(parents=True, exist_ok=True)
 

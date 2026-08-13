@@ -1,36 +1,570 @@
 business:
-  legal_name: Floodman
+  legal_name: Floodman LLC
   public_name: Floodman
   website: https://floodman.com
   primary_phone: 231-935-4921
-  emergency_availability: 24/7 emergency call intake
+  emergency_availability: 24/7 emergency call intake and water-damage response
   human_disclosure: I am Floodman's automated assistant.
+  public_profile:
+    summary: Floodman provides property water, moisture, foundation, crawl-space, mold, and related restoration
+      services across published communities in Northern and West Michigan.
+    experience_claim: Floodman's public website states that the company has served Traverse City and Northern
+      Michigan for over 50 years.
+    free_inspection: true
+    free_consultation: true
+    source_reviewed_at: '2026-08-12'
+    source_urls:
+    - https://floodman.com/
+    - https://floodman.com/blog
+    source_policy: Use the homepage for company promises. Use approved knowledge documents for educational
+      explanations. Do not turn testimonials, blog examples, or marketing adjectives into guarantees.
   services:
-  - basement waterproofing
-  - foundation repair
-  - crawl space encapsulation
-  - mold remediation
-  - water damage response
-  - sump pump and drainage services
-  pricing_policy:
+    water_damage_restoration:
+      public_name: 24/7 water damage restoration
+      website_advertises: true
+      summary: Emergency response for burst pipes, failed water heaters, sump-pump failures, flooded basements,
+        leaks, and other water intrusion.
+      website_described_process:
+      - Dispatch and on-site assessment
+      - Moisture mapping with thermal imaging cameras and moisture meters
+      - Standing-water extraction and an inspection-specific structural drying plan
+      - Industrial air movement and dehumidification
+      - Sanitization or antimicrobial treatment when appropriate for the loss
+      website_public_claims:
+      - The website describes the rapid-response team as IICRC-certified.
+      - The website states that drying decisions use psychrometry and IICRC standards.
+      - The website advertises thermal imaging, moisture meters, extraction equipment, industrial air
+        movers, dehumidification, and EPA-approved antimicrobial products.
+      intake_questions:
+      - Is water actively entering or rising?
+      - Has the source been stopped?
+      - Is sewage or contaminated water involved?
+      - Is standing water near electricity, appliances, or the electrical panel?
+      - Which rooms and materials are affected?
+      - When did the loss begin?
+      - Is the property safe to enter?
+      no_phone_promises:
+      - Do not guarantee an arrival time.
+      - Do not classify the water category or confirm hidden damage without inspection.
+      - Do not promise that every material can be saved.
+      - Do not guarantee insurance coverage or direct billing.
+    mold_remediation:
+      public_name: Certified mold remediation
+      website_advertises: true
+      summary: Containment-focused mold remediation that addresses contaminated material and the moisture
+        condition contributing to growth.
+      website_described_process:
+      - Establish containment barriers
+      - Use negative air pressure to reduce cross-contamination
+      - Remove contaminated materials as required by the inspected condition
+      - HEPA-vacuum the affected area
+      - Treat underlying structural surfaces when appropriate
+      - Identify and address the moisture source
+      - Provide documentation for property or insurance records when applicable
+      common_customer_signs:
+      - Visible growth or spotting
+      - Persistent musty odor
+      - Past or current moisture
+      - Growth in a basement, crawl space, wall cavity, or other damp area
+      no_phone_promises:
+      - Do not identify a substance as mold from a voice description or photograph alone.
+      - Do not provide medical advice or guarantee a health outcome.
+      - Do not promise that mold will never return; explain that controlling moisture is essential.
+    foundation_repair:
+      public_name: Foundation repair
+      website_advertises: true
+      summary: Inspection-led solutions for foundation cracks, bowing or leaning walls, settlement, and
+        related structural concerns.
+      common_customer_signs:
+      - Cracks in foundation walls or floors
+      - Bowing or bulging basement walls
+      - Uneven or sloping floors
+      - Doors or windows that stick
+      - Visible settlement or movement
+      - Water entering through a crack
+      possible_methods_not_guaranteed:
+      - Crack repair
+      - Wall stabilization
+      - Carbon-fiber reinforcement when appropriate
+      - Other engineered or inspection-specific structural work
+      no_phone_promises:
+      - Do not diagnose structural safety by phone.
+      - Do not promise a specific repair method before inspection.
+      - Do not repeat the website phrase 'permanent solution' as a warranty or guarantee.
+      - Escalate suspected immediate collapse or life-safety risks to emergency services and a human.
+    basement_waterproofing:
+      public_name: Basement waterproofing and moisture management
+      website_advertises: true
+      summary: Inspection-specific systems intended to control basement water entry, seepage, drainage,
+        humidity, and related moisture conditions.
+      common_customer_signs:
+      - Water after heavy rain
+      - Wall or floor seepage
+      - Wet cracks
+      - Standing water
+      - Damp walls or floors
+      - Efflorescence
+      - Musty odor
+      - Repeated sump-pump activity
+      possible_components_not_guaranteed:
+      - Drainage improvements
+      - Sump-pump solutions
+      - Crack repair
+      - Moisture control
+      - Vapor or waterproofing barriers
+      - Exterior or interior measures selected after inspection
+      no_phone_promises:
+      - Do not tell a caller they need a complete system based only on symptoms.
+      - Do not quote a fixed price or exact scope by phone.
+      - Do not guarantee a basement will remain dry without reviewing the proposed agreement.
+    crawl_space_encapsulation:
+      public_name: Crawl-space encapsulation and moisture control
+      website_advertises: true
+      summary: Moisture-control work for crawl spaces, with the final scope based on inspection of water
+        entry, soil moisture, humidity, insulation, drainage, mold, and structural conditions.
+      common_customer_signs:
+      - Musty odor
+      - High humidity
+      - Condensation
+      - Wet soil or standing water
+      - Deteriorated insulation
+      - Visible growth
+      - Cold or uneven floors
+      - Pest or air-quality concerns
+      educational_components:
+      - A durable vapor barrier may cover the floor and extend to walls as appropriate.
+      - Sealing, drainage, dehumidification, insulation, and remediation needs are determined after inspection.
+      benefits_described_on_website:
+      - Moisture control
+      - Mold prevention
+      - Improved energy efficiency
+      - Support for healthier indoor air and structural durability
+      no_phone_promises:
+      - Do not prescribe a barrier thickness, dehumidifier, insulation package, or drainage scope without
+        inspection.
+      - Do not promise energy savings or indoor-air improvements as a quantified result.
+    sump_pump_and_drainage:
+      public_name: Sump-pump and drainage services
+      website_advertises: true
+      summary: Inspection, response, and property-specific solutions for sump-pump failures, drainage
+        concerns, and water movement around or beneath a structure.
+      common_customer_signs:
+      - Sump pump not running
+      - Pump running constantly
+      - Alarm sounding
+      - Pit overflowing
+      - Water after rain
+      - Poor discharge flow
+      - Pooling near the foundation
+      - Repeated basement or crawl-space water
+      emergency_policy: A failed sump pump with active or rising water is treated as an urgent water-damage
+        intake.
+      no_phone_promises:
+      - Do not guarantee arrival within an hour. The public website advertises rapid response, but actual
+        timing depends on location, crew availability, weather, roads, and emergency volume.
+      - Do not diagnose the pump, check valve, discharge line, electrical supply, or drainage system without
+        inspection.
+  inspection_policy:
+    free_inspection_advertised: true
+    free_consultation_advertised: true
+    inspection_required_for_final_recommendation: true
     phone_estimates: false
-    inspection_required: true
-    approved_response: Pricing depends on the property conditions and required repair.
-      Floodman can arrange an inspection.
+    approved_response: Floodman's website advertises free inspections and consultations. Final recommendations,
+      scope, timing, and pricing depend on the property conditions and an inspection.
+  pricing_policy:
+    provide_exact_price_by_phone: false
+    provide_unapproved_ranges: false
+    approved_response: Pricing depends on the source and extent of the problem, affected materials, access,
+      required drying or repair, and the inspection findings. The assistant can help arrange a free inspection
+      or a human callback.
   service_area:
-    description: Northern and western Michigan; confirm each address before promising
-      service.
+    description: Published communities across Northern Michigan and the West Michigan / Grand Rapids area.
+      Exact property eligibility should still be confirmed, especially near service boundaries.
+    state: Michigan
+    regions:
+      northern_michigan:
+      - Acme
+      - Alanson
+      - Alden
+      - Alpena
+      - Arcadia
+      - Atlanta
+      - Au Gres
+      - Bay City
+      - Bay Shore
+      - Bear Lake
+      - Beaverton
+      - Bellaire
+      - Benzonia
+      - Beulah
+      - Big Rapids
+      - Boyne City
+      - Boyne Falls
+      - Buckley
+      - Cadillac
+      - Cedar
+      - Central Lake
+      - Charlevoix
+      - Cheboygan
+      - Clare
+      - Cross Village
+      - East Jordan
+      - East Tawas
+      - Eastport
+      - Elk Rapids
+      - Ellsworth
+      - Empire
+      - Fairview
+      - Farwell
+      - Fife Lake
+      - Frankfort
+      - Frederic
+      - Fremont
+      - Garfield Township
+      - Gaylord
+      - Gladwin
+      - Glen Arbor
+      - Grawn
+      - Grayling
+      - Hale
+      - Harbor Springs
+      - Harrietta
+      - Harrison
+      - Harrisville
+      - Hart
+      - Hesperia
+      - Hillman
+      - Honor
+      - Houghton Lake
+      - Indian River
+      - Interlochen
+      - Kalkaska
+      - Kewadin
+      - Kingsley
+      - Lake Ann
+      - Lake City
+      - Lake Leelanau
+      - Leland
+      - Lewiston
+      - Ludington
+      - Mackinaw City
+      - Mancelona
+      - Manistee
+      - Manton
+      - Maple City
+      - Mayfield
+      - McBain
+      - Mears
+      - Mesick
+      - Midland
+      - Mio
+      - Morley
+      - Mount Pleasant
+      - Muskegon
+      - Newaygo
+      - Northport
+      - Old Mission
+      - Onaway
+      - Onekama
+      - Oscoda
+      - Pellston
+      - Pentwater
+      - Petoskey
+      - Posen
+      - Prudenville
+      - Rapid City
+      - Remus
+      - Rogers City
+      - Roscommon
+      - Rose City
+      - Shelby
+      - Shepherd
+      - Silver Lake
+      - South Boardman
+      - St. Helen
+      - Standish
+      - Suttons Bay
+      - Tawas City
+      - Thompsonville
+      - Topinabee
+      - Traverse City
+      - Vanderbilt
+      - Walloon Lake
+      - West Branch
+      - White Cloud
+      - Williamsburg
+      west_michigan_grand_rapids:
+      - Ada
+      - Allendale
+      - Belmont
+      - Byron Center
+      - Caledonia
+      - Cascade
+      - Cedar Springs
+      - Comstock Park
+      - Coopersville
+      - Cutlerville
+      - Dorr
+      - Douglas
+      - Fennville
+      - Ferrysburg
+      - Grand Haven
+      - Grand Rapids
+      - Grandville
+      - Greenville
+      - Holland
+      - Howard City
+      - Hudsonville
+      - Jenison
+      - Kentwood
+      - Lowell
+      - Marne
+      - Moline
+      - Pierson
+      - Rockford
+      - Sand Lake
+      - Saugatuck
+      - Sparta
+      - Spring Lake
+      - Stanwood
+      - Walker
+      - Wayland
+      - West Olive
+      - Wyoming
+      - Zeeland
+    cities:
+    - Acme
+    - Alanson
+    - Alden
+    - Alpena
+    - Arcadia
+    - Atlanta
+    - Au Gres
+    - Bay City
+    - Bay Shore
+    - Bear Lake
+    - Beaverton
+    - Bellaire
+    - Benzonia
+    - Beulah
+    - Big Rapids
+    - Boyne City
+    - Boyne Falls
+    - Buckley
+    - Cadillac
+    - Cedar
+    - Central Lake
+    - Charlevoix
+    - Cheboygan
+    - Clare
+    - Cross Village
+    - East Jordan
+    - East Tawas
+    - Eastport
+    - Elk Rapids
+    - Ellsworth
+    - Empire
+    - Fairview
+    - Farwell
+    - Fife Lake
+    - Frankfort
+    - Frederic
+    - Fremont
+    - Garfield Township
+    - Gaylord
+    - Gladwin
+    - Glen Arbor
+    - Grawn
+    - Grayling
+    - Hale
+    - Harbor Springs
+    - Harrietta
+    - Harrison
+    - Harrisville
+    - Hart
+    - Hesperia
+    - Hillman
+    - Honor
+    - Houghton Lake
+    - Indian River
+    - Interlochen
+    - Kalkaska
+    - Kewadin
+    - Kingsley
+    - Lake Ann
+    - Lake City
+    - Lake Leelanau
+    - Leland
+    - Lewiston
+    - Ludington
+    - Mackinaw City
+    - Mancelona
+    - Manistee
+    - Manton
+    - Maple City
+    - Mayfield
+    - McBain
+    - Mears
+    - Mesick
+    - Midland
+    - Mio
+    - Morley
+    - Mount Pleasant
+    - Muskegon
+    - Newaygo
+    - Northport
+    - Old Mission
+    - Onaway
+    - Onekama
+    - Oscoda
+    - Pellston
+    - Pentwater
+    - Petoskey
+    - Posen
+    - Prudenville
+    - Rapid City
+    - Remus
+    - Rogers City
+    - Roscommon
+    - Rose City
+    - Shelby
+    - Shepherd
+    - Silver Lake
+    - South Boardman
+    - St. Helen
+    - Standish
+    - Suttons Bay
+    - Tawas City
+    - Thompsonville
+    - Topinabee
+    - Traverse City
+    - Vanderbilt
+    - Walloon Lake
+    - West Branch
+    - White Cloud
+    - Williamsburg
+    - Ada
+    - Allendale
+    - Belmont
+    - Byron Center
+    - Caledonia
+    - Cascade
+    - Cedar Springs
+    - Comstock Park
+    - Coopersville
+    - Cutlerville
+    - Dorr
+    - Douglas
+    - Fennville
+    - Ferrysburg
+    - Grand Haven
+    - Grand Rapids
+    - Grandville
+    - Greenville
+    - Holland
+    - Howard City
+    - Hudsonville
+    - Jenison
+    - Kentwood
+    - Lowell
+    - Marne
+    - Moline
+    - Pierson
+    - Rockford
+    - Sand Lake
+    - Saugatuck
+    - Sparta
+    - Spring Lake
+    - Stanwood
+    - Walker
+    - Wayland
+    - West Olive
+    - Wyoming
+    - Zeeland
     zip_codes: []
     excluded_zip_codes: []
     require_manual_confirmation_when_unknown: true
+    approved_response_when_unknown: That community is not in my approved list yet. I can collect the address
+      and have Floodman confirm service availability.
+  warranties:
+    public_terms_found: false
+    approved_response: Warranty coverage depends on the installed system and the signed customer agreement.
+      I can arrange for a Floodman representative to review the specific warranty.
+  insurance:
+    website_mentions_documentation: true
+    public_direct_billing_terms_found: false
+    approved_response: Floodman's website states that remediation documentation may be provided for insurance
+      or property records. Coverage, claim approval, and direct billing must be confirmed with the insurer
+      and Floodman team.
+  public_faq:
+  - question: What services does Floodman provide?
+    answer: Floodman provides water-damage restoration, mold remediation, foundation repair, basement
+      waterproofing, crawl-space encapsulation, and sump-pump and drainage services.
+  - question: Do you answer emergencies after hours?
+    answer: Yes. Floodman advertises 24/7 emergency intake and water-damage response.
+  - question: How quickly can you arrive?
+    answer: Floodman responds as quickly as possible, but the assistant cannot guarantee an arrival time.
+      Timing depends on the location, conditions, crew availability, and current emergency demand.
+  - question: Is an inspection free?
+    answer: Floodman's public website advertises free inspections and free consultations. The assistant
+      can collect the property information and arrange the next step.
+  - question: Can you give me an exact price over the phone?
+    answer: No final price should be given before the property and problem are inspected. The assistant
+      can explain the process and arrange an inspection.
+  - question: What are common signs of foundation trouble?
+    answer: Common warning signs include cracks, bowing walls, uneven or sloping floors, sticking doors
+      or windows, settlement, or water entering through a crack. These signs require inspection and are
+      not a phone diagnosis.
+  - question: Do I need help if the basement only leaks during heavy rain?
+    answer: Water that appears during heavy rain can still indicate a drainage, crack, groundwater, sump,
+      grading, or other moisture-control issue. Floodman should inspect the property before recommending
+      a solution.
+  - question: Why encapsulate a crawl space?
+    answer: Encapsulation may help control ground moisture and humidity and support mold prevention, indoor-air
+      quality, energy efficiency, and structural durability. The exact scope depends on inspection.
+  - question: Do you work with insurance?
+    answer: The website mentions documentation for insurance and property records, but it does not publish
+      coverage or direct-billing terms. Those details must be confirmed by a Floodman representative and
+      the insurer.
+  - question: Do you guarantee the repair or warranty?
+    answer: Specific warranty terms depend on the installed system and signed agreement. The assistant
+      should never invent or generalize warranty coverage.
+  information_not_found_on_public_website:
+  - Published office hours other than the 24/7 emergency line
+  - A public street address
+  - A public customer-service email address
+  - Financing terms
+  - Deposit or payment-method policies
+  - Detailed warranty terms
+  - Insurance direct-billing promises
+  - Guaranteed emergency arrival times
+  - A current primary service page advertising fire cleanup
   privacy:
     never_request:
     - Social Security number
-    - complete payment card number
+    - Complete payment card number
     - CVV or card security code
-    - online account password
-    - one-time authentication code
-    - bank account credentials
+    - Online account password
+    - One-time authentication code
+    - Bank account credentials
+  answer_rules:
+  - Use floodman_search_knowledge for detailed public questions.
+  - Use the service-area tool before promising that an address is served.
+  - Treat testimonials as experiences, not standard outcomes or methods.
+  - Treat blog articles as educational context, not job-specific diagnosis or scope.
+  - When approved information is missing, say so and create a callback or transfer.
+knowledge:
+  pack_version: 2026-08-12.1
+  managed_subdirectory: managed
+  custom_subdirectory: custom
+  require_approved: true
+  default_top_k: 4
+  max_context_chars: 5200
+  minimum_score: 0.8
+  website_reviewed_at: '2026-08-12'
+  homepage: https://floodman.com/
+  blog: https://floodman.com/blog
+  approval_policy: 'Only Markdown files with approved: true may be returned to the voice agent.'
 transfer_destinations:
   live_reception:
     extension: '6000'
@@ -70,6 +604,8 @@ scheduling:
       end: '17:00'
     saturday: disabled
     sunday: disabled
+  public_hours_status: not_published_on_website
+  public_hours_warning: These are system scheduling windows, not public office-hour claims.
 call_gate:
   save_audio: false
   direct_customer_fail_open: true

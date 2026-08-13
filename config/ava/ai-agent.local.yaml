@@ -124,11 +124,27 @@ in_call_tools:
     url: "${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/check-service-area"
     method: POST
     headers: {Content-Type: "application/json", X-Internal-Token: "${INTERNAL_TOKEN}"}
-    body_template: '{"call_id":"{call_id}","data":{"address":"{address}","zip":"{zip}"}}'
+    body_template: '{"call_id":"{call_id}","data":{"address":"{address}","city":"{city}","zip":"{zip}"}}'
     parameters:
       - {name: address, type: string, description: "Property address", required: true}
+      - {name: city, type: string, description: "Property city when known", required: false}
       - {name: zip, type: string, description: "Property ZIP code", required: false}
     return_raw_json: true
+
+  floodman_search_knowledge:
+    kind: in_call_http_lookup
+    enabled: true
+    is_global: true
+    description: "Search Floodman's approved website and operator knowledge for detailed public answers. Use returned excerpts only and do not invent missing policies, prices, warranties, diagnoses, or timing."
+    timeout_ms: 3500
+    url: "${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/search-knowledge"
+    method: POST
+    headers: {Content-Type: "application/json", X-Internal-Token: "${INTERNAL_TOKEN}"}
+    body_template: '{"call_id":"{call_id}","caller_number":"{caller_number}","data":{"question":"{question}","category":"","top_k":4}}'
+    parameters:
+      - {name: question, type: string, description: "The customer's detailed public question in a complete sentence", required: true}
+    return_raw_json: true
+    error_message: "I don't have an approved answer for that yet. I can take a message or connect you with the Floodman team."
 
   floodman_public_business_information:
     kind: in_call_http_lookup
