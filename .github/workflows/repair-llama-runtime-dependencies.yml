@@ -1,0 +1,148 @@
+name: Repair llama-cpp Runtime Dependencies
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/repair-llama-runtime-dependencies.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: floodman-llama-runtime-dependencies
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    name: Install and validate llama-cpp runtime dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Patch Dockerfile and add regression test
+        shell: bash
+        run: |
+          python - <<'PY_PATCH'
+          from pathlib import Path
+
+          dockerfile = Path("Dockerfile")
+          text = dockerfile.read_text(encoding="utf-8")
+
+          old = '''    && python -c "from piper import PiperVoice; assert callable(getattr(PiperVoice, 'load', None)); assert callable(getattr(PiperVoice, 'synthesize_wav', None))" \\
+              && CFLAGS="-O3 -march=x86-64 -mtune=generic" \\
+          '''
+          new = '''    && python -c "from piper import PiperVoice; assert callable(getattr(PiperVoice, 'load', None)); assert callable(getattr(PiperVoice, 'synthesize_wav', None))" \\
+              && pip install --no-cache-dir "diskcache>=5.6.1,<6" \\
+              && CFLAGS="-O3 -march=x86-64 -mtune=generic" \\
+          '''
+
+          if new not in text:
+              if text.count(old) != 1:
+                  raise SystemExit(
+                      f"Expected one llama dependency anchor, found {text.count(old)}"
+                  )
+              text = text.replace(old, new, 1)
+
+          old_import = (
+              '    && python -c "from llama_cpp import Llama; '
+              'assert Llama is not None" \\\n'
+          )
+          new_import = (
+              '    && python -c "import diskcache, jinja2, numpy, typing_extensions; '
+              'from llama_cpp import Llama; assert Llama is not None" \\\n'
+          )
+          if new_import not in text:
+              if text.count(old_import) != 1:
+                  raise SystemExit(
+                      f"Expected one llama import check, found {text.count(old_import)}"
+                  )
+              text = text.replace(old_import, new_import, 1)
+
+          dockerfile.write_text(text, encoding="utf-8", newline="\n")
+
+          Path("tests/test_llama_runtime_dependencies.py").write_text(
+              '''from __future__ import annotations
+
+          from pathlib import Path
+
+
+          def test_full_image_installs_llama_runtime_dependencies(
+              project_root: Path,
+          ) -> None:
+              dockerfile = (project_root / "Dockerfile").read_text(
+                  encoding="utf-8"
+              )
+              assert 'pip install --no-cache-dir "diskcache>=5.6.1,<6"' in dockerfile
+              assert (
+                  "import diskcache, jinja2, numpy, typing_extensions; "
+                  "from llama_cpp import Llama"
+              ) in dockerfile
+              assert "--no-deps --no-binary=llama-cpp-python" in dockerfile
+              assert "-DGGML_NATIVE=OFF" in dockerfile
+          ''',
+              encoding="utf-8",
+              newline="\n",
+          )
+          PY_PATCH
+
+      - name: Install project test dependencies
+        run: pip install -e '.[dev]'
+
+      - name: Run focused dependency test
+        run: python -m pytest tests/test_llama_runtime_dependencies.py -q
+
+      - name: Run complete repository test suite
+        run: python -m pytest tests/ -x -q
+
+      - name: Compile and validate
+        shell: bash
+        run: |
+          python -m compileall app scripts tests
+          bash -n scripts/*.sh
+          python scripts/validate_configs.py
+          git diff --check
+
+      - name: Commit tested dependency repair
+        id: commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add Dockerfile tests/test_llama_runtime_dependencies.py
+
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "llama-cpp runtime dependency repair is already installed."
+          else
+            git commit -m "fix: install llama-cpp runtime dependencies"
+            git push origin HEAD:main
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Launch container build
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run ci-container.yml --ref main
+
+      - name: Summary
+        run: |
+          echo "### llama-cpp dependency repair" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Added diskcache, the missing required runtime dependency" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Added an import smoke test for all four llama-cpp Python dependencies" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Preserved the portable generic x86-64 source build" >> "$GITHUB_STEP_SUMMARY"
