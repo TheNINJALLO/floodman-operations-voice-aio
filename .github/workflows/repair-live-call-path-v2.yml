@@ -1,0 +1,499 @@
+name: Repair Floodman Live Call Path v2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/repair-live-call-path-v2.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: floodman-live-call-repair
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    name: Patch and validate inbound and outbound calling
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Apply live-call repair
+        shell: bash
+        run: |
+          python - <<'PY_PATCH'
+          from __future__ import annotations
+
+          import ast
+          import re
+          import textwrap
+          from pathlib import Path
+
+          root = Path(".").resolve()
+
+          def write(path: Path, value: str) -> None:
+              path.write_text(value, encoding="utf-8", newline="\n")
+
+          def replace_python_method(
+              path: Path,
+              *,
+              class_name: str,
+              method_name: str,
+              replacement: str,
+          ) -> None:
+              source = path.read_text(encoding="utf-8")
+              tree = ast.parse(source)
+              target: ast.AsyncFunctionDef | ast.FunctionDef | None = None
+              for node in tree.body:
+                  if not isinstance(node, ast.ClassDef) or node.name != class_name:
+                      continue
+                  for child in node.body:
+                      if isinstance(child, (ast.AsyncFunctionDef, ast.FunctionDef)) and child.name == method_name:
+                          target = child
+                          break
+              if target is None or target.end_lineno is None:
+                  raise SystemExit(f"Could not locate {class_name}.{method_name} in {path}")
+
+              start_line = min(
+                  [target.lineno] + [decorator.lineno for decorator in target.decorator_list]
+              )
+              lines = source.splitlines(keepends=True)
+              replacement_text = replacement.rstrip("\n") + "\n"
+              lines[start_line - 1 : target.end_lineno] = replacement_text.splitlines(keepends=True)
+              write(path, "".join(lines))
+
+          def replace_between(
+              path: Path,
+              *,
+              start_marker: str,
+              end_marker: str,
+              replacement: str,
+              installed_marker: str,
+          ) -> None:
+              source = path.read_text(encoding="utf-8")
+              if installed_marker in source:
+                  return
+              start = source.find(start_marker)
+              if start < 0:
+                  raise SystemExit(f"Start marker missing in {path}: {start_marker}")
+              end = source.find(end_marker, start)
+              if end < 0:
+                  raise SystemExit(f"End marker missing in {path}: {end_marker}")
+              write(path, source[:start] + replacement.rstrip() + "\n\n" + source[end:])
+
+          # AMI response correlation.
+          ami_path = root / "app/outbound/ami.py"
+          new_send_action = textwrap.indent(
+              textwrap.dedent(
+                  r'''
+                  @staticmethod
+                  async def _send_action(
+                      writer: asyncio.StreamWriter,
+                      reader: asyncio.StreamReader,
+                      fields: list[tuple[str, str]],
+                      timeout: float,
+                  ) -> dict[str, str]:
+                      for _, value in fields:
+                          if not _SAFE_VALUE.match(value):
+                              raise ValueError("AMI field values may not contain CR or LF characters")
+                      payload = "".join(f"{key}: {value}\r\n" for key, value in fields) + "\r\n"
+                      writer.write(payload.encode("utf-8"))
+                      await writer.drain()
+
+                      expected_action_id = next(
+                          (
+                              value
+                              for key, value in fields
+                              if key.strip().lower() == "actionid"
+                          ),
+                          "",
+                      )
+                      deadline = asyncio.get_running_loop().time() + timeout
+                      while True:
+                          remaining = deadline - asyncio.get_running_loop().time()
+                          if remaining <= 0:
+                              raise asyncio.TimeoutError(
+                                  "Timed out waiting for AMI action response"
+                              )
+                          block = await AMIClient._read_block(reader, remaining)
+                          if not block.get("Response"):
+                              continue
+                          response_action_id = block.get("ActionID", "")
+                          if (
+                              expected_action_id
+                              and response_action_id
+                              and response_action_id != expected_action_id
+                          ):
+                              continue
+                          return block
+                  '''
+              ).lstrip("\n"),
+              "    ",
+          )
+          replace_python_method(
+              ami_path,
+              class_name="AMIClient",
+              method_name="_send_action",
+              replacement=new_send_action,
+          )
+
+          ami_source = ami_path.read_text(encoding="utf-8")
+          event_count = ami_source.count('("Events", "on"),')
+          if event_count not in {0, 2}:
+              raise SystemExit(f"Expected zero or two AMI Events=on fields, found {event_count}")
+          ami_source = ami_source.replace('("Events", "on"),', '("Events", "call"),')
+
+          wait_pattern = re.compile(
+              r"reader,\s*action_id,\s*self\.settings\.ami_timeout_seconds\s*\+\s*5\.0"
+          )
+          ami_source, changed_waits = wait_pattern.subn(
+              "reader, action_id, min(3.0, self.settings.ami_timeout_seconds)",
+              ami_source,
+          )
+          already_changed_waits = ami_source.count(
+              "reader, action_id, min(3.0, self.settings.ami_timeout_seconds)"
+          )
+          if changed_waits not in {0, 2} or already_changed_waits < 2:
+              raise SystemExit(
+                  "Could not normalize both AMI OriginateResponse wait calls"
+              )
+          write(ami_path, ami_source)
+
+          # Persistent local-model runtime.
+          entrypoint_path = root / "scripts/entrypoint.sh"
+          model_block = r'''
+          truthy() {
+            case "${1,,}" in
+              1|true|yes|on) return 0 ;;
+              *) return 1 ;;
+            esac
+          }
+
+          normalize_local_model_tier() {
+            case "${1^^}" in
+              LIGHT|LIGHT_CPU) printf '%s\n' "LIGHT_CPU" ;;
+              BALANCED|MEDIUM|MEDIUM_CPU) printf '%s\n' "MEDIUM_CPU" ;;
+              QUALITY|HEAVY|HEAVY_CPU) printf '%s\n' "HEAVY_CPU" ;;
+              *)
+                echo "Invalid LOCAL_MODEL_TIER=$1; use LIGHT, BALANCED, QUALITY, LIGHT_CPU, MEDIUM_CPU, or HEAVY_CPU" >&2
+                return 1
+                ;;
+            esac
+          }
+
+          export LOCAL_STT_MODEL_PATH="${LOCAL_STT_MODEL_PATH:-${DATA_DIR}/models/stt/vosk-model-small-en-us-0.15}"
+          export LOCAL_LLM_MODEL_PATH="${LOCAL_LLM_MODEL_PATH:-${DATA_DIR}/models/llm/qwen2.5-1.5b-instruct-q4_k_m.gguf}"
+          export LOCAL_TTS_MODEL_PATH="${LOCAL_TTS_MODEL_PATH:-${DATA_DIR}/models/tts/en_US-lessac-medium.onnx}"
+          export LOCAL_TTS_BACKEND="${LOCAL_TTS_BACKEND:-piper}"
+
+          MODEL_READY_MARKER="${DATA_DIR}/models/.floodman-models-ready"
+          if [[ -f "${MODEL_READY_MARKER}" ]]; then
+            if [[ ! -d "${LOCAL_STT_MODEL_PATH}" || ! -f "${LOCAL_LLM_MODEL_PATH}" || ! -f "${LOCAL_TTS_MODEL_PATH}" || ! -f "${LOCAL_TTS_MODEL_PATH}.json" ]]; then
+              echo "Local model marker is stale; required model files are missing" >&2
+              rm -f "${MODEL_READY_MARKER}"
+            fi
+          fi
+
+          if truthy "${AUTO_INSTALL_LOCAL_MODELS:-false}" && [[ ! -f "${MODEL_READY_MARKER}" ]]; then
+            if [[ "${IMAGE_FLAVOR:-full}" != "full" ]]; then
+              echo "AUTO_INSTALL_LOCAL_MODELS requires the full image, not the lite image" >&2
+              exit 1
+            fi
+            RESOLVED_MODEL_TIER="$(normalize_local_model_tier "${LOCAL_MODEL_TIER:-LIGHT}")"
+            "${AVA_RUNTIME_DIR}/scripts/model_setup.sh" \
+              --tier "${RESOLVED_MODEL_TIER}" \
+              --assume-yes \
+              --language "${LOCAL_MODEL_LANGUAGE:-en-US}"
+            test -d "${LOCAL_STT_MODEL_PATH}"
+            test -f "${LOCAL_LLM_MODEL_PATH}"
+            test -f "${LOCAL_TTS_MODEL_PATH}"
+            test -f "${LOCAL_TTS_MODEL_PATH}.json"
+            touch "${MODEL_READY_MARKER}"
+          fi
+
+          if [[ -f "${MODEL_READY_MARKER}" && "${IMAGE_FLAVOR:-full}" == "full" ]]; then
+            export LOCAL_AI_MODE="${LOCAL_AI_MODE:-full}"
+          else
+            export LOCAL_AI_MODE="${LOCAL_AI_MODE:-minimal}"
+          fi
+          '''
+          replace_between(
+              entrypoint_path,
+              start_marker='if [[ "${AUTO_INSTALL_LOCAL_MODELS:-false}" == "true"',
+              end_marker='case "${STARTUP_PREFLIGHT,,}" in',
+              replacement=textwrap.dedent(model_block).lstrip("\n"),
+              installed_marker="normalize_local_model_tier()",
+          )
+
+          entrypoint_source = entrypoint_path.read_text(encoding="utf-8")
+          if "2026-08-13.1" not in entrypoint_source:
+              old_version = '--pack-version "${KNOWLEDGE_PACK_VERSION:-2026-08-12.1}"'
+              new_version = '--pack-version "${KNOWLEDGE_PACK_VERSION:-2026-08-13.1}"'
+              if entrypoint_source.count(old_version) != 1:
+                  raise SystemExit("Could not locate the current knowledge migration version")
+              entrypoint_source = entrypoint_source.replace(old_version, new_version, 1)
+          write(entrypoint_path, entrypoint_source)
+
+          # AVA local pipeline and provider failure policy.
+          overlay_path = root / "config/ava/ai-agent.local.yaml"
+          overlay_source = overlay_path.read_text(encoding="utf-8")
+          overlay_marker = 'provider_failure_redirect_context: "floodman-provider-failure"'
+          if overlay_marker not in overlay_source:
+              active_line = 'active_pipeline: "${AVA_PIPELINE:-local_hybrid}"\n'
+              if overlay_source.count(active_line) != 1:
+                  raise SystemExit("Could not locate the AVA active_pipeline setting")
+              overlay_block = r'''
+          on_provider_failure: "dialplan_redirect"
+          provider_failure_redirect_context: "floodman-provider-failure"
+          provider_failure_redirect_extension: "s"
+          provider_failure_redirect_priority: 1
+
+          llm:
+            initial_greeting: "Thank you for calling Floodman. I'm Floodman's automated assistant. How can I help with your property today?"
+
+          pipelines:
+            local_hybrid:
+              llm: local_llm
+
+          providers:
+            local_llm:
+              enabled: true
+              ws_url: "${LOCAL_WS_URL:-ws://127.0.0.1:8765}"
+              auth_token: "${LOCAL_WS_AUTH_TOKEN:-}"
+          '''
+              overlay_source = overlay_source.replace(
+                  active_line,
+                  active_line + "\n" + textwrap.dedent(overlay_block).lstrip("\n") + "\n",
+                  1,
+              )
+              write(overlay_path, overlay_source)
+
+          # Inbound RTP diagnostic and safe provider fallback.
+          renderer_path = root / "scripts/render_asterisk.py"
+          renderer_source = renderer_path.read_text(encoding="utf-8")
+          if 'inbound_test_mode = env("INBOUND_TEST_MODE", "off")' not in renderer_source:
+              recording_line = (
+                  '    recording_disclosure = '
+                  'env_bool("CALL_RECORDING_DISCLOSURE_ENABLED", True)\n'
+              )
+              if renderer_source.count(recording_line) != 1:
+                  raise SystemExit("Could not locate the call-recording configuration")
+              diagnostic_block = r'''
+          inbound_test_mode = env("INBOUND_TEST_MODE", "off").strip().lower()
+          if inbound_test_mode not in {"off", "playback", "echo"}:
+              raise ValueError("INBOUND_TEST_MODE must be off, playback, or echo")
+          inbound_test_lines = ""
+          if inbound_test_mode == "playback":
+              inbound_test_lines = (
+                  " same => n,Wait(1)\n"
+                  " same => n,Playback(demo-congrats)\n"
+                  " same => n,Hangup()\n"
+              )
+          elif inbound_test_mode == "echo":
+              inbound_test_lines = (
+                  " same => n,Wait(1)\n"
+                  " same => n,Playback(demo-echotest)\n"
+                  " same => n,Echo()\n"
+                  " same => n,Hangup()\n"
+              )
+          '''
+              renderer_source = renderer_source.replace(
+                  recording_line,
+                  recording_line
+                  + "\n"
+                  + textwrap.indent(
+                      textwrap.dedent(diagnostic_block).lstrip("\n"),
+                      "    ",
+                  )
+                  + "\n",
+                  1,
+              )
+
+          inbound_anchor = (
+              " same => n,Answer()\n"
+              "{rec_inbound_lines.rstrip()}\n"
+              " same => n,AGI({agi / 'agi_gate_start.py'})"
+          )
+          inbound_replacement = (
+              " same => n,Answer()\n"
+              "{inbound_test_lines.rstrip()}\n"
+              "{rec_inbound_lines.rstrip()}\n"
+              " same => n,AGI({agi / 'agi_gate_start.py'})"
+          )
+          if inbound_replacement not in renderer_source:
+              if renderer_source.count(inbound_anchor) != 1:
+                  raise SystemExit("Could not locate the inbound Answer/AGI dialplan")
+              renderer_source = renderer_source.replace(
+                  inbound_anchor, inbound_replacement, 1
+              )
+
+          fallback_anchor = (
+              "[floodman-provider-failure]\n"
+              "exten => s,1,NoOp(Floodman AVA provider failure fallback)\n"
+              " same => n,Goto(from-internal,"
+              "{env('FLOODMAN_LIVE_EXTENSION','6000')},1)"
+          )
+          fallback_replacement = (
+              "[floodman-provider-failure]\n"
+              "exten => s,1,NoOp(Floodman AVA provider failure fallback)\n"
+              " same => n,Gosub(from-internal,"
+              "{env('FLOODMAN_LIVE_EXTENSION','6000')},1)\n"
+              " same => n,Hangup()"
+          )
+          if fallback_replacement not in renderer_source:
+              if renderer_source.count(fallback_anchor) != 1:
+                  raise SystemExit("Could not locate the provider-failure dialplan")
+              renderer_source = renderer_source.replace(
+                  fallback_anchor, fallback_replacement, 1
+              )
+          write(renderer_path, renderer_source)
+
+          # Regression tests.
+          test_path = root / "tests/test_live_call_path.py"
+          test_source = r'''
+          from __future__ import annotations
+
+          import asyncio
+          from pathlib import Path
+
+          import pytest
+          import yaml
+
+          from app.outbound.ami import AMIClient
+
+
+          class _Writer:
+              def __init__(self) -> None:
+                  self.payload = b""
+
+              def write(self, value: bytes) -> None:
+                  self.payload += value
+
+              async def drain(self) -> None:
+                  return None
+
+
+          @pytest.mark.asyncio
+          async def test_ami_action_response_skips_unrelated_event() -> None:
+              reader = asyncio.StreamReader()
+              reader.feed_data(
+                  b"Event: FullyBooted\r\nPrivilege: system,all\r\n\r\n"
+                  b"Response: Success\r\nActionID: wanted\r\n"
+                  b"Message: Originate successfully queued\r\n\r\n"
+              )
+              writer = _Writer()
+              result = await AMIClient._send_action(
+                  writer,  # type: ignore[arg-type]
+                  reader,
+                  [
+                      ("Action", "Originate"),
+                      ("ActionID", "wanted"),
+                      ("Channel", "PJSIP/+12315550100@floodman-trunk"),
+                  ],
+                  1.0,
+              )
+              assert result["Response"] == "Success"
+              assert result["ActionID"] == "wanted"
+              assert b"ActionID: wanted" in writer.payload
+
+
+          def test_live_call_runtime_contract(project_root: Path) -> None:
+              entrypoint = (
+                  project_root / "scripts/entrypoint.sh"
+              ).read_text(encoding="utf-8")
+              renderer = (
+                  project_root / "scripts/render_asterisk.py"
+              ).read_text(encoding="utf-8")
+              overlay = yaml.safe_load(
+                  (
+                      project_root / "config/ava/ai-agent.local.yaml"
+                  ).read_text(encoding="utf-8")
+              )
+
+              assert "normalize_local_model_tier()" in entrypoint
+              assert "LOCAL_STT_MODEL_PATH" in entrypoint
+              assert "LOCAL_LLM_MODEL_PATH" in entrypoint
+              assert "LOCAL_TTS_MODEL_PATH" in entrypoint
+              assert "2026-08-13.1" in entrypoint
+              assert 'INBOUND_TEST_MODE", "off"' in renderer
+              assert "{inbound_test_lines.rstrip()}" in renderer
+              assert "Gosub(from-internal" in renderer
+              assert overlay["pipelines"]["local_hybrid"]["llm"] == "local_llm"
+              assert overlay["providers"]["local_llm"]["enabled"] is True
+              assert overlay["on_provider_failure"] == "dialplan_redirect"
+              assert "Floodman" in overlay["llm"]["initial_greeting"]
+          '''
+          write(test_path, textwrap.dedent(test_source).lstrip("\n"))
+
+          ast.parse(ami_path.read_text(encoding="utf-8"))
+          ast.parse(renderer_path.read_text(encoding="utf-8"))
+          PY_PATCH
+
+      - name: Install test dependencies
+        run: pip install -e '.[dev]'
+
+      - name: Run focused live-call tests
+        run: python -m pytest tests/test_live_call_path.py -q
+
+      - name: Run complete test suite
+        run: python -m pytest tests/ -x -q
+
+      - name: Compile and validate
+        shell: bash
+        run: |
+          python -m compileall app scripts tests
+          bash -n scripts/*.sh
+          python scripts/validate_configs.py
+          git diff --check
+
+      - name: Commit tested repair
+        id: commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            app/outbound/ami.py \
+            scripts/entrypoint.sh \
+            scripts/render_asterisk.py \
+            config/ava/ai-agent.local.yaml \
+            tests/test_live_call_path.py
+
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Live-call repair is already installed."
+          else
+            git commit -m "fix: stabilize Twilio test calls and local inbound AI"
+            git push origin HEAD:main
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Launch full and lite container builds
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run ci-container.yml --ref main
+
+      - name: Summary
+        run: |
+          echo "### Floodman live-call repair" >> "$GITHUB_STEP_SUMMARY"
+          echo "- AMI responses are correlated by ActionID" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Pterodactyl booleans and model tiers are normalized" >> "$GITHUB_STEP_SUMMARY"
+          echo "- The local pipeline uses the bundled WebSocket LLM" >> "$GITHUB_STEP_SUMMARY"
+          echo "- INBOUND_TEST_MODE supports playback and echo diagnostics" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Provider failures redirect to the configured human fallback" >> "$GITHUB_STEP_SUMMARY"
