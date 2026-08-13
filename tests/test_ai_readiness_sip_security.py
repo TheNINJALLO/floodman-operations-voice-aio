@@ -10,9 +10,15 @@ def test_ava_waits_for_local_ai_before_starting(project_root: Path) -> None:
     assert "LOCAL_AI_READY_TIMEOUT_SECONDS" in script
     assert "socket.create_connection" in script
     assert "Floodman local AI ready" in script
+    assert "AVA_PID" in script
+    assert "ava-stasis-ready" in script
+    assert "/applications/${AVA_APP}" in script
     assert script.index("socket.create_connection") < script.index(
-        'exec /opt/venv/bin/python "${AVA_RUNTIME_DIR}/main.py"'
+        '/opt/venv/bin/python "${AVA_RUNTIME_DIR}/main.py" &'
     )
+    assert script.index(
+        '/opt/venv/bin/python "${AVA_RUNTIME_DIR}/main.py" &'
+    ) < script.index("/applications/${AVA_APP}")
 
 
 def test_direct_gate_has_wall_clock_no_audio_fail_open(

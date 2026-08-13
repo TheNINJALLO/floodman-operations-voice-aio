@@ -12,11 +12,30 @@ if ! truthy "${AVA_ENABLED:-true}"; then
   exec sleep infinity
 fi
 
+DATA_DIR="${DATA_DIR:-/home/container/data}"
+AVA_RUNTIME_DIR="${AVA_RUNTIME_DIR:-${DATA_DIR}/runtime/ava}"
+AVA_READY_FILE="${DATA_DIR}/runtime/ava-stasis-ready"
+AVA_APP="${AVA_STASIS_APP:-asterisk-ai-voice-agent}"
+ARI_BASE_URL="http://127.0.0.1:${ARI_PORT:-8088}/ari"
+mkdir -p "$(dirname "${AVA_READY_FILE}")"
+rm -f "${AVA_READY_FILE}"
+
+AVA_PID=""
+
+cleanup() {
+  rm -f "${AVA_READY_FILE}"
+  if [[ -n "${AVA_PID}" ]] && kill -0 "${AVA_PID}" >/dev/null 2>&1; then
+    kill "${AVA_PID}" >/dev/null 2>&1 || true
+    wait "${AVA_PID}" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT INT TERM
+
 if [[ "${ASTERISK_MODE:-embedded}" == "embedded" ]]; then
   ARI_READY=0
   for _ in $(seq 1 "${ASTERISK_READY_TIMEOUT_SECONDS:-120}"); do
     if curl -fsS -u "${ARI_USERNAME}:${ARI_SECRET}" \
-      "http://127.0.0.1:${ARI_PORT:-8088}/ari/asterisk/info" >/dev/null 2>&1; then
+      "${ARI_BASE_URL}/asterisk/info" >/dev/null 2>&1; then
       ARI_READY=1
       break
     fi
@@ -34,7 +53,7 @@ case "${AVA_PIPELINE:-local_hybrid},${AVA_PROVIDER:-local_hybrid},${DEFAULT_PROV
 esac
 
 if truthy "${ENABLE_LOCAL_AI_SERVER:-true}" && [[ "${USES_LOCAL_PIPELINE}" == "1" ]]; then
-  echo "Waiting for the Floodman local AI models and WebSocket server..."
+  echo "Waiting for Floodman's Vosk, Qwen, Piper, and local WebSocket..."
   /opt/venv/bin/python - <<'PY_READY'
 import os
 import socket
@@ -63,10 +82,44 @@ print(
 )
 sys.exit(1)
 PY_READY
-  sleep 1
 fi
 
-AVA_RUNTIME_DIR="${AVA_RUNTIME_DIR:-${DATA_DIR:-/home/container/data}/runtime/ava}"
 test -f "${AVA_RUNTIME_DIR}/main.py"
 cd "${AVA_RUNTIME_DIR}"
-exec /opt/venv/bin/python "${AVA_RUNTIME_DIR}/main.py"
+/opt/venv/bin/python "${AVA_RUNTIME_DIR}/main.py" &
+AVA_PID="$!"
+
+STASIS_READY=0
+CHECKS=$(( ${AVA_STASIS_READY_TIMEOUT_SECONDS:-180} * 2 ))
+for _ in $(seq 1 "${CHECKS}"); do
+  if ! kill -0 "${AVA_PID}" >/dev/null 2>&1; then
+    if wait "${AVA_PID}"; then
+      exit 0
+    else
+      exit $?
+    fi
+  fi
+
+  if curl -fsS -u "${ARI_USERNAME}:${ARI_SECRET}" \
+    "${ARI_BASE_URL}/applications/${AVA_APP}" >/dev/null 2>&1; then
+    STASIS_READY=1
+    : > "${AVA_READY_FILE}"
+    chmod 600 "${AVA_READY_FILE}"
+    echo "Floodman AVA Stasis application ready: ${AVA_APP}"
+    break
+  fi
+  sleep 0.5
+done
+
+if [[ "${STASIS_READY}" != "1" ]]; then
+  echo "AVA process started but Stasis application ${AVA_APP} never registered" >&2
+  exit 1
+fi
+
+if wait "${AVA_PID}"; then
+  STATUS=0
+else
+  STATUS=$?
+fi
+AVA_PID=""
+exit "${STATUS}"

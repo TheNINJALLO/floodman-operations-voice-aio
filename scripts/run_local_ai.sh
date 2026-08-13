@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
-if [[ "${ENABLE_LOCAL_AI_SERVER:-true}" != "true" ]]; then
+
+truthy() {
+  case "${1,,}" in
+    1|true|yes|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+if ! truthy "${ENABLE_LOCAL_AI_SERVER:-true}"; then
+  echo "Floodman local AI disabled by ENABLE_LOCAL_AI_SERVER=${ENABLE_LOCAL_AI_SERVER:-false}"
   exec sleep infinity
 fi
 
@@ -11,4 +20,6 @@ test -f "${LOCAL_AI_DIR}/server.py"
 
 export PYTHONPATH="${LOCAL_AI_DIR}:${AVA_RUNTIME_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
 cd "${AVA_RUNTIME_DIR}"
+
+echo "Starting Floodman local AI in ${LOCAL_AI_MODE:-auto} mode on ${LOCAL_WS_HOST:-127.0.0.1}:${LOCAL_WS_PORT:-8765}"
 exec /opt/venv/bin/python "${LOCAL_AI_DIR}/main.py"
