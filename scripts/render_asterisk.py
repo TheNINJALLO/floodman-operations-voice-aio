@@ -331,7 +331,19 @@ def main() -> None:
     db = runtime_root / "db"
     keys = runtime_root / "keys"
     cache = runtime_root / "cache"
-    for path in (destination, varlib, spool, run, logs, agi, db, keys, cache):
+    cdr_custom = logs / "cdr-custom"
+    for path in (
+        destination,
+        varlib,
+        spool,
+        run,
+        logs,
+        agi,
+        db,
+        keys,
+        cache,
+        cdr_custom,
+    ):
         path.mkdir(parents=True, exist_ok=True)
 
     module_override = line(env("ASTERISK_MODULE_DIR"), "Asterisk module directory")
@@ -620,7 +632,8 @@ exten => s,1,NoOp(Floodman inbound call gate)
 {rec_inbound_lines.rstrip()}
  same => n,AGI({agi / 'agi_gate_start.py'})
  same => n,GotoIf($["${{FLOODMAN_GATE_BYPASS}}"="1"]?ava)
- same => n,AudioSocket(${{FLOODMAN_GATE_UUID}},${{FLOODMAN_GATE_SERVICE}})
+ same => n,TryExec(AudioSocket(${{FLOODMAN_GATE_UUID}},${{FLOODMAN_GATE_SERVICE}}))
+ same => n,NoOp(Floodman gate AudioSocket completed with ${{TRYSTATUS}})
  same => n,AGI({agi / 'agi_gate_finish.py'})
  same => n(ava),Set(__AI_AGENT=${{IF($["${{AI_AGENT}}"=""]?floodman_inbound:${{AI_AGENT}})}})
  same => n,Set(__AI_PROVIDER=${{IF($["${{AI_PROVIDER}}"=""]?{env('DEFAULT_PROVIDER','local_hybrid')}:${{AI_PROVIDER}})}})
