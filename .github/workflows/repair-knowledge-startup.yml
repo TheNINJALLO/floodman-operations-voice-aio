@@ -1,0 +1,111 @@
+name: Repair Floodman Knowledge Startup Hook
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-knowledge-startup.yml'
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: floodman-knowledge-startup-repair
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    name: Add missing knowledge migration hook and republish images
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out current main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Apply the existing idempotent knowledge patcher
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/apply_website_knowledge_patch.py --root .
+          chmod +x scripts/entrypoint.sh scripts/install_knowledge_pack.py
+
+          mapfile -t changed < <(git diff --name-only)
+          printf 'Changed files after repair:\n'
+          printf '  %s\n' "${changed[@]:-<none>}"
+
+          for path in "${changed[@]}"; do
+            if [[ "$path" != "scripts/entrypoint.sh" ]]; then
+              echo "Unexpected file changed by the repair: $path" >&2
+              exit 1
+            fi
+          done
+
+          grep -Fq 'export KNOWLEDGE_DIR="${KNOWLEDGE_DIR:-${DATA_DIR}/knowledge}"' scripts/entrypoint.sh
+          grep -Fq '/opt/floodman/scripts/install_knowledge_pack.py' scripts/entrypoint.sh
+          grep -Fq 'Knowledge library: ${KNOWLEDGE_DIR}' scripts/entrypoint.sh
+          bash -n scripts/entrypoint.sh
+
+      - name: Install validation dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -e '.[dev]'
+
+      - name: Run focused knowledge validation
+        run: python -m pytest tests/test_knowledge.py -x -q
+
+      - name: Run complete repository validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest tests/ -x -q
+          python -m compileall app scripts tests
+          bash -n scripts/*.sh
+          python scripts/validate_configs.py
+
+      - name: Commit the tested startup repair
+        id: commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/entrypoint.sh
+
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "The knowledge startup hook is already present."
+          else
+            git commit -m "fix: install website knowledge during container startup"
+            git push origin HEAD:main
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Launch full and lite container builds
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run ci-container.yml --ref main
+          echo "Dispatched CI and Publish Floodman Containers from repaired main."
+
+      - name: Summary
+        run: |
+          echo "### Floodman knowledge startup repaired" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Added the missing persistent knowledge-pack migration hook" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Preserved the existing runtime-engine, Pterodactyl, Twilio, and recording fixes" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Ran focused and complete repository tests" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Dispatched full and lite GHCR builds" >> "$GITHUB_STEP_SUMMARY"
