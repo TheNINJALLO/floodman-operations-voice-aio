@@ -3,6 +3,7 @@ set -euo pipefail
 
 export DATA_DIR="${DATA_DIR:-/home/container/data}"
 export CONFIG_DIR="${CONFIG_DIR:-${DATA_DIR}/config}"
+export KNOWLEDGE_DIR="${KNOWLEDGE_DIR:-${DATA_DIR}/knowledge}"
 export ASTERISK_CONFIG_DIR="${ASTERISK_CONFIG_DIR:-${DATA_DIR}/asterisk/etc}"
 export AGENTS_DB_PATH="${AGENTS_DB_PATH:-${DATA_DIR}/ava/operator/agents.db}"
 export CALL_HISTORY_DB_PATH="${CALL_HISTORY_DB_PATH:-${DATA_DIR}/ava/call_history.db}"
@@ -22,6 +23,7 @@ mkdir -p \
   "${DATA_DIR}/cache" \
   "${DATA_DIR}/uploads" \
   "${DATA_DIR}/recordings" \
+  "${KNOWLEDGE_DIR}" \
   "${CONFIG_DIR}/ava" \
   "${ASTERISK_CONFIG_DIR}" \
   "${SUPERVISOR_CHILDLOGDIR}"
@@ -132,6 +134,11 @@ if [[ ! -f "${CONFIG_DIR}/ava/ai-agent.local.yaml" ]]; then
   cp /opt/floodman/config/ava/ai-agent.local.yaml "${CONFIG_DIR}/ava/ai-agent.local.yaml"
 fi
 
+# Install the reviewed website knowledge pack once per version. Existing operational
+# settings and custom knowledge are preserved, and managed files are backed up first.
+/opt/venv/bin/python /opt/floodman/scripts/install_knowledge_pack.py \
+  --pack-version "${KNOWLEDGE_PACK_VERSION:-2026-08-12.1}"
+
 # Never mutate /opt/ava at runtime. Pterodactyl may mount the image root read-only.
 /opt/floodman/scripts/prepare_ava_runtime.sh
 
@@ -192,6 +199,7 @@ cat <<BANNER
  AVA provider: ${AVA_PROVIDER:-local_hybrid}
  AVA writable runtime: ${AVA_RUNTIME_DIR}
  Persistent data: ${DATA_DIR}
+ Knowledge library: ${KNOWLEDGE_DIR}
 ============================================================
 BANNER
 
