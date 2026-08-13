@@ -1,0 +1,232 @@
+name: Repair Floodman CPU and AudioSocket Compatibility
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/repair-cpu-audiosocket.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: floodman-cpu-audiosocket-repair
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    name: Patch portable llama.cpp and nonfatal call gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Apply compatibility repair
+        shell: bash
+        run: |
+          python - <<'PY_PATCH'
+          from pathlib import Path
+
+          root = Path(".").resolve()
+
+          def replace_once(path: Path, old: str, new: str, label: str) -> None:
+              text = path.read_text(encoding="utf-8")
+              if new in text:
+                  return
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected exactly one anchor, found {count}")
+              path.write_text(text.replace(old, new, 1), encoding="utf-8", newline="\n")
+
+          # llama.cpp defaults GGML_NATIVE to ON for ordinary local builds.
+          # GitHub therefore compiled the Python extension for the runner's CPU,
+          # which can execute instructions unavailable on an older Pterodactyl node.
+          # Force a baseline x86-64 source build with every optional x86 ISA disabled.
+          dockerfile = root / "Dockerfile"
+          replace_once(
+              dockerfile,
+              '''    && CMAKE_ARGS="-DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_TOOLS=OFF" \\
+                 pip install --no-cache-dir "llama-cpp-python==${LLAMA_CPP_PYTHON_VERSION}" \\
+              ''',
+              '''    && CFLAGS="-O3 -march=x86-64 -mtune=generic" \\
+                 CXXFLAGS="-O3 -march=x86-64 -mtune=generic" \\
+                 CMAKE_ARGS="-DGGML_NATIVE=OFF -DGGML_SSE42=OFF -DGGML_AVX=OFF -DGGML_AVX_VNNI=OFF -DGGML_AVX2=OFF -DGGML_BMI2=OFF -DGGML_FMA=OFF -DGGML_F16C=OFF -DGGML_AVX512=OFF -DGGML_AVX512_VBMI=OFF -DGGML_AVX512_VNNI=OFF -DGGML_AVX512_BF16=OFF -DGGML_AMX_TILE=OFF -DGGML_AMX_INT8=OFF -DGGML_AMX_BF16=OFF -DGGML_LTO=OFF -DGGML_BLAS=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_TOOLS=OFF" \\
+                 pip install --no-cache-dir --force-reinstall --no-deps --no-binary=llama-cpp-python "llama-cpp-python==${LLAMA_CPP_PYTHON_VERSION}" \\
+              ''',
+              "portable llama-cpp-python build",
+          )
+
+          # Asterisk 20's AudioSocket application returns failure when the remote
+          # service sends the protocol's normal terminate frame. TryExec converts
+          # that expected nonzero application result into TRYSTATUS and lets the
+          # dialplan continue into gate finalization and AVA.
+          renderer = root / "scripts/render_asterisk.py"
+          gate_uuid = "$" + "{{FLOODMAN_GATE_UUID}}"
+          gate_service = "$" + "{{FLOODMAN_GATE_SERVICE}}"
+          try_status = "$" + "{{TRYSTATUS}}"
+          replace_once(
+              renderer,
+              f" same => n,AudioSocket({gate_uuid},{gate_service})",
+              (
+                  f" same => n,TryExec(AudioSocket({gate_uuid},{gate_service}))\n"
+                  f" same => n,NoOp(Floodman gate AudioSocket completed with {try_status})"
+              ),
+              "nonfatal AudioSocket gate",
+          )
+
+          # cdr_custom writes beneath astlogdir/cdr-custom. Create the directory
+          # before Asterisk starts so harmless call logging does not emit errors.
+          replace_once(
+              renderer,
+              '    cache = runtime_root / "cache"\n',
+              '    cache = runtime_root / "cache"\n    cdr_custom = logs / "cdr-custom"\n',
+              "Asterisk CDR path declaration",
+          )
+          replace_once(
+              renderer,
+              '    for path in (destination, varlib, spool, run, logs, agi, db, keys, cache):',
+              '''    for path in (
+                  destination,
+                  varlib,
+                  spool,
+                  run,
+                  logs,
+                  agi,
+                  db,
+                  keys,
+                  cache,
+                  cdr_custom,
+              ):''',
+              "Asterisk CDR directory",
+          )
+
+          test_file = root / "tests/test_cpu_audiosocket_compat.py"
+          test_file.write_text(
+              '''from __future__ import annotations
+
+          import os
+          import subprocess
+          from pathlib import Path
+
+
+          def test_full_image_build_is_cpu_portable(project_root: Path) -> None:
+              dockerfile = (project_root / "Dockerfile").read_text(encoding="utf-8")
+              required = (
+                  "-DGGML_NATIVE=OFF",
+                  "-DGGML_SSE42=OFF",
+                  "-DGGML_AVX=OFF",
+                  "-DGGML_AVX2=OFF",
+                  "-DGGML_BMI2=OFF",
+                  "-DGGML_FMA=OFF",
+                  "-DGGML_F16C=OFF",
+                  "--no-binary=llama-cpp-python",
+                  "-march=x86-64",
+                  "-mtune=generic",
+              )
+              for value in required:
+                  assert value in dockerfile
+              assert "-DGGML_NATIVE=ON" not in dockerfile
+
+
+          def test_renderer_treats_gate_termination_as_nonfatal(
+              project_root: Path, tmp_path: Path
+          ) -> None:
+              env = os.environ.copy()
+              env.update(
+                  {
+                      "DATA_DIR": str(tmp_path / "runtime"),
+                      "ASTERISK_CONFIG_DIR": str(tmp_path / "runtime/asterisk/etc"),
+                      "ASTERISK_MODULE_DIR": str(tmp_path / "modules"),
+                      "SIP_TRUNK_MODE": "disabled",
+                      "ARI_SECRET": "ari-test-secret",
+                      "AMI_SECRET": "ami-test-secret",
+                  }
+              )
+              subprocess.run(
+                  ["python", str(project_root / "scripts/render_asterisk.py")],
+                  check=True,
+                  env=env,
+                  cwd=project_root,
+              )
+              runtime = tmp_path / "runtime/asterisk"
+              extensions = (runtime / "etc/extensions.conf").read_text(encoding="utf-8")
+              assert "TryExec(AudioSocket(${FLOODMAN_GATE_UUID}" in extensions
+              assert "Floodman gate AudioSocket completed with ${TRYSTATUS}" in extensions
+              assert "\\n same => n,AudioSocket(${FLOODMAN_GATE_UUID}" not in extensions
+              assert (runtime / "logs/cdr-custom").is_dir()
+          ''',
+              encoding="utf-8",
+              newline="\n",
+          )
+          PY_PATCH
+
+      - name: Verify generated Python syntax
+        run: |
+          python -m py_compile \
+            scripts/render_asterisk.py \
+            tests/test_cpu_audiosocket_compat.py
+
+      - name: Install test dependencies
+        run: pip install -e '.[dev]'
+
+      - name: Run focused compatibility tests
+        run: python -m pytest tests/test_cpu_audiosocket_compat.py -q
+
+      - name: Run complete repository tests
+        run: python -m pytest tests/ -x -q
+
+      - name: Compile and validate repository
+        shell: bash
+        run: |
+          python -m compileall app scripts tests
+          bash -n scripts/*.sh
+          python scripts/validate_configs.py
+          git diff --check
+
+      - name: Commit tested repair
+        id: commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add \
+            Dockerfile \
+            scripts/render_asterisk.py \
+            tests/test_cpu_audiosocket_compat.py
+
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "CPU and AudioSocket repair is already installed."
+          else
+            git commit -m "fix: support legacy CPUs and continue after call gate"
+            git push origin HEAD:main
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Launch full and lite container builds
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run ci-container.yml --ref main
+
+      - name: Completion summary
+        run: |
+          echo "### Floodman CPU and AudioSocket compatibility repair" >> "$GITHUB_STEP_SUMMARY"
+          echo "- llama-cpp-python rebuilt from source for baseline x86-64" >> "$GITHUB_STEP_SUMMARY"
+          echo "- AVX, AVX2, FMA, F16C, BMI2, SSE4.2, AVX-512, and AMX disabled" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Normal call-gate termination no longer aborts the inbound dialplan" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Asterisk cdr-custom directory is created before startup" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Focused and complete test suites passed before commit" >> "$GITHUB_STEP_SUMMARY"
