@@ -461,13 +461,19 @@ initial_size=5
 idle_timeout_sec=20
 max_size=50
 """)
-    write(destination / "logger.conf", """
+    console_levels = safe(
+        env("ASTERISK_CONSOLE_LEVELS", "warning,error,verbose"),
+        r"[A-Za-z,]+",
+        "Asterisk console levels",
+        False,
+    )
+    write(destination / "logger.conf", f"""
 [general]
 dateformat=%F %T
 queue_log=no
 
 [logfiles]
-console => notice,warning,error,verbose
+console => {console_levels}
 full => notice,warning,error,verbose,debug
 security => security
 """)

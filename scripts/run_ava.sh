@@ -102,6 +102,12 @@ for _ in $(seq 1 "${CHECKS}"); do
 
   if curl -fsS -u "${ARI_USERNAME}:${ARI_SECRET}" \
     "${ARI_BASE_URL}/applications/${AVA_APP}" >/dev/null 2>&1; then
+    if [[ "${FLOODMAN_AI_PROFILE:-local_hybrid}" == "production_hybrid" ]] \
+      && [[ ! -s "${DATA_DIR}/runtime/production-ai-validated.json" ]]; then
+      echo "Ava registered, but production provider validation is missing" >&2
+      sleep 1
+      continue
+    fi
     STASIS_READY=1
     : > "${AVA_READY_FILE}"
     chmod 600 "${AVA_READY_FILE}"
