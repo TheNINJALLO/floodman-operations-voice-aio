@@ -1,0 +1,181 @@
+name: Repair Deepgram Flux TurnInfo Receiver
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/repair-flux-structlog-event.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: floodman-flux-structlog-event-repair
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    name: Keep the Flux receive loop alive after caller speech
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Repair the TurnInfo logger collision
+        shell: bash
+        run: |
+          python - <<'PY_PATCH'
+          from __future__ import annotations
+
+          from pathlib import Path
+
+          patcher = Path("scripts/patch_ava_flux.py")
+          source = patcher.read_text(encoding="utf-8")
+
+          replacements = (
+              (
+                  '                    event = str(data.get("event") or "")\n',
+                  '                    turn_event = str(data.get("event") or "")\n',
+                  1,
+                  "TurnInfo event variable",
+              ),
+              (
+                  '                    if event == "EndOfTurn":\n',
+                  '                    if turn_event == "EndOfTurn":\n',
+                  1,
+                  "EndOfTurn comparison",
+              ),
+              (
+                  '                    elif event == "EagerEndOfTurn":\n',
+                  '                    elif turn_event == "EagerEndOfTurn":\n',
+                  1,
+                  "EagerEndOfTurn comparison",
+              ),
+              (
+                  '                    elif event in {\n',
+                  '                    elif turn_event in {\n',
+                  1,
+                  "active-turn comparison",
+              ),
+              (
+                  '                            event=event,\n',
+                  '                            turn_event=turn_event,\n',
+                  2,
+                  "structlog metadata keyword",
+              ),
+          )
+
+          for old, new, expected, label in replacements:
+              if new in source and old not in source:
+                  continue
+              count = source.count(old)
+              if count != expected:
+                  raise SystemExit(
+                      f"{label}: expected {expected} source matches, found {count}"
+                  )
+              source = source.replace(old, new)
+
+          if "event=event" in source:
+              raise SystemExit(
+                  "Unsafe structlog event=event keyword remains in the Flux patcher"
+              )
+          if source.count("turn_event=turn_event") != 2:
+              raise SystemExit(
+                  "Expected two safe turn_event metadata fields"
+              )
+
+          patcher.write_text(source, encoding="utf-8", newline="\n")
+
+          test_path = Path("tests/test_flux_turninfo_runtime.py")
+          tests = test_path.read_text(encoding="utf-8")
+          regression = (
+              "\n\n"
+              "def test_flux_turninfo_logging_does_not_shadow_structlog_event(\n"
+              "    project_root: Path,\n"
+              ") -> None:\n"
+              "    source = (\n"
+              "        project_root\n"
+              "        / \"scripts/patch_ava_flux.py\"\n"
+              "    ).read_text(encoding=\"utf-8\")\n"
+              "    assert 'turn_event = str(data.get(\"event\") or \"\")' in source\n"
+              "    assert \"event=event\" not in source\n"
+              "    assert source.count(\"turn_event=turn_event\") == 2\n"
+          )
+          if "test_flux_turninfo_logging_does_not_shadow_structlog_event" not in tests:
+              test_path.write_text(
+                  tests.rstrip() + regression,
+                  encoding="utf-8",
+                  newline="\n",
+              )
+          PY_PATCH
+
+      - name: Verify generated syntax
+        shell: bash
+        run: |
+          python -m py_compile \
+            scripts/patch_ava_flux.py \
+            tests/test_flux_turninfo_runtime.py
+          git diff --check
+
+      - name: Install project test dependencies
+        run: pip install -e '.[dev]'
+
+      - name: Run focused Flux tests
+        run: python -m pytest tests/test_flux_turninfo_runtime.py -q
+
+      - name: Run complete repository tests
+        run: python -m pytest tests/ -x -q
+
+      - name: Compile and validate repository
+        shell: bash
+        run: |
+          python -m compileall app scripts tests
+          bash -n scripts/*.sh
+          python scripts/validate_configs.py
+          git diff --check
+
+      - name: Commit tested Flux receiver repair
+        id: commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add \
+            scripts/patch_ava_flux.py \
+            tests/test_flux_turninfo_runtime.py
+
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Flux logger-collision repair is already installed."
+          else
+            git commit -m "fix: keep Deepgram Flux TurnInfo receiver alive"
+            git push origin HEAD:main
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Launch full and lite container builds
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run ci-container.yml --ref main
+
+      - name: Summary
+        run: |
+          echo "### Deepgram Flux receive-loop repair" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Renamed the TurnInfo variable from event to turn_event" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Removed the duplicate structlog event argument" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Added a regression test for the exact live-call crash" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Dispatched full and lite container builds after tests" >> "$GITHUB_STEP_SUMMARY"
