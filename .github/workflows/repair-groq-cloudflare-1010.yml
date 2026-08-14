@@ -1,0 +1,228 @@
+name: Repair Groq Cloudflare 1010 Preflight
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/repair-groq-cloudflare-1010.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: floodman-groq-cloudflare-1010
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    name: Replace urllib preflight with httpx
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Patch Groq production preflight
+        shell: bash
+        run: |
+          python - <<'PY_PATCH'
+          from __future__ import annotations
+
+          import ast
+          from pathlib import Path
+
+          path = Path("scripts/validate_production_ai.py")
+          text = path.read_text(encoding="utf-8")
+
+          if "\nimport httpx\n" not in text:
+              anchor = "from typing import Any\n"
+              if text.count(anchor) != 1:
+                  raise SystemExit(
+                      f"Expected one typing import anchor, found {text.count(anchor)}"
+                  )
+              text = text.replace(anchor, anchor + "\nimport httpx\n", 1)
+
+          tree = ast.parse(text)
+          target = next(
+              (
+                  node
+                  for node in tree.body
+                  if isinstance(node, ast.FunctionDef)
+                  and node.name == "json_request"
+              ),
+              None,
+          )
+          if target is None or target.end_lineno is None:
+              raise SystemExit("Could not locate json_request()")
+
+          replacement = '''def json_request(
+              url: str,
+              *,
+              headers: dict[str, str],
+              payload: dict[str, Any] | None = None,
+              timeout: float = 20.0,
+          ) -> dict[str, Any]:
+              request_headers = {
+                  "Accept": "application/json",
+                  "User-Agent": getenv(
+                      "FLOODMAN_HTTP_USER_AGENT",
+                      "Asterisk-AI-Voice-Agent/1.0",
+                  ),
+                  **dict(headers),
+              }
+              method = "POST" if payload is not None else "GET"
+
+              try:
+                  with httpx.Client(
+                      timeout=timeout,
+                      follow_redirects=True,
+                  ) as client:
+                      response = client.request(
+                          method,
+                          url,
+                          headers=request_headers,
+                          json=payload,
+                      )
+              except httpx.HTTPError as exc:
+                  raise ValidationError(
+                      f"{url} connection failed: {exc}"
+                  ) from exc
+
+              if response.status_code >= 400:
+                  diagnostics = []
+                  cf_ray = response.headers.get("cf-ray")
+                  cf_error_type = response.headers.get("cf-error-type")
+                  if cf_ray:
+                      diagnostics.append(f"cf-ray={cf_ray}")
+                  if cf_error_type:
+                      diagnostics.append(f"cf-error-type={cf_error_type}")
+                  suffix = (
+                      " (" + ", ".join(diagnostics) + ")"
+                      if diagnostics
+                      else ""
+                  )
+                  body = response.text[:700]
+                  raise ValidationError(
+                      f"{url} returned HTTP {response.status_code}"
+                      f"{suffix}: {body}"
+                  )
+
+              try:
+                  value = response.json()
+              except ValueError as exc:
+                  raise ValidationError(
+                      f"{url} returned invalid JSON"
+                  ) from exc
+              if not isinstance(value, dict):
+                  raise ValidationError(
+                      f"{url} returned an unexpected response"
+                  )
+              return value
+          '''
+
+          lines = text.splitlines(keepends=True)
+          start = target.lineno - 1
+          end = target.end_lineno
+          text = "".join(lines[:start]) + replacement + "\n\n" + "".join(lines[end:])
+          path.write_text(text, encoding="utf-8", newline="\n")
+
+          test_path = Path("tests/test_groq_preflight_client.py")
+          test_path.write_text(
+              '''from __future__ import annotations
+
+          import ast
+          from pathlib import Path
+
+
+          def test_groq_preflight_uses_supported_http_client_signature(
+              project_root: Path,
+          ) -> None:
+              source = (
+                  project_root / "scripts/validate_production_ai.py"
+              ).read_text(encoding="utf-8")
+              tree = ast.parse(source)
+              function = next(
+                  node
+                  for node in tree.body
+                  if isinstance(node, ast.FunctionDef)
+                  and node.name == "json_request"
+              )
+              segment = ast.get_source_segment(source, function)
+              assert segment is not None
+              assert "httpx.Client" in segment
+              assert "Asterisk-AI-Voice-Agent/1.0" in segment
+              assert "follow_redirects=True" in segment
+              assert "cf-ray" in segment
+              assert "urllib.request.urlopen" not in segment
+
+
+          def test_groq_model_remains_current(
+              project_root: Path,
+          ) -> None:
+              source = (
+                  project_root / "scripts/validate_production_ai.py"
+              ).read_text(encoding="utf-8")
+              assert "qwen/qwen3.6-27b" in source
+          ''',
+              encoding="utf-8",
+              newline="\n",
+          )
+          PY_PATCH
+
+      - name: Verify generated syntax
+        run: |
+          python -m py_compile \
+            scripts/validate_production_ai.py \
+            tests/test_groq_preflight_client.py
+
+      - name: Install project test dependencies
+        run: pip install -e '.[dev]'
+
+      - name: Run focused preflight tests
+        run: python -m pytest tests/test_groq_preflight_client.py -q
+
+      - name: Run complete repository tests
+        run: python -m pytest tests/ -x -q
+
+      - name: Compile and validate repository
+        shell: bash
+        run: |
+          python -m compileall app scripts tests
+          bash -n scripts/*.sh
+          python scripts/validate_configs.py
+          git diff --check
+
+      - name: Commit tested repair
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add \
+            scripts/validate_production_ai.py \
+            tests/test_groq_preflight_client.py
+
+          if git diff --cached --quiet; then
+            echo "Groq Cloudflare preflight repair is already installed."
+          else
+            git commit -m "fix: use httpx for Groq production preflight"
+            git push origin HEAD:main
+          fi
+
+      - name: Summary
+        run: |
+          echo "### Groq Cloudflare 1010 repair" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Replaced Python urllib with the supported httpx client" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Matched the live AVA User-Agent" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Added Cloudflare diagnostic headers to future errors" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Full repository tests passed before commit" >> "$GITHUB_STEP_SUMMARY"
