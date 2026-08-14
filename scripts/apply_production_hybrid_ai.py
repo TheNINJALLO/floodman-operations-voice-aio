@@ -64,6 +64,16 @@ def production_patch() -> dict[str, Any]:
             "force_unmute": True,
             "post_tts_end_protection_ms": 750,
         },
+        "no_input": {
+            "enabled": True,
+            "inbound_enabled": True,
+            "outbound_enabled": True,
+            "initial_timeout_sec": 12,
+            "grace_timeout_sec": 8,
+            "max_check_ins": 1,
+            "check_in_message": "I didn't quite catch that. Could you say that again?",
+            "final_message": "I'm still not hearing you, so I'll end the call now. Please call us back when you're ready. Goodbye.",
+        },
         "pipelines": {
             # AVA upstream ships demo pipelines that Floodman does not use.
             # Null values are deletion markers in AVA local overrides.
@@ -100,6 +110,7 @@ def production_patch() -> dict[str, Any]:
                         "service_tier": "${GROQ_SERVICE_TIER:-on_demand}",
                         "rate_limit_retries": "${GROQ_RATE_LIMIT_RETRIES:-1}",
                         "rate_limit_max_wait_sec": "${GROQ_RATE_LIMIT_MAX_WAIT_SECONDS:-3}",
+                        "rate_limit_fallback_model": "${GROQ_RATE_LIMIT_FALLBACK_MODEL:-llama-3.3-70b-versatile}",
                     },
                     "tts": {
                         "voice_id": "${ELEVENLABS_VOICE_ID:-21m00Tcm4TlvDq8ikWAM}",

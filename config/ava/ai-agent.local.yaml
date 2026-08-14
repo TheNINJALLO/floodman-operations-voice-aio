@@ -36,7 +36,7 @@ in_call_tools:
   floodman_lookup_customer:
     kind: in_call_http_lookup
     enabled: true
-    is_global: true
+    is_global: false
     description: Look up an existing Floodman customer by phone, name, or property address.
     timeout_ms: 6000
     url: ${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/lookup-customer
@@ -151,7 +151,7 @@ in_call_tools:
   floodman_check_service_area:
     kind: in_call_http_lookup
     enabled: true
-    is_global: true
+    is_global: false
     description: Check whether a property address is within Floodman's configured service area.
     timeout_ms: 5000
     url: ${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/check-service-area
@@ -177,7 +177,7 @@ in_call_tools:
   floodman_search_knowledge:
     kind: in_call_http_lookup
     enabled: true
-    is_global: true
+    is_global: false
     description: Search Floodman's approved website and operator knowledge for detailed public answers. Use returned excerpts only and do not invent missing policies, prices, warranties, diagnoses, or timing.
     timeout_ms: 3500
     url: ${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/search-knowledge
@@ -196,7 +196,7 @@ in_call_tools:
   floodman_public_business_information:
     kind: in_call_http_lookup
     enabled: true
-    is_global: true
+    is_global: false
     description: Retrieve approved public Floodman hours, services, policies, and service-area facts.
     timeout_ms: 3000
     url: ${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/public-business-information
@@ -332,7 +332,7 @@ in_call_tools:
   floodman_send_photo_upload_link:
     kind: in_call_http_lookup
     enabled: true
-    is_global: true
+    is_global: false
     description: Send a secure Floodman photo-upload link after consent to text or email.
     timeout_ms: 6000
     url: ${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/send-photo-upload-link
@@ -362,7 +362,7 @@ in_call_tools:
   floodman_verify_customer:
     kind: in_call_http_lookup
     enabled: true
-    is_global: true
+    is_global: false
     description: Verify an existing customer using approved account facts before private information is disclosed.
     timeout_ms: 7000
     url: ${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/verify-customer
@@ -396,7 +396,7 @@ in_call_tools:
   floodman_get_billing_summary:
     kind: in_call_http_lookup
     enabled: true
-    is_global: true
+    is_global: false
     description: Retrieve a minimal billing summary only after identity verification.
     timeout_ms: 6000
     url: ${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/get-billing-summary
@@ -418,7 +418,7 @@ in_call_tools:
   floodman_send_payment_link:
     kind: in_call_http_lookup
     enabled: true
-    is_global: true
+    is_global: false
     description: Send a secure payment link. Never collect payment-card data in the voice conversation.
     timeout_ms: 7000
     url: ${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/send-payment-link
@@ -490,7 +490,7 @@ in_call_tools:
   floodman_record_disposition:
     kind: in_call_http_lookup
     enabled: true
-    is_global: true
+    is_global: false
     description: Record a call result, objection, lost reason, or next action.
     timeout_ms: 5000
     url: ${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/record-disposition
@@ -520,7 +520,7 @@ in_call_tools:
   floodman_opt_out:
     kind: in_call_http_lookup
     enabled: true
-    is_global: true
+    is_global: false
     description: Immediately record a customer's do-not-call or category-specific opt-out.
     timeout_ms: 5000
     url: ${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/opt-out
@@ -546,7 +546,7 @@ in_call_tools:
   floodman_record_security_event:
     kind: in_call_http_lookup
     enabled: true
-    is_global: true
+    is_global: false
     description: Record a suspected Google impersonation, credential request, or payment scam.
     timeout_ms: 5000
     url: ${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/security-event
@@ -569,49 +569,152 @@ in_call_tools:
       description: Claimed organization or identity
       required: false
     return_raw_json: true
+  floodman_classify_service:
+    kind: in_call_http_lookup
+    enabled: true
+    is_global: false
+    description: Classify a requested service against Floodman's approved service catalog and return relevant intake questions. Call after the caller first explains what they need.
+    timeout_ms: 2500
+    url: ${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/classify-service
+    method: POST
+    headers:
+      Content-Type: application/json
+      X-Internal-Token: ${INTERNAL_TOKEN}
+    body_template: '{"call_id":"{call_id}","caller_number":"{caller_number}","data":{"requested_service":"{requested_service}","description":"{description}"}}'
+    parameters:
+    - name: requested_service
+      type: string
+      description: The service or result the caller is asking Floodman to provide
+      required: true
+    - name: description
+      type: string
+      description: The caller's own description of what is happening
+      required: true
+    return_raw_json: true
+  floodman_capture_intake_progress:
+    kind: in_call_http_lookup
+    enabled: true
+    is_global: false
+    description: Persist the complete intake snapshot known so far. Call after every substantive caller answer so details survive hangups and provider failures.
+    timeout_ms: 2500
+    url: ${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/capture-intake-progress
+    method: POST
+    headers:
+      Content-Type: application/json
+      X-Internal-Token: ${INTERNAL_TOKEN}
+    body_template: '{"call_id":"{call_id}","caller_number":"{caller_number}","data":{"name":"{name}","phone":"{phone}","email":"{email}","email_status":"{email_status}","address":"{address}","service_requested":"{service_requested}","service_key":"{service_key}","service_status":"{service_status}","service_reason":"{service_reason}","description":"{description}","property_context":"{property_context}","safety_summary":"{safety_summary}","timing_summary":"{timing_summary}","insurance_summary":"{insurance_summary}","evidence_summary":"{evidence_summary}","urgency":"{urgency}","department":"{department}","status":"{status}"}}'
+    parameters:
+    - name: name
+      type: string
+      description: Caller full name
+      required: false
+      default: ''
+    - name: phone
+      type: string
+      description: Best callback number; leave blank to use caller ID
+      required: false
+      default: ''
+    - name: email
+      type: string
+      description: Caller email address when provided
+      required: false
+      default: ''
+    - name: email_status
+      type: string
+      description: provided, declined, unavailable, or not_asked
+      required: false
+      default: ''
+    - name: address
+      type: string
+      description: Full property address including city and ZIP when known
+      required: false
+      default: ''
+    - name: service_requested
+      type: string
+      description: Service or result requested by the caller
+      required: false
+      default: ''
+    - name: service_key
+      type: string
+      description: Canonical service key returned by classify-service
+      required: false
+      default: ''
+    - name: service_status
+      type: string
+      description: supported, unsupported, or review
+      required: false
+      default: ''
+    - name: service_reason
+      type: string
+      description: Reason returned by classify-service
+      required: false
+      default: ''
+    - name: description
+      type: string
+      description: Detailed factual description of what happened and affected areas
+      required: false
+      default: ''
+    - name: property_context
+      type: string
+      description: Residential or commercial property and caller relationship
+      required: false
+      default: ''
+    - name: safety_summary
+      type: string
+      description: Standing water, sewage, electricity, structural concerns, and safe access
+      required: false
+      default: ''
+    - name: timing_summary
+      type: string
+      description: When it began, whether it is active or worsening, and preferred callback time
+      required: false
+      default: ''
+    - name: insurance_summary
+      type: string
+      description: Insurance claim status, previous work, or relevant project history
+      required: false
+      default: ''
+    - name: evidence_summary
+      type: string
+      description: Photos or video available and how the caller found Floodman
+      required: false
+      default: ''
+    - name: urgency
+      type: string
+      description: normal, urgent, or emergency
+      required: false
+      default: ''
+    - name: department
+      type: string
+      description: estimating, emergency, billing, or support
+      required: false
+      default: ''
+    - name: status
+      type: string
+      description: collecting unless the call has reached another explicit intake stage
+      required: false
+      default: ''
+    return_raw_json: true
   floodman_submit_intake:
     kind: in_call_http_lookup
     enabled: true
     is_global: false
-    description: Finalize a complete Floodman intake, save it locally, queue the correct team SMS alerts, and create a human callback. Call once only after name, callback number or caller ID, property address, and work description are known. This tool never books an appointment.
+    description: Finalize the durable intake snapshot, create the lead and human callback, and queue the team SMS. Call once after capture-intake-progress reports ready_to_submit. This tool never books an appointment.
     timeout_ms: 2500
     url: ${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/submit-intake
     method: POST
     headers:
       Content-Type: application/json
       X-Internal-Token: ${INTERNAL_TOKEN}
-    body_template: '{"call_id":"{call_id}","caller_number":"{caller_number}","idempotency_key":"intake-{call_id}","data":{"name":"{name}","phone":"{phone}","address":"{address}","description":"{description}","service":"{service}","department":"{department}","urgency":"{urgency}","source":"voice"}}'
+    body_template: '{"call_id":"{call_id}","caller_number":"{caller_number}","idempotency_key":"intake-{call_id}","data":{"completion_note":"{completion_note}"}}'
     parameters:
-    - name: name
+    - name: completion_note
       type: string
-      description: Caller full name
-      required: true
-    - name: phone
-      type: string
-      description: Alternate callback number; leave blank to use caller ID
+      description: Optional short final note; all customer facts come from the saved snapshot
       required: false
-    - name: address
-      type: string
-      description: Property address
-      required: true
-    - name: description
-      type: string
-      description: Concise description of what is needed
-      required: true
-    - name: service
-      type: string
-      description: Requested Floodman service
-      required: true
-    - name: department
-      type: string
-      description: estimating, emergency, billing, or support
-      required: true
-    - name: urgency
-      type: string
-      description: normal, urgent, or emergency
-      required: true
+      default: ''
     return_raw_json: true
-    error_message: I saved your information, but the team notification needs operator review.
+    error_message: I saved the information, but the final team notification needs operator review.
 tools:
   floodman_pre_call_context:
     kind: generic_http_lookup

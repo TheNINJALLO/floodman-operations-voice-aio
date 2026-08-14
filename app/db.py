@@ -299,6 +299,49 @@ CREATE TABLE IF NOT EXISTS uploads (
 );
 CREATE INDEX IF NOT EXISTS idx_uploads_customer ON uploads(customer_id, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS call_intakes (
+    call_id TEXT PRIMARY KEY,
+    direction TEXT NOT NULL DEFAULT 'inbound',
+    caller_number TEXT NOT NULL DEFAULT '',
+    name TEXT NOT NULL DEFAULT '',
+    phone TEXT NOT NULL DEFAULT '',
+    email TEXT NOT NULL DEFAULT '',
+    email_status TEXT NOT NULL DEFAULT '',
+    address TEXT NOT NULL DEFAULT '',
+    service_requested TEXT NOT NULL DEFAULT '',
+    service_key TEXT NOT NULL DEFAULT '',
+    service_status TEXT NOT NULL DEFAULT 'unknown',
+    service_reason TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    property_context TEXT NOT NULL DEFAULT '',
+    safety_summary TEXT NOT NULL DEFAULT '',
+    timing_summary TEXT NOT NULL DEFAULT '',
+    insurance_summary TEXT NOT NULL DEFAULT '',
+    evidence_summary TEXT NOT NULL DEFAULT '',
+    urgency TEXT NOT NULL DEFAULT 'normal',
+    department TEXT NOT NULL DEFAULT 'estimating',
+    status TEXT NOT NULL DEFAULT 'collecting',
+    summary TEXT NOT NULL DEFAULT '',
+    transcript_text TEXT NOT NULL DEFAULT '',
+    transcript_json TEXT NOT NULL DEFAULT '[]',
+    outcome TEXT NOT NULL DEFAULT '',
+    customer_id TEXT NOT NULL DEFAULT '',
+    property_id TEXT NOT NULL DEFAULT '',
+    lead_id TEXT NOT NULL DEFAULT '',
+    callback_id TEXT NOT NULL DEFAULT '',
+    notification_ids_json TEXT NOT NULL DEFAULT '[]',
+    notification_count INTEGER NOT NULL DEFAULT 0,
+    notification_status TEXT NOT NULL DEFAULT '',
+    metadata_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    completed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_call_intakes_updated ON call_intakes(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_call_intakes_status ON call_intakes(status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_call_intakes_phone ON call_intakes(phone, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_call_intakes_service ON call_intakes(service_status, updated_at DESC);
+
 CREATE TABLE IF NOT EXISTS recordings (
     id TEXT PRIMARY KEY,
     asterisk_unique_id TEXT NOT NULL,
@@ -886,6 +929,175 @@ class Database:
             row["categories"] = _decode_json(row.pop("categories_json", "[]"), [])
         return rows
 
+    # Durable inbound intake snapshots --------------------------------
+    def upsert_call_intake(
+        self,
+        call_id: str,
+        value: dict[str, Any],
+    ) -> dict[str, Any]:
+        from app.intake import merge_intake_snapshot
+
+        call_id = str(call_id or "").strip()
+        if not call_id:
+            raise ValueError("call_id is required")
+        existing = self.get_call_intake(call_id) or {}
+        merged = merge_intake_snapshot(existing, {**value, "call_id": call_id})
+        now = _now()
+        merged["call_id"] = call_id
+        merged["created_at"] = str(existing.get("created_at") or now)
+        merged["updated_at"] = now
+
+        columns = (
+            "call_id",
+            "direction",
+            "caller_number",
+            "name",
+            "phone",
+            "email",
+            "email_status",
+            "address",
+            "service_requested",
+            "service_key",
+            "service_status",
+            "service_reason",
+            "description",
+            "property_context",
+            "safety_summary",
+            "timing_summary",
+            "insurance_summary",
+            "evidence_summary",
+            "urgency",
+            "department",
+            "status",
+            "summary",
+            "transcript_text",
+            "transcript_json",
+            "outcome",
+            "customer_id",
+            "property_id",
+            "lead_id",
+            "callback_id",
+            "notification_ids_json",
+            "notification_count",
+            "notification_status",
+            "metadata_json",
+            "created_at",
+            "updated_at",
+            "completed_at",
+        )
+        text_defaults = {
+            "direction": "inbound",
+            "caller_number": "",
+            "name": "",
+            "phone": "",
+            "email": "",
+            "email_status": "",
+            "address": "",
+            "service_requested": "",
+            "service_key": "",
+            "service_status": "unknown",
+            "service_reason": "",
+            "description": "",
+            "property_context": "",
+            "safety_summary": "",
+            "timing_summary": "",
+            "insurance_summary": "",
+            "evidence_summary": "",
+            "urgency": "normal",
+            "department": "estimating",
+            "status": "collecting",
+            "summary": "",
+            "transcript_text": "",
+            "outcome": "",
+            "customer_id": "",
+            "property_id": "",
+            "lead_id": "",
+            "callback_id": "",
+            "notification_status": "",
+            "completed_at": None,
+        }
+        record: dict[str, Any] = {}
+        for column in columns:
+            if column == "transcript_json":
+                record[column] = _json(merged.get("transcript") or [])
+            elif column == "notification_ids_json":
+                record[column] = _json(merged.get("notification_ids") or [])
+            elif column == "metadata_json":
+                record[column] = _json(merged.get("metadata") or {})
+            elif column == "notification_count":
+                record[column] = int(merged.get(column) or 0)
+            elif column in {"call_id", "created_at", "updated_at"}:
+                record[column] = merged[column]
+            else:
+                default = text_defaults.get(column, "")
+                raw = merged.get(column, default)
+                record[column] = default if raw is None and default is not None else raw
+
+        update_columns = [
+            column
+            for column in columns
+            if column not in {"call_id", "created_at"}
+        ]
+        placeholders = ",".join("?" for _ in columns)
+        updates = ",".join(
+            f"{column}=excluded.{column}" for column in update_columns
+        )
+        self.execute(
+            f"INSERT INTO call_intakes ({','.join(columns)}) VALUES ({placeholders}) "
+            f"ON CONFLICT(call_id) DO UPDATE SET {updates}",
+            tuple(record[column] for column in columns),
+        )
+        return self.get_call_intake(call_id) or {}
+
+    def get_call_intake(self, call_id: str) -> dict[str, Any] | None:
+        row = self.fetchone(
+            "SELECT * FROM call_intakes WHERE call_id=?",
+            (str(call_id or ""),),
+        )
+        if not row:
+            return None
+        row["transcript"] = _decode_json(row.pop("transcript_json", "[]"), [])
+        row["notification_ids"] = _decode_json(
+            row.pop("notification_ids_json", "[]"),
+            [],
+        )
+        row["metadata"] = _decode_json(row.pop("metadata_json", "{}"), {})
+        return row
+
+    def list_call_intakes(
+        self,
+        *,
+        limit: int = 200,
+        status: str = "",
+        service_status: str = "",
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if status:
+            clauses.append("status=?")
+            params.append(status)
+        if service_status:
+            clauses.append("service_status=?")
+            params.append(service_status)
+        where = "WHERE " + " AND ".join(clauses) if clauses else ""
+        params.append(max(1, min(int(limit), 1000)))
+        rows = self.fetchall(
+            f"""
+            SELECT call_id,direction,caller_number,name,phone,email,email_status,
+                   address,service_requested,service_key,service_status,
+                   service_reason,description,property_context,safety_summary,
+                   timing_summary,insurance_summary,evidence_summary,urgency,
+                   department,status,summary,outcome,customer_id,property_id,
+                   lead_id,callback_id,notification_count,notification_status,
+                   created_at,updated_at,completed_at
+            FROM call_intakes
+            {where}
+            ORDER BY updated_at DESC LIMIT ?
+            """,
+            tuple(params),
+        )
+        return rows
+
     # Events and integration outbox ------------------------------------
     def add_call_event(
         self, call_id: str, direction: str, event_type: str, payload: dict[str, Any]
@@ -1438,6 +1650,8 @@ class Database:
         result: dict[str, Any] = {}
         queries = {
             "gate_sessions": "SELECT COUNT(*) AS value FROM gate_sessions",
+            "call_intakes": "SELECT COUNT(*) AS value FROM call_intakes",
+            "partial_intakes": "SELECT COUNT(*) AS value FROM call_intakes WHERE status LIKE 'partial_%'",
             "outbound_pending": "SELECT COUNT(*) AS value FROM outbound_jobs WHERE status IN ('pending','retry')",
             "outbound_dialing": "SELECT COUNT(*) AS value FROM outbound_jobs WHERE status IN ('dialing','answered')",
             "outbound_completed": "SELECT COUNT(*) AS value FROM outbound_jobs WHERE status='completed'",

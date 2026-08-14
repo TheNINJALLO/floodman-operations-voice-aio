@@ -66,7 +66,23 @@
       </section>
 
       <section id="view-calls" class="view">
-        <article class="panel"><div class="panel-head"><h3>Call gate sessions</h3><span>Announcement stripping, source classification, and safe routing</span></div><div id="callsTable"></div></article>
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>Customer calls and recovered intake</h3>
+              <span>Complete, unsupported, and interrupted calls are preserved here with their full transcript.</span>
+            </div>
+            <input id="callSearch" class="compact" placeholder="Search name, phone, email, address, or issue">
+          </div>
+          <div id="intakesTable"></div>
+        </article>
+        <article class="panel">
+          <div class="panel-head">
+            <h3>Call gate diagnostics</h3>
+            <span>Opening classification and routing details</span>
+          </div>
+          <div id="gateDiagnosticsTable"></div>
+        </article>
         <article class="panel form-panel">
           <div class="panel-head"><h3>Test the classifier</h3></div>
           <form id="classifierForm" class="form-grid">
@@ -77,6 +93,27 @@
           </form>
           <pre id="classifierResult" class="result"></pre>
         </article>
+        <dialog id="callDetailDialog" class="call-dialog">
+          <div class="dialog-head">
+            <div>
+              <p class="eyebrow">RECOVERED CALL</p>
+              <h3 id="callDetailTitle">Call details</h3>
+            </div>
+            <button class="ghost" type="button" data-close-call-detail>Close</button>
+          </div>
+          <div id="callDetailBody" class="call-detail-grid"></div>
+          <section class="transcript-panel">
+            <div class="panel-head">
+              <h3>Full transcript</h3>
+              <span>Caller and Ava turns in chronological order</span>
+            </div>
+            <pre id="callTranscript" class="transcript"></pre>
+          </section>
+          <section>
+            <div class="panel-head"><h3>Call events</h3></div>
+            <div id="callEventTimeline" class="timeline"></div>
+          </section>
+        </dialog>
       </section>
 
       <section id="view-outbound" class="view">

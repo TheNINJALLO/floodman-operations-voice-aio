@@ -102,6 +102,12 @@ export AVA_IMAGE_DIR="${AVA_IMAGE_DIR:-/opt/ava}"
 export AVA_RUNTIME_DIR="${AVA_RUNTIME_DIR:-${DATA_DIR}/runtime/ava}"
 source /opt/floodman/scripts/select_ai_profile.sh
 
+# File-based fallback prompts must live under Asterisk's configured sounds
+# tree. This makes inactivity and provider-failure prompts audible.
+export AST_MEDIA_DIR="${AST_MEDIA_DIR:-${DATA_DIR}/asterisk/sounds/ai-generated}"
+mkdir -p "${AST_MEDIA_DIR}"
+
+
 # Floodman writable runtime cache normalization. The image seeds model caches
 # under /opt/model-cache, but Pterodactyl may mount /opt read-only.
 normalize_writable_cache_path() {
@@ -142,6 +148,7 @@ fi
 
 # Never mutate /opt/ava at runtime. Pterodactyl may mount the image root read-only.
 /opt/floodman/scripts/prepare_ava_runtime.sh
+/opt/venv/bin/python /opt/floodman/scripts/sync_fast_intake_runtime.py   --canonical /opt/floodman/config/ava/ai-agent.local.yaml   --config "${CONFIG_DIR}/ava/ai-agent.local.yaml"   --config "${AVA_RUNTIME_DIR}/config/ai-agent.local.yaml"
 /opt/venv/bin/python /opt/floodman/scripts/apply_production_hybrid_ai.py \
   --profile "${FLOODMAN_AI_PROFILE}" \
   --config "${CONFIG_DIR}/ava/ai-agent.local.yaml" \

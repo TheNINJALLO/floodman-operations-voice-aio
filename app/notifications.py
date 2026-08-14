@@ -50,27 +50,76 @@ def team_alert_recipients(settings: Settings, department: str) -> tuple[str, ...
 
 def build_intake_sms(data: dict[str, Any], callback_sla_hours: int) -> str:
     department = normalize_department(str(data.get("department") or "estimating"))
+    status = str(data.get("status") or "collecting").strip().lower()
+    service_status = str(data.get("service_status") or "unknown").strip().lower()
+    urgency = str(data.get("urgency") or "normal").strip().lower()
     name = str(data.get("name") or "Unknown caller").strip()
     phone = normalize_phone(str(data.get("phone") or data.get("caller_number") or ""))
+    email = str(data.get("email") or "").strip()
+    email_status = str(data.get("email_status") or "unknown").strip()
     address = str(data.get("address") or "Address not supplied").strip()
-    description = str(data.get("description") or data.get("problem") or "No description supplied").strip()
-    service = str(data.get("service") or "Property service request").strip()
-    urgency = str(data.get("urgency") or "normal").strip().lower()
+    requested_service = str(
+        data.get("service_requested")
+        or data.get("service")
+        or "Service not identified"
+    ).strip()
+    description = str(
+        data.get("description")
+        or data.get("problem")
+        or "No description supplied"
+    ).strip()
     call_id = str(data.get("call_id") or "").strip()
-    callback_line = "Immediate callback requested" if urgency == "emergency" else f"Callback requested within {max(1, int(callback_sla_hours))} hours"
-    body = (
-        f"FLOODMAN {department.upper()} LEAD\n"
-        f"Name: {name}\n"
-        f"Phone: {phone or 'Unavailable'}\n"
-        f"Address: {address}\n"
-        f"Service: {service}\n"
-        f"Need: {description}\n"
-        f"Urgency: {urgency}\n"
-        f"{callback_line}"
+
+    if status == "unsupported" or service_status == "unsupported":
+        title = "FLOODMAN OUT-OF-SCOPE REQUEST"
+    elif status == "review" or service_status == "review":
+        title = "FLOODMAN SERVICE REVIEW"
+    elif status.startswith("partial_"):
+        title = "FLOODMAN PARTIAL CALL RECOVERY"
+    elif urgency == "emergency":
+        title = "FLOODMAN EMERGENCY INTAKE"
+    else:
+        title = f"FLOODMAN {department.upper()} INTAKE"
+
+    callback_line = (
+        "Immediate callback requested"
+        if urgency == "emergency"
+        else f"Callback requested within {max(1, int(callback_sla_hours))} hours"
     )
+    lines = [
+        title,
+        f"Status: {status}",
+        f"Name: {name}",
+        f"Phone: {phone or 'Unavailable'}",
+        f"Email: {email or email_status or 'Unavailable'}",
+        f"Address: {address}",
+        f"Requested service: {requested_service}",
+        f"Service review: {service_status}",
+        f"Issue: {description}",
+    ]
+    optional = (
+        ("Property", data.get("property_context")),
+        ("Safety", data.get("safety_summary")),
+        ("Timing", data.get("timing_summary")),
+        ("Insurance", data.get("insurance_summary")),
+        ("Photos/source", data.get("evidence_summary")),
+        ("Urgency", urgency),
+    )
+    for label, value in optional:
+        text = str(value or "").strip()
+        if text:
+            lines.append(f"{label}: {text}")
+    if status.startswith("partial_"):
+        transcript = str(data.get("transcript_text") or "").strip()
+        if transcript:
+            excerpt = " ".join(transcript.split())
+            lines.append(f"Transcript excerpt: {excerpt[:420]}")
+    lines.append(callback_line)
     if call_id:
-        body += f"\nCall ID: {call_id}"
-    return body[:1500]
+        lines.append(f"Call ID: {call_id}")
+    lines.append("Full transcript and recovered details are in the Voice AIO web app.")
+    return "\n".join(lines)[:1500]
+
 
 
 class TwilioTeamNotifier:

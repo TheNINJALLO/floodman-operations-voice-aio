@@ -11,6 +11,16 @@ from app.config import Settings
 from app.db import Database
 from app.models import OutboundJobCreate, OutboundPurpose
 from app.notifications import build_intake_sms, normalize_department, team_alert_recipients
+from app.intake import (
+    classify_service_request,
+    flatten_transcript,
+    has_meaningful_intake,
+    infer_partial_status,
+    intake_missing_fields,
+    merge_intake_snapshot,
+    normalize_service_status,
+    transcript_excerpt,
+)
 from app.roomflow.client import RoomflowClient, RoomflowResult
 from app.security import SignedTokenManager
 
@@ -143,11 +153,48 @@ class BusinessOperations:
             "queued": sync.queued,
         }
 
-    async def _op_submit_intake(
+    async def _op_classify_service(
         self, data: dict[str, Any], *, idempotency_key: str = ""
     ) -> dict[str, Any]:
-        # Persist immediately, then queue integrations and staff SMS.
-        name = str(data.get("name") or "").strip()
+        requested = str(
+            data.get("requested_service")
+            or data.get("service_requested")
+            or data.get("service")
+            or ""
+        ).strip()
+        description = str(data.get("description") or data.get("problem") or "").strip()
+        result = classify_service_request(
+            dict(self.settings.config.get("business") or {}),
+            requested,
+            description,
+        )
+        call_id = str(data.get("call_id") or "").strip()
+        if call_id:
+            self.database.upsert_call_intake(
+                call_id,
+                {
+                    "caller_number": data.get("caller_number") or "",
+                    "phone": data.get("phone") or data.get("caller_number") or "",
+                    "service_requested": requested,
+                    "service_key": result.get("service_key") or "",
+                    "service_status": result.get("service_status") or "review",
+                    "service_reason": result.get("service_reason") or "",
+                    "description": description,
+                    "status": "collecting",
+                },
+            )
+        return {"operation": "classify_service", **result}
+
+    async def _op_capture_intake_progress(
+        self, data: dict[str, Any], *, idempotency_key: str = ""
+    ) -> dict[str, Any]:
+        call_id = str(data.get("call_id") or "").strip()
+        if not call_id:
+            return {
+                "ok": False,
+                "operation": "capture_intake_progress",
+                "error": "call_id_required",
+            }
         requested_phone = normalize_phone(str(data.get("phone") or ""))
         caller_phone = normalize_phone(str(data.get("caller_number") or ""))
         phone = (
@@ -155,21 +202,113 @@ class BusinessOperations:
             if re.fullmatch(r"\+[1-9][0-9]{7,14}", requested_phone)
             else caller_phone
         )
-        address = str(data.get("address") or "").strip()
-        description = str(data.get("description") or data.get("problem") or "").strip()
-        service = str(data.get("service") or "property service request").strip()
-        urgency = str(data.get("urgency") or "normal").strip().lower()
-        department = normalize_department(str(data.get("department") or "estimating"))
+        update = {
+            **data,
+            "direction": "inbound",
+            "caller_number": caller_phone,
+            "phone": phone,
+            "status": str(data.get("status") or "collecting"),
+        }
+        row = self.database.upsert_call_intake(call_id, update)
+        missing = intake_missing_fields(row)
+        self.database.add_call_event(
+            call_id,
+            "inbound",
+            "intake_progress_saved",
+            {
+                "known_fields": sorted(
+                    key
+                    for key in (
+                        "name",
+                        "phone",
+                        "email",
+                        "address",
+                        "service_requested",
+                        "description",
+                        "property_context",
+                        "safety_summary",
+                        "timing_summary",
+                        "insurance_summary",
+                        "evidence_summary",
+                    )
+                    if row.get(key)
+                ),
+                "missing": missing,
+                "service_status": row.get("service_status") or "unknown",
+            },
+        )
+        return {
+            "ok": True,
+            "operation": "capture_intake_progress",
+            "saved": True,
+            "missing": missing,
+            "ready_to_submit": not missing,
+            "service_status": row.get("service_status") or "unknown",
+            "safe_message": (
+                "The intake details are saved."
+                if missing
+                else "The complete intake is ready to send to the Floodman team."
+            ),
+        }
 
-        missing: list[str] = []
-        if not name:
-            missing.append("name")
-        if not re.fullmatch(r"\+[1-9][0-9]{7,14}", phone):
-            missing.append("callback number")
-        if not address:
-            missing.append("property address")
-        if not description:
-            missing.append("description of the work")
+    async def _op_submit_intake(
+        self, data: dict[str, Any], *, idempotency_key: str = ""
+    ) -> dict[str, Any]:
+        # Finalize the durable snapshot already saved during the conversation.
+        call_id = str(data.get("call_id") or "").strip()
+        if not call_id:
+            return {
+                "ok": False,
+                "operation": "submit_intake",
+                "error": "call_id_required",
+                "safe_message": "I saved the information, but the final call record needs operator review.",
+            }
+        stored = self.database.get_call_intake(call_id) or {}
+        snapshot = merge_intake_snapshot(stored, data)
+
+        requested_phone = normalize_phone(str(snapshot.get("phone") or ""))
+        caller_phone = normalize_phone(
+            str(snapshot.get("caller_number") or data.get("caller_number") or "")
+        )
+        phone = (
+            requested_phone
+            if re.fullmatch(r"\+[1-9][0-9]{7,14}", requested_phone)
+            else caller_phone
+        )
+        snapshot["phone"] = phone
+        snapshot["caller_number"] = caller_phone
+        snapshot["direction"] = "inbound"
+        snapshot["department"] = normalize_department(
+            str(snapshot.get("department") or "estimating")
+        )
+        snapshot["urgency"] = str(snapshot.get("urgency") or "normal").strip().lower()
+
+        if normalize_service_status(snapshot.get("service_status")) not in {
+            "supported",
+            "unsupported",
+            "review",
+        }:
+            service_result = classify_service_request(
+                dict(self.settings.config.get("business") or {}),
+                snapshot.get("service_requested") or "",
+                snapshot.get("description") or "",
+            )
+            snapshot.update(
+                {
+                    "service_key": service_result.get("service_key") or "",
+                    "service_status": service_result.get("service_status") or "review",
+                    "service_reason": service_result.get("service_reason") or "",
+                }
+            )
+
+        missing = intake_missing_fields(snapshot)
+        self.database.upsert_call_intake(
+            call_id,
+            {
+                **snapshot,
+                "status": "collecting" if missing else snapshot.get("status") or "collecting",
+            },
+        )
         if missing:
             return {
                 "ok": False,
@@ -179,33 +318,92 @@ class BusinessOperations:
                 "safe_message": "I still need " + ", ".join(missing) + ".",
             }
 
-        intake = {
-            **data,
-            "name": name,
-            "phone": phone,
-            "address": address,
-            "description": description,
-            "problem": description,
-            "service": service,
-            "urgency": urgency,
-            "department": department,
-            "source": "voice",
-        }
-        customer, property_row = self._ensure_customer_property(intake)
-        call_id = str(data.get("call_id") or "").strip()
+        service_status = normalize_service_status(snapshot.get("service_status")) or "review"
+        requested_label = str(snapshot.get("service_requested") or "that service").strip()
+
+        def caller_safe_message() -> str:
+            if service_status == "unsupported":
+                return (
+                    f"Floodman does not currently offer {requested_label}. "
+                    "I've still forwarded all of your information to the team, "
+                    f"and they'll call you within {self.settings.callback_sla_hours} hours."
+                )
+            if service_status == "review":
+                return (
+                    "I could not confirm that service from Floodman's approved service list. "
+                    "I've forwarded everything to the team for review, "
+                    f"and they'll call you within {self.settings.callback_sla_hours} hours."
+                )
+            if snapshot["urgency"] == "emergency":
+                return (
+                    "Thank you. I've forwarded everything and alerted the Floodman emergency team. "
+                    "Someone will call you as soon as possible."
+                )
+            return (
+                "Thank you. I've forwarded everything to the Floodman team, "
+                f"and they'll call you within {self.settings.callback_sla_hours} hours."
+            )
+
+        # Tool retries and model duplicates must not create a second lead or
+        # callback. Return the already-completed record and the same caller-safe
+        # message when this call was finalized previously.
+        if (
+            stored.get("status") in {"complete", "unsupported", "review"}
+            and stored.get("lead_id")
+            and stored.get("callback_id")
+        ):
+            return {
+                "ok": True,
+                "operation": "submit_intake",
+                "deduplicated": True,
+                "intake": stored,
+                "department": stored.get("department") or snapshot["department"],
+                "service_status": normalize_service_status(
+                    stored.get("service_status")
+                ) or service_status,
+                "notification_ids": list(stored.get("notification_ids") or []),
+                "notification_count": int(stored.get("notification_count") or 0),
+                "safe_message": caller_safe_message(),
+            }
+
+        final_status = (
+            "unsupported"
+            if service_status == "unsupported"
+            else "complete"
+            if service_status == "supported"
+            else "review"
+        )
+        snapshot["status"] = final_status
+        snapshot["completed_at"] = datetime.now(timezone.utc).isoformat()
+        snapshot["source"] = "voice"
+        snapshot["problem"] = snapshot.get("description") or ""
+        snapshot["service"] = (
+            snapshot.get("service_key")
+            or snapshot.get("service_requested")
+            or "property service request"
+        )
+        snapshot["email"] = str(snapshot.get("email") or "")
+
+        customer, property_row = self._ensure_customer_property(snapshot)
         lead = self.database.create_lead(
             {
                 "customer_id": customer["id"],
                 "property_id": property_row.get("id") or "",
-                "service": service,
-                "problem": description,
-                "urgency": urgency,
+                "service": snapshot["service"],
+                "problem": snapshot["description"],
+                "urgency": snapshot["urgency"],
                 "status": "new",
                 "source": "voice",
                 "metadata": {
                     "call_id": call_id,
-                    "department": department,
-                    **dict(data.get("metadata") or {}),
+                    "department": snapshot["department"],
+                    "service_status": service_status,
+                    "service_reason": snapshot.get("service_reason") or "",
+                    "property_context": snapshot.get("property_context") or "",
+                    "safety_summary": snapshot.get("safety_summary") or "",
+                    "timing_summary": snapshot.get("timing_summary") or "",
+                    "insurance_summary": snapshot.get("insurance_summary") or "",
+                    "evidence_summary": snapshot.get("evidence_summary") or "",
                 },
             }
         )
@@ -213,20 +411,25 @@ class BusinessOperations:
             {
                 "customer_id": customer["id"],
                 "call_id": call_id,
-                "name": name,
+                "name": snapshot["name"],
                 "phone": phone,
-                "department": department,
-                "reason": description,
-                "urgency": urgency,
+                "department": snapshot["department"],
+                "reason": snapshot["description"],
+                "urgency": snapshot["urgency"],
                 "preferred_time": (
-                    "immediate" if urgency == "emergency"
-                    else f"within {self.settings.callback_sla_hours} hours"
+                    "immediate"
+                    if snapshot["urgency"] == "emergency"
+                    else str(
+                        snapshot.get("timing_summary")
+                        or f"within {self.settings.callback_sla_hours} hours"
+                    )
                 ),
                 "metadata": {
                     "lead_id": lead["id"],
                     "property_id": property_row.get("id") or "",
-                    "address": address,
-                    "service": service,
+                    "address": snapshot["address"],
+                    "service": snapshot["service"],
+                    "service_status": service_status,
                     "source": "voice",
                 },
             }
@@ -237,20 +440,20 @@ class BusinessOperations:
             roomflow_outbox_id = self.database.queue_outbox(
                 "create_lead",
                 {
-                    **intake,
+                    **snapshot,
                     "local_customer_id": customer["id"],
                     "local_property_id": property_row.get("id") or "",
                     "local_lead_id": lead["id"],
                     "local_callback_id": callback["id"],
                 },
-                idempotency_key or f"intake-roomflow:{call_id or lead['id']}",
+                idempotency_key or f"intake-roomflow:{call_id}",
             )
 
         notification_ids: list[str] = []
-        recipients = team_alert_recipients(self.settings, department)
+        recipients = team_alert_recipients(self.settings, snapshot["department"])
         if self.settings.team_sms_enabled and recipients:
             body = build_intake_sms(
-                {**intake, "call_id": call_id},
+                {**snapshot, "call_id": call_id},
                 self.settings.callback_sla_hours,
             )
             for recipient in recipients:
@@ -260,17 +463,30 @@ class BusinessOperations:
                         {
                             "to": recipient,
                             "body": body,
-                            "department": department,
+                            "department": snapshot["department"],
                             "call_id": call_id,
                             "lead_id": lead["id"],
+                            "intake_status": final_status,
                         },
-                        f"team-sms:{call_id or lead['id']}:{recipient}",
+                        f"team-intake-final:{call_id}:{recipient}",
                     )
                 )
 
-        event_call_id = call_id or lead["id"]
+        saved = self.database.upsert_call_intake(
+            call_id,
+            {
+                **snapshot,
+                "customer_id": customer["id"],
+                "property_id": property_row.get("id") or "",
+                "lead_id": lead["id"],
+                "callback_id": callback["id"],
+                "notification_ids": notification_ids,
+                "notification_count": len(notification_ids),
+                "notification_status": "queued" if notification_ids else "not_queued",
+            },
+        )
         self.database.add_call_event(
-            event_call_id,
+            call_id,
             "inbound",
             "intake_submitted",
             {
@@ -278,22 +494,11 @@ class BusinessOperations:
                 "property_id": property_row.get("id") or "",
                 "lead_id": lead["id"],
                 "callback_id": callback["id"],
-                "department": department,
-                "urgency": urgency,
+                "service_status": service_status,
+                "status": final_status,
                 "notification_count": len(notification_ids),
             },
         )
-
-        if urgency == "emergency":
-            safe_message = (
-                "Perfect, I have everything. I've alerted the Floodman emergency team, "
-                "and someone will call you as soon as possible."
-            )
-        else:
-            safe_message = (
-                "Perfect, I have everything. I've sent it to the Floodman team, "
-                f"and they'll call you within {self.settings.callback_sla_hours} hours."
-            )
         return {
             "ok": True,
             "operation": "submit_intake",
@@ -301,11 +506,179 @@ class BusinessOperations:
             "property": property_row,
             "lead": lead,
             "callback": callback,
-            "department": department,
+            "intake": saved,
+            "department": snapshot["department"],
+            "service_status": service_status,
             "roomflow_outbox_id": roomflow_outbox_id,
             "notification_ids": notification_ids,
             "notification_count": len(notification_ids),
-            "safe_message": safe_message,
+            "safe_message": caller_safe_message(),
+        }
+
+    async def _op_finalize_inbound_intake(
+        self, data: dict[str, Any], *, idempotency_key: str = ""
+    ) -> dict[str, Any]:
+        call_id = str(data.get("call_id") or "").strip()
+        if not call_id:
+            return {
+                "ok": False,
+                "operation": "finalize_inbound_intake",
+                "error": "call_id_required",
+            }
+
+        existing = self.database.get_call_intake(call_id) or {}
+        transcript = data.get("transcript") or []
+        transcript_text = flatten_transcript(transcript)
+        summary = str(data.get("summary") or "").strip()
+        outcome = str(data.get("outcome") or "").strip()
+        caller_phone = normalize_phone(
+            str(data.get("caller_number") or existing.get("caller_number") or "")
+        )
+        update: dict[str, Any] = {
+            "direction": "inbound",
+            "caller_number": caller_phone,
+            "phone": existing.get("phone") or caller_phone,
+            "summary": summary,
+            "outcome": outcome,
+            "transcript": transcript,
+            "transcript_text": transcript_text,
+            "metadata": dict(data.get("metadata") or {}),
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if not existing.get("description"):
+            update["description"] = summary or transcript_excerpt(transcript_text, 1000)
+        current_status = str(existing.get("status") or "collecting")
+        if current_status not in {"complete", "unsupported", "review"}:
+            update["status"] = infer_partial_status(
+                outcome,
+                summary,
+                data.get("metadata"),
+            )
+
+        row = self.database.upsert_call_intake(call_id, update)
+        if not has_meaningful_intake(row):
+            return {
+                "ok": True,
+                "operation": "finalize_inbound_intake",
+                "intake": row,
+                "notification_count": int(row.get("notification_count") or 0),
+                "skipped": "no_meaningful_caller_information",
+            }
+
+        if normalize_service_status(row.get("service_status")) not in {
+            "supported",
+            "unsupported",
+            "review",
+        } and row.get("service_requested"):
+            classification = classify_service_request(
+                dict(self.settings.config.get("business") or {}),
+                row.get("service_requested") or "",
+                row.get("description") or "",
+            )
+            row = self.database.upsert_call_intake(
+                call_id,
+                {
+                    "service_key": classification.get("service_key") or "",
+                    "service_status": classification.get("service_status") or "review",
+                    "service_reason": classification.get("service_reason") or "",
+                },
+            )
+
+        callback_id = str(row.get("callback_id") or "")
+        phone = normalize_phone(str(row.get("phone") or row.get("caller_number") or ""))
+        if not callback_id and re.fullmatch(r"\+[1-9][0-9]{7,14}", phone):
+            callback = self.database.create_callback_task(
+                {
+                    "call_id": call_id,
+                    "name": row.get("name") or "Unknown caller",
+                    "phone": phone,
+                    "department": normalize_department(
+                        str(row.get("department") or "estimating")
+                    ),
+                    "reason": row.get("description")
+                    or "Partial inbound call. Review the transcript.",
+                    "urgency": row.get("urgency") or "normal",
+                    "preferred_time": f"within {self.settings.callback_sla_hours} hours",
+                    "metadata": {
+                        "partial_intake": True,
+                        "status": row.get("status") or "partial_call_ended",
+                        "address": row.get("address") or "",
+                        "service": row.get("service_requested") or "",
+                    },
+                }
+            )
+            callback_id = str(callback.get("id") or "")
+            if self.settings.roomflow_enabled:
+                self.database.queue_outbox(
+                    "create_callback_task",
+                    {
+                        "call_id": call_id,
+                        "name": row.get("name") or "Unknown caller",
+                        "phone": phone,
+                        "department": row.get("department") or "estimating",
+                        "reason": row.get("description")
+                        or "Partial inbound call. Review transcript.",
+                        "urgency": row.get("urgency") or "normal",
+                        "local_callback_id": callback_id,
+                    },
+                    f"partial-callback-roomflow:{call_id}",
+                )
+            row = self.database.upsert_call_intake(
+                call_id,
+                {"callback_id": callback_id},
+            )
+
+        notification_ids = list(row.get("notification_ids") or [])
+        if not int(row.get("notification_count") or 0):
+            department = normalize_department(
+                str(row.get("department") or "estimating")
+            )
+            recipients = team_alert_recipients(self.settings, department)
+            if self.settings.team_sms_enabled and recipients:
+                body = build_intake_sms(row, self.settings.callback_sla_hours)
+                for recipient in recipients:
+                    notification_ids.append(
+                        self.database.queue_outbox(
+                            "team_sms_alert",
+                            {
+                                "to": recipient,
+                                "body": body,
+                                "department": department,
+                                "call_id": call_id,
+                                "intake_status": row.get("status")
+                                or "partial_call_ended",
+                            },
+                            f"team-intake-final:{call_id}:{recipient}",
+                        )
+                    )
+                row = self.database.upsert_call_intake(
+                    call_id,
+                    {
+                        "notification_ids": notification_ids,
+                        "notification_count": len(notification_ids),
+                        "notification_status": (
+                            "queued" if notification_ids else "not_queued"
+                        ),
+                    },
+                )
+
+        self.database.add_call_event(
+            call_id,
+            "inbound",
+            "intake_recovered_after_call",
+            {
+                "status": row.get("status") or "partial_call_ended",
+                "service_status": row.get("service_status") or "unknown",
+                "callback_id": callback_id,
+                "notification_count": len(notification_ids),
+                "transcript_chars": len(transcript_text),
+            },
+        )
+        return {
+            "ok": True,
+            "operation": "finalize_inbound_intake",
+            "intake": row,
+            "notification_count": len(notification_ids),
         }
 
     async def _op_create_emergency_case(

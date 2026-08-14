@@ -757,6 +757,35 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> list[dict[str, Any]]:
         return request.app.state.database.list_uploads(customer_id, _safe_limit(limit))
 
+    @app.get("/api/v1/call-intakes", dependencies=[Depends(require_admin)])
+    async def list_call_intakes(
+        request: Request,
+        limit: int = 200,
+        status: str = "",
+        service_status: str = "",
+    ) -> dict[str, Any]:
+        rows = request.app.state.database.list_call_intakes(
+            limit=_safe_limit(limit, 1000),
+            status=status,
+            service_status=service_status,
+        )
+        return {"ok": True, "intakes": rows, "count": len(rows)}
+
+    @app.get("/api/v1/call-intakes/{call_id}", dependencies=[Depends(require_admin)])
+    async def get_call_intake(request: Request, call_id: str) -> dict[str, Any]:
+        database: Database = request.app.state.database
+        row = database.get_call_intake(call_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="Call intake not found")
+        events = list(reversed(database.list_call_events(500, call_id)))
+        recordings = database.list_recordings(call_id=call_id, limit=20)
+        return {
+            "ok": True,
+            "intake": row,
+            "events": events,
+            "recordings": recordings,
+        }
+
     @app.get("/api/v1/events", dependencies=[Depends(require_admin)])
     async def list_events(
         request: Request, limit: int = 200, call_id: str = ""
@@ -813,15 +842,39 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     payload.call_id,
                 )
             live_contact = bool(payload.metadata.get("live_contact")) or (
-                payload.duration >= 15 and (payload.outcome or "").lower() in LIVE_CONTACT_OUTCOMES
+                payload.duration >= 15
+                and (payload.outcome or "").lower() in LIVE_CONTACT_OUTCOMES
             )
             if live_contact:
                 database.add_call_event(
                     payload.call_id,
                     "outbound",
                     "live_contact",
-                    {"phone": phone, "outcome": payload.outcome, "duration": payload.duration},
+                    {
+                        "phone": phone,
+                        "outcome": payload.outcome,
+                        "duration": payload.duration,
+                    },
                 )
+
+        intake_result: dict[str, Any] | None = None
+        if payload.direction == "inbound":
+            gate = database.fetchone(
+                "SELECT agent,classification FROM gate_sessions WHERE call_id=? "
+                "ORDER BY updated_at DESC LIMIT 1",
+                (payload.call_id,),
+            ) or {}
+            context_name = str(payload.metadata.get("context") or "")
+            resolved_agent = str(payload.agent or gate.get("agent") or context_name)
+            if resolved_agent == settings.default_agent or context_name == "floodman_inbound":
+                intake_result = await request.app.state.business.execute(
+                    "finalize_inbound_intake",
+                    event_payload,
+                    call_id=payload.call_id,
+                    caller_number=payload.caller_number,
+                    idempotency_key=f"finalize-intake:{payload.call_id}",
+                )
+
         business_result = await request.app.state.business.execute(
             "record_call_outcome",
             event_payload,
@@ -829,7 +882,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             caller_number=payload.caller_number,
             idempotency_key=f"call-outcome:{payload.call_id}",
         )
-        return {"ok": True, "business": business_result}
+        return {
+            "ok": True,
+            "business": business_result,
+            "intake": intake_result,
+        }
+
 
     # In-call business tools -------------------------------------------
     async def execute_business_tool(
@@ -874,6 +932,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/internal/tools/create-lead", dependencies=[Depends(require_internal)])
     async def tool_create_lead(request: Request, payload: RoomflowToolRequest) -> dict[str, Any]:
         return await execute_business_tool(request, "create_lead", payload)
+
+    @app.post("/internal/tools/classify-service", dependencies=[Depends(require_internal)])
+    async def tool_classify_service(
+        request: Request,
+        payload: RoomflowToolRequest,
+    ) -> dict[str, Any]:
+        return await execute_business_tool(request, "classify_service", payload)
+
+    @app.post("/internal/tools/capture-intake-progress", dependencies=[Depends(require_internal)])
+    async def tool_capture_intake_progress(
+        request: Request,
+        payload: RoomflowToolRequest,
+    ) -> dict[str, Any]:
+        return await execute_business_tool(request, "capture_intake_progress", payload)
 
     @app.post("/internal/tools/submit-intake", dependencies=[Depends(require_internal)])
     async def tool_submit_intake(request: Request, payload: RoomflowToolRequest) -> dict[str, Any]:
