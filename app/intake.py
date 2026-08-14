@@ -289,27 +289,132 @@ def merge_intake_snapshot(
 
 
 def intake_missing_fields(snapshot: Mapping[str, Any]) -> list[str]:
+    # Return remaining fields in conversational collection order.
     missing: list[str] = []
-    if not clean_text(snapshot.get("name")):
-        missing.append("full name")
-    phone = clean_text(snapshot.get("phone") or snapshot.get("caller_number"), maximum=40)
-    if not PHONE_RE.fullmatch(phone):
-        missing.append("callback number")
-    if not clean_text(snapshot.get("address")):
-        missing.append("full property address")
-    email = normalize_email(snapshot.get("email"))
-    email_status = normalize_email_status(snapshot.get("email_status"))
-    if not email and email_status not in {"declined", "unavailable"}:
-        missing.append("email address or confirmation that none is available")
+
     if not clean_text(snapshot.get("description")):
         missing.append("detailed description of what is happening")
-    if normalize_service_status(snapshot.get("service_status")) not in {
+
+    service_status = normalize_service_status(
+        snapshot.get("service_status")
+    )
+    if service_status not in {
         "supported",
         "unsupported",
         "review",
     }:
         missing.append("service review")
+
+    if service_status in {
+        "supported",
+        "unsupported",
+        "review",
+    }:
+        if not clean_text(snapshot.get("property_context")):
+            missing.append("property type and caller relationship")
+        if not clean_text(snapshot.get("timing_summary")):
+            missing.append(
+                "when the issue began and whether it is active"
+            )
+        if not clean_text(snapshot.get("safety_summary")):
+            missing.append("safety and access concerns")
+
+    if not clean_text(snapshot.get("name")):
+        missing.append("full name")
+
+    phone = clean_text(
+        snapshot.get("phone") or snapshot.get("caller_number"),
+        maximum=40,
+    )
+    if not PHONE_RE.fullmatch(phone):
+        missing.append("callback number")
+
+    if not clean_text(snapshot.get("address")):
+        missing.append("full property address")
+
+    email = normalize_email(snapshot.get("email"))
+    email_status = normalize_email_status(
+        snapshot.get("email_status")
+    )
+    if (
+        not email
+        and email_status not in {"declined", "unavailable"}
+    ):
+        missing.append(
+            "email address or confirmation that none is available"
+        )
+
     return missing
+
+
+def next_intake_question(
+    snapshot: Mapping[str, Any],
+    *,
+    service_questions: Any = (),
+) -> str:
+    # Return one audible question that always advances intake.
+    missing = intake_missing_fields(snapshot)
+    missing_set = set(missing)
+
+    if "detailed description of what is happening" in missing_set:
+        return (
+            "Please tell me what happened, where the problem is, "
+            "and which rooms, areas, or materials are affected?"
+        )
+
+    if "service review" in missing_set:
+        return (
+            "What service or result are you hoping Floodman can "
+            "provide?"
+        )
+
+    detail_fields = {
+        "property type and caller relationship",
+        "when the issue began and whether it is active",
+        "safety and access concerns",
+    }
+    if missing_set.intersection(detail_fields):
+        for value in service_questions or ():
+            question = clean_text(value, maximum=500)
+            if question:
+                return (
+                    question
+                    if question.endswith("?")
+                    else question + "?"
+                )
+        return (
+            "Before I collect your contact details, is this a "
+            "residential or commercial property, when did the "
+            "issue begin and is it still active or getting worse, "
+            "and are there any sewage, electrical, structural, or "
+            "safe-access concerns?"
+        )
+
+    if "full name" in missing_set:
+        return "What is your full name?"
+
+    if "callback number" in missing_set:
+        return (
+            "What is the best phone number for the Floodman team "
+            "to call you back on?"
+        )
+
+    if "full property address" in missing_set:
+        return (
+            "What is the full property address, including the city "
+            "and ZIP code?"
+        )
+
+    if (
+        "email address or confirmation that none is available"
+        in missing_set
+    ):
+        return (
+            "What email address should I include? You can also say "
+            "you do not have one or prefer not to provide it."
+        )
+
+    return ""
 
 
 def _normalized_words(value: Any) -> str:

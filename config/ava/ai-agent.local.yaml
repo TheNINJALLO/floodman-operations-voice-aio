@@ -573,7 +573,7 @@ in_call_tools:
     kind: in_call_http_lookup
     enabled: true
     is_global: false
-    description: Classify a requested service against Floodman's approved service catalog and return relevant intake questions. Call after the caller first explains what they need.
+    description: Non-terminal service routing step. Classify the request and return intake questions plus next_question. After this tool returns, immediately ask next_question in the same spoken response. Never stop after stating the category.
     timeout_ms: 2500
     url: ${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/classify-service
     method: POST
@@ -595,7 +595,7 @@ in_call_tools:
     kind: in_call_http_lookup
     enabled: true
     is_global: false
-    description: Persist the complete intake snapshot known so far. Call after every substantive caller answer so details survive hangups and provider failures.
+    description: Persist the complete intake snapshot known so far. Call after every substantive caller answer. When ready_to_submit is false, immediately ask next_question in the same spoken response. Never leave the caller in silence after saving.
     timeout_ms: 2500
     url: ${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/capture-intake-progress
     method: POST

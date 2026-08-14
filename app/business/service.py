@@ -17,6 +17,7 @@ from app.intake import (
     has_meaningful_intake,
     infer_partial_status,
     intake_missing_fields,
+    next_intake_question,
     merge_intake_snapshot,
     normalize_service_status,
     transcript_excerpt,
@@ -154,7 +155,10 @@ class BusinessOperations:
         }
 
     async def _op_classify_service(
-        self, data: dict[str, Any], *, idempotency_key: str = ""
+        self,
+        data: dict[str, Any],
+        *,
+        idempotency_key: str = "",
     ) -> dict[str, Any]:
         requested = str(
             data.get("requested_service")
@@ -162,31 +166,77 @@ class BusinessOperations:
             or data.get("service")
             or ""
         ).strip()
-        description = str(data.get("description") or data.get("problem") or "").strip()
+        description = str(
+            data.get("description")
+            or data.get("problem")
+            or ""
+        ).strip()
         result = classify_service_request(
             dict(self.settings.config.get("business") or {}),
             requested,
             description,
         )
+
+        caller_number = normalize_phone(
+            str(data.get("caller_number") or "")
+        )
         call_id = str(data.get("call_id") or "").strip()
+        snapshot: dict[str, Any] = {
+            "caller_number": caller_number,
+            "phone": caller_number,
+            "service_requested": requested,
+            "service_key": result.get("service_key") or "",
+            "service_status": (
+                result.get("service_status") or "review"
+            ),
+            "service_reason": result.get("service_reason") or "",
+            "description": description,
+            "status": "collecting",
+        }
         if call_id:
-            self.database.upsert_call_intake(
+            snapshot = self.database.upsert_call_intake(
                 call_id,
-                {
-                    "caller_number": data.get("caller_number") or "",
-                    "phone": data.get("phone") or data.get("caller_number") or "",
-                    "service_requested": requested,
-                    "service_key": result.get("service_key") or "",
-                    "service_status": result.get("service_status") or "review",
-                    "service_reason": result.get("service_reason") or "",
-                    "description": description,
-                    "status": "collecting",
-                },
+                snapshot,
             )
-        return {"operation": "classify_service", **result}
+
+        next_question = next_intake_question(
+            snapshot,
+            service_questions=result.get("intake_questions") or (),
+        )
+        service_status = normalize_service_status(
+            result.get("service_status")
+        )
+
+        if service_status == "unsupported":
+            prefix = str(result.get("safe_message") or "").strip()
+        elif service_status == "review":
+            prefix = (
+                "I could not confirm that service from Floodman's "
+                "approved service list, but I will still collect the "
+                "details for the team."
+            )
+        else:
+            prefix = "Thank you."
+
+        safe_message = " ".join(
+            part
+            for part in (prefix, next_question)
+            if part
+        ).strip()
+
+        return {
+            "operation": "classify_service",
+            **result,
+            "continuation_required": True,
+            "next_question": next_question,
+            "safe_message": safe_message,
+        }
 
     async def _op_capture_intake_progress(
-        self, data: dict[str, Any], *, idempotency_key: str = ""
+        self,
+        data: dict[str, Any],
+        *,
+        idempotency_key: str = "",
     ) -> dict[str, Any]:
         call_id = str(data.get("call_id") or "").strip()
         if not call_id:
@@ -195,11 +245,19 @@ class BusinessOperations:
                 "operation": "capture_intake_progress",
                 "error": "call_id_required",
             }
-        requested_phone = normalize_phone(str(data.get("phone") or ""))
-        caller_phone = normalize_phone(str(data.get("caller_number") or ""))
+
+        requested_phone = normalize_phone(
+            str(data.get("phone") or "")
+        )
+        caller_phone = normalize_phone(
+            str(data.get("caller_number") or "")
+        )
         phone = (
             requested_phone
-            if re.fullmatch(r"\+[1-9][0-9]{7,14}", requested_phone)
+            if re.fullmatch(
+                r"\+[1-9][0-9]{7,14}",
+                requested_phone,
+            )
             else caller_phone
         )
         update = {
@@ -211,6 +269,8 @@ class BusinessOperations:
         }
         row = self.database.upsert_call_intake(call_id, update)
         missing = intake_missing_fields(row)
+        next_question = next_intake_question(row)
+
         self.database.add_call_event(
             call_id,
             "inbound",
@@ -234,20 +294,30 @@ class BusinessOperations:
                     if row.get(key)
                 ),
                 "missing": missing,
-                "service_status": row.get("service_status") or "unknown",
+                "next_question": next_question,
+                "service_status": (
+                    row.get("service_status") or "unknown"
+                ),
             },
         )
+
+        ready = not missing
         return {
             "ok": True,
             "operation": "capture_intake_progress",
             "saved": True,
             "missing": missing,
-            "ready_to_submit": not missing,
-            "service_status": row.get("service_status") or "unknown",
+            "ready_to_submit": ready,
+            "continuation_required": not ready,
+            "next_question": next_question,
+            "service_status": (
+                row.get("service_status") or "unknown"
+            ),
             "safe_message": (
-                "The intake details are saved."
-                if missing
-                else "The complete intake is ready to send to the Floodman team."
+                "The complete intake is ready to send to the "
+                "Floodman team."
+                if ready
+                else next_question
             ),
         }
 
