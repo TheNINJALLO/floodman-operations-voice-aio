@@ -22,6 +22,23 @@ def production_patch() -> dict[str, Any]:
     return {
         "default_provider": "${AVA_PROVIDER:-floodman_production}",
         "active_pipeline": "${AVA_PIPELINE:-floodman_production}",
+        # Production modular STT/LLM/TTS uses a dedicated full-duplex
+        # Asterisk ExternalMedia leg. This keeps caller capture independent
+        # from the greeting and response playback stream.
+        "audio_transport": "externalmedia",
+        "external_media": {
+            "rtp_host": "${FLOODMAN_EXTERNALMEDIA_RTP_HOST:-127.0.0.1}",
+            "advertise_host": "${FLOODMAN_EXTERNALMEDIA_ADVERTISE_HOST:-127.0.0.1}",
+            "rtp_port": "${FLOODMAN_EXTERNALMEDIA_RTP_PORT:-18080}",
+            "port_range": "${FLOODMAN_EXTERNALMEDIA_PORT_RANGE:-18080:18099}",
+            "codec": "ulaw",
+            "direction": "both",
+            "format": "slin16",
+            "sample_rate": 16000,
+            "allowed_remote_hosts": ["127.0.0.1"],
+            "lock_remote_endpoint": True,
+        },
+        "downstream_mode": "stream",
         "pipelines": {
             # AVA upstream ships demo pipelines that Floodman does not use.
             # Null values are deletion markers in AVA local overrides.
@@ -118,6 +135,15 @@ def local_patch() -> dict[str, Any]:
     return {
         "default_provider": "${AVA_PROVIDER:-local_hybrid}",
         "active_pipeline": "${AVA_PIPELINE:-local_hybrid}",
+        # Preserve the existing local recovery stack on AudioSocket.
+        "audio_transport": "audiosocket",
+        "audiosocket": {
+            "host": "127.0.0.1",
+            "advertise_host": "127.0.0.1",
+            "port": 8090,
+            "format": "slin",
+        },
+        "downstream_mode": "stream",
         "pipelines": {
             # Remove stale cloud and upstream demo pipelines on fallback.
             "floodman_production": None,
