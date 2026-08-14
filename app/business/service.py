@@ -10,6 +10,7 @@ from app.compliance.engine import normalize_phone
 from app.config import Settings
 from app.db import Database
 from app.models import OutboundJobCreate, OutboundPurpose
+from app.notifications import build_intake_sms, normalize_department, team_alert_recipients
 from app.roomflow.client import RoomflowClient, RoomflowResult
 from app.security import SignedTokenManager
 
@@ -140,6 +141,171 @@ class BusinessOperations:
             "lead": lead,
             "roomflow": sync.model_dump(),
             "queued": sync.queued,
+        }
+
+    async def _op_submit_intake(
+        self, data: dict[str, Any], *, idempotency_key: str = ""
+    ) -> dict[str, Any]:
+        # Persist immediately, then queue integrations and staff SMS.
+        name = str(data.get("name") or "").strip()
+        requested_phone = normalize_phone(str(data.get("phone") or ""))
+        caller_phone = normalize_phone(str(data.get("caller_number") or ""))
+        phone = (
+            requested_phone
+            if re.fullmatch(r"\+[1-9][0-9]{7,14}", requested_phone)
+            else caller_phone
+        )
+        address = str(data.get("address") or "").strip()
+        description = str(data.get("description") or data.get("problem") or "").strip()
+        service = str(data.get("service") or "property service request").strip()
+        urgency = str(data.get("urgency") or "normal").strip().lower()
+        department = normalize_department(str(data.get("department") or "estimating"))
+
+        missing: list[str] = []
+        if not name:
+            missing.append("name")
+        if not re.fullmatch(r"\+[1-9][0-9]{7,14}", phone):
+            missing.append("callback number")
+        if not address:
+            missing.append("property address")
+        if not description:
+            missing.append("description of the work")
+        if missing:
+            return {
+                "ok": False,
+                "operation": "submit_intake",
+                "error": "required_intake_fields_missing",
+                "missing": missing,
+                "safe_message": "I still need " + ", ".join(missing) + ".",
+            }
+
+        intake = {
+            **data,
+            "name": name,
+            "phone": phone,
+            "address": address,
+            "description": description,
+            "problem": description,
+            "service": service,
+            "urgency": urgency,
+            "department": department,
+            "source": "voice",
+        }
+        customer, property_row = self._ensure_customer_property(intake)
+        call_id = str(data.get("call_id") or "").strip()
+        lead = self.database.create_lead(
+            {
+                "customer_id": customer["id"],
+                "property_id": property_row.get("id") or "",
+                "service": service,
+                "problem": description,
+                "urgency": urgency,
+                "status": "new",
+                "source": "voice",
+                "metadata": {
+                    "call_id": call_id,
+                    "department": department,
+                    **dict(data.get("metadata") or {}),
+                },
+            }
+        )
+        callback = self.database.create_callback_task(
+            {
+                "customer_id": customer["id"],
+                "call_id": call_id,
+                "name": name,
+                "phone": phone,
+                "department": department,
+                "reason": description,
+                "urgency": urgency,
+                "preferred_time": (
+                    "immediate" if urgency == "emergency"
+                    else f"within {self.settings.callback_sla_hours} hours"
+                ),
+                "metadata": {
+                    "lead_id": lead["id"],
+                    "property_id": property_row.get("id") or "",
+                    "address": address,
+                    "service": service,
+                    "source": "voice",
+                },
+            }
+        )
+
+        roomflow_outbox_id = ""
+        if self.settings.roomflow_enabled:
+            roomflow_outbox_id = self.database.queue_outbox(
+                "create_lead",
+                {
+                    **intake,
+                    "local_customer_id": customer["id"],
+                    "local_property_id": property_row.get("id") or "",
+                    "local_lead_id": lead["id"],
+                    "local_callback_id": callback["id"],
+                },
+                idempotency_key or f"intake-roomflow:{call_id or lead['id']}",
+            )
+
+        notification_ids: list[str] = []
+        recipients = team_alert_recipients(self.settings, department)
+        if self.settings.team_sms_enabled and recipients:
+            body = build_intake_sms(
+                {**intake, "call_id": call_id},
+                self.settings.callback_sla_hours,
+            )
+            for recipient in recipients:
+                notification_ids.append(
+                    self.database.queue_outbox(
+                        "team_sms_alert",
+                        {
+                            "to": recipient,
+                            "body": body,
+                            "department": department,
+                            "call_id": call_id,
+                            "lead_id": lead["id"],
+                        },
+                        f"team-sms:{call_id or lead['id']}:{recipient}",
+                    )
+                )
+
+        event_call_id = call_id or lead["id"]
+        self.database.add_call_event(
+            event_call_id,
+            "inbound",
+            "intake_submitted",
+            {
+                "customer_id": customer["id"],
+                "property_id": property_row.get("id") or "",
+                "lead_id": lead["id"],
+                "callback_id": callback["id"],
+                "department": department,
+                "urgency": urgency,
+                "notification_count": len(notification_ids),
+            },
+        )
+
+        if urgency == "emergency":
+            safe_message = (
+                "Perfect, I have everything. I've alerted the Floodman emergency team, "
+                "and someone will call you as soon as possible."
+            )
+        else:
+            safe_message = (
+                "Perfect, I have everything. I've sent it to the Floodman team, "
+                f"and they'll call you within {self.settings.callback_sla_hours} hours."
+            )
+        return {
+            "ok": True,
+            "operation": "submit_intake",
+            "customer": customer,
+            "property": property_row,
+            "lead": lead,
+            "callback": callback,
+            "department": department,
+            "roomflow_outbox_id": roomflow_outbox_id,
+            "notification_ids": notification_ids,
+            "notification_count": len(notification_ids),
+            "safe_message": safe_message,
         }
 
     async def _op_create_emergency_case(

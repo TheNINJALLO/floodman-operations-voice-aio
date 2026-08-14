@@ -105,6 +105,22 @@ class Settings:
     roomflow_verify_tls: bool = True
     roomflow_sync_local_writes: bool = True
 
+    # Internal team SMS notifications for completed customer intake.
+    team_sms_enabled: bool = False
+    team_alert_numbers: tuple[str, ...] = ()
+    estimating_alert_numbers: tuple[str, ...] = ()
+    emergency_alert_numbers: tuple[str, ...] = ()
+    billing_alert_numbers: tuple[str, ...] = ()
+    support_alert_numbers: tuple[str, ...] = ()
+    callback_sla_hours: int = 24
+    team_sms_timeout_seconds: float = 8.0
+    twilio_account_sid: str = ""
+    twilio_api_key: str = ""
+    twilio_api_key_secret: str = ""
+    twilio_auth_token: str = ""
+    twilio_messaging_service_sid: str = ""
+    twilio_sms_from_number: str = ""
+
     ami_enabled: bool = False
     ami_host: str = "127.0.0.1"
     ami_port: int = 5038
@@ -247,6 +263,23 @@ class Settings:
             roomflow_timeout_seconds=_env_float("ROOMFLOW_TIMEOUT_SECONDS", 8.0),
             roomflow_verify_tls=_env_bool("ROOMFLOW_VERIFY_TLS", True),
             roomflow_sync_local_writes=_env_bool("ROOMFLOW_SYNC_LOCAL_WRITES", True),
+            team_sms_enabled=_env_bool("FLOODMAN_TEAM_SMS_ENABLED", False),
+            team_alert_numbers=_env_csv("FLOODMAN_TEAM_ALERT_NUMBERS", ""),
+            estimating_alert_numbers=_env_csv("FLOODMAN_ESTIMATING_ALERT_NUMBERS", ""),
+            emergency_alert_numbers=_env_csv("FLOODMAN_EMERGENCY_ALERT_NUMBERS", ""),
+            billing_alert_numbers=_env_csv("FLOODMAN_BILLING_ALERT_NUMBERS", ""),
+            support_alert_numbers=_env_csv("FLOODMAN_SUPPORT_ALERT_NUMBERS", ""),
+            callback_sla_hours=max(1, _env_int("FLOODMAN_CALLBACK_SLA_HOURS", 24)),
+            team_sms_timeout_seconds=max(2.0, _env_float("FLOODMAN_TEAM_SMS_TIMEOUT_SECONDS", 8.0)),
+            twilio_account_sid=os.getenv("TWILIO_ACCOUNT_SID", "").strip(),
+            twilio_api_key=os.getenv("TWILIO_API_KEY", "").strip(),
+            twilio_api_key_secret=os.getenv("TWILIO_API_KEY_SECRET", "").strip(),
+            twilio_auth_token=os.getenv("TWILIO_AUTH_TOKEN", "").strip(),
+            twilio_messaging_service_sid=os.getenv("TWILIO_MESSAGING_SERVICE_SID", "").strip(),
+            twilio_sms_from_number=os.getenv(
+                "TWILIO_SMS_FROM_NUMBER",
+                os.getenv("TWILIO_FROM_NUMBER", os.getenv("TWILIO_PHONE_NUMBER", "")),
+            ).strip(),
             ami_enabled=_env_bool("AMI_ENABLED", False),
             ami_host=os.getenv("AMI_HOST", "127.0.0.1"),
             ami_port=_env_int("AMI_PORT", 5038),

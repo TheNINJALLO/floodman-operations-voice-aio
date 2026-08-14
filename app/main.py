@@ -875,6 +875,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def tool_create_lead(request: Request, payload: RoomflowToolRequest) -> dict[str, Any]:
         return await execute_business_tool(request, "create_lead", payload)
 
+    @app.post("/internal/tools/submit-intake", dependencies=[Depends(require_internal)])
+    async def tool_submit_intake(request: Request, payload: RoomflowToolRequest) -> dict[str, Any]:
+        return await execute_business_tool(request, "submit_intake", payload)
+
     @app.post("/internal/tools/create-emergency-case", dependencies=[Depends(require_internal)])
     async def tool_create_emergency(request: Request, payload: RoomflowToolRequest) -> dict[str, Any]:
         return await execute_business_tool(request, "create_emergency_case", payload)

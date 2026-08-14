@@ -8,6 +8,7 @@ from app.compliance.engine import ComplianceEngine
 from app.config import Settings
 from app.db import Database
 from app.models import ConsentSnapshot, EligibilityRequest, JobStatus, OutboundPurpose
+from app.notifications import TwilioTeamNotifier
 from app.outbound.ami import AMIClient
 from app.roomflow.client import RoomflowClient
 
@@ -28,6 +29,7 @@ class OutboundWorker:
         self.compliance = compliance
         self.ami = ami
         self.roomflow = roomflow
+        self.team_notifier = TwilioTeamNotifier(settings)
         self._stop = asyncio.Event()
         self._semaphore = asyncio.Semaphore(settings.outbound_concurrency)
         self._last_outbox_run = 0.0
@@ -209,8 +211,17 @@ class OutboundWorker:
             )
 
     async def process_outbox(self) -> None:
-        if not self.settings.roomflow_enabled:
-            return
         for item in self.database.due_outbox(limit=10):
+            operation = str(item.get("operation") or "")
+            if operation == "team_sms_alert":
+                result = await self.team_notifier.send(dict(item.get("payload") or {}))
+                self.database.mark_outbox(
+                    str(item["id"]),
+                    bool(result.get("ok")),
+                    str(result.get("error") or ""),
+                )
+                continue
+            if not self.settings.roomflow_enabled:
+                continue
             result = await self.roomflow.replay_outbox_item(item)
             self.database.mark_outbox(item["id"], result.ok, result.error)

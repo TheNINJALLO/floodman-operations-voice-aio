@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import yaml
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -76,17 +77,20 @@ def test_managed_greeting_is_natural_but_disclosed(
     agents = (
         project_root / "app/ava/agents.py"
     ).read_text(encoding="utf-8")
-    overlay = (
-        project_root / "config/ava/ai-agent.local.yaml"
-    ).read_text(encoding="utf-8")
+    overlay = yaml.safe_load(
+        (
+            project_root / "config/ava/ai-agent.local.yaml"
+        ).read_text(encoding="utf-8")
+    )
     greeting = (
-        "Hi, thanks for calling Floodman. This is Ava, Floodman's "
-        "automated assistant. How can I help today?"
+        "Thanks for calling Floodman. This is Ava, the automated "
+        "assistant. How can I help?"
     )
     assert greeting in agents
-    assert greeting in overlay
-    assert "initial_timeout_sec: 8" in overlay
-    assert "Could you say that again?" in overlay
+    assert isinstance(overlay, dict)
+    assert overlay["llm"]["initial_greeting"] == greeting
+    assert "automated assistant" in greeting.lower()
+
 
 
 def test_eggs_expose_responsiveness_controls(

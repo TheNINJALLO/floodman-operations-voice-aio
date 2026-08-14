@@ -39,6 +39,20 @@ def production_patch() -> dict[str, Any]:
             "lock_remote_endpoint": True,
         },
         "downstream_mode": "stream",
+        # Balanced low-latency playback. The upstream 950 ms jitter buffer made
+        # short answers feel disconnected even when provider generation was fast.
+        "streaming": {
+            "jitter_buffer_ms": "${FLOODMAN_STREAMING_JITTER_BUFFER_MS:-120}",
+            "min_start_ms": "${FLOODMAN_STREAMING_MIN_START_MS:-40}",
+            "greeting_min_start_ms": "${FLOODMAN_STREAMING_GREETING_MIN_START_MS:-30}",
+            "low_watermark_ms": "${FLOODMAN_STREAMING_LOW_WATERMARK_MS:-60}",
+            "provider_grace_ms": "${FLOODMAN_STREAMING_PROVIDER_GRACE_MS:-80}",
+        },
+        "profiles": {
+            "telephony_enhanced_8k": {
+                "idle_cutoff_ms": "${FLOODMAN_TTS_IDLE_CUTOFF_MS:-300}",
+            },
+        },
         # TALK_DETECT currently emits a stale ChannelTalkingStarted
         # event as response playback ends. Keep production calls
         # turn-based until barge-in is proven stable.
@@ -69,23 +83,23 @@ def production_patch() -> dict[str, Any]:
                         "channels": 1,
                         "streaming": True,
                         "stream_format": "pcm16_16k",
-                        "eot_threshold": "${DEEPGRAM_EOT_THRESHOLD:-0.70}",
-                        "eager_eot_threshold": "${DEEPGRAM_EAGER_EOT_THRESHOLD:-0.50}",
-                        "eot_timeout_ms": "${DEEPGRAM_EOT_TIMEOUT_MS:-1200}",
+                        "eot_threshold": "${DEEPGRAM_EOT_THRESHOLD:-0.65}",
+                        "eager_eot_threshold": "${DEEPGRAM_EAGER_EOT_THRESHOLD:-0.45}",
+                        "eot_timeout_ms": "${DEEPGRAM_EOT_TIMEOUT_MS:-700}",
                     },
                     "llm": {
                         "chat_base_url": "https://api.groq.com/openai/v1",
                         "model": "${GROQ_LLM_MODEL:-qwen/qwen3.6-27b}",
-                        "temperature": "${GROQ_LLM_TEMPERATURE:-0.65}",
-                        "top_p": "${GROQ_LLM_TOP_P:-0.80}",
-                        "presence_penalty": "${GROQ_LLM_PRESENCE_PENALTY:-1.0}",
-                        "max_tokens": "${GROQ_LLM_MAX_TOKENS:-160}",
-                        "timeout_sec": "${GROQ_LLM_TIMEOUT_SECONDS:-12}",
+                        "temperature": "${GROQ_LLM_TEMPERATURE:-0.30}",
+                        "top_p": "${GROQ_LLM_TOP_P:-0.70}",
+                        "presence_penalty": "${GROQ_LLM_PRESENCE_PENALTY:-0.2}",
+                        "max_tokens": "${GROQ_LLM_MAX_TOKENS:-96}",
+                        "timeout_sec": "${GROQ_LLM_TIMEOUT_SECONDS:-8}",
                         "reasoning_effort": "none",
                         "reasoning_format": "hidden",
                         "service_tier": "${GROQ_SERVICE_TIER:-on_demand}",
-                        "rate_limit_retries": "${GROQ_RATE_LIMIT_RETRIES:-2}",
-                        "rate_limit_max_wait_sec": "${GROQ_RATE_LIMIT_MAX_WAIT_SECONDS:-10}",
+                        "rate_limit_retries": "${GROQ_RATE_LIMIT_RETRIES:-1}",
+                        "rate_limit_max_wait_sec": "${GROQ_RATE_LIMIT_MAX_WAIT_SECONDS:-3}",
                     },
                     "tts": {
                         "voice_id": "${ELEVENLABS_VOICE_ID:-21m00Tcm4TlvDq8ikWAM}",
@@ -110,9 +124,9 @@ def production_patch() -> dict[str, Any]:
                 "base_url": "wss://api.deepgram.com/v2/listen",
                 "model": "${DEEPGRAM_FLUX_MODEL:-flux-general-en}",
                 "stt_language": "en-US",
-                "eot_threshold": 0.70,
-                "eager_eot_threshold": 0.50,
-                "eot_timeout_ms": 1200,
+                "eot_threshold": 0.65,
+                "eager_eot_threshold": 0.45,
+                "eot_timeout_ms": 700,
                 "continuous_input": True,
             },
             "groq_llm": {

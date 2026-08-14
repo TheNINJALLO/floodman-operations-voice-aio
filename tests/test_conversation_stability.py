@@ -29,7 +29,7 @@ def test_production_disables_unstable_talkdetect(
     assert barge["post_tts_end_protection_ms"] == 750
 
 
-def test_groq_defaults_wait_through_short_rate_limits(
+def test_groq_fast_intake_bounds_rate_limit_waits(
     project_root: Path,
 ) -> None:
     module = load_module(
@@ -43,10 +43,10 @@ def test_groq_defaults_wait_through_short_rate_limits(
         "${GROQ_SERVICE_TIER:-on_demand}"
     )
     assert llm["rate_limit_retries"] == (
-        "${GROQ_RATE_LIMIT_RETRIES:-2}"
+        "${GROQ_RATE_LIMIT_RETRIES:-1}"
     )
     assert llm["rate_limit_max_wait_sec"] == (
-        "${GROQ_RATE_LIMIT_MAX_WAIT_SECONDS:-10}"
+        "${GROQ_RATE_LIMIT_MAX_WAIT_SECONDS:-3}"
     )
 
 
