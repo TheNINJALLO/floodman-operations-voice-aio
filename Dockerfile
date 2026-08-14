@@ -44,6 +44,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN python3 -m venv /opt/venv && pip install --upgrade pip setuptools wheel
 
 COPY scripts/patch_ava.py /opt/floodman-build/patch_ava.py
+COPY scripts/patch_ava_production.py /opt/floodman-build/patch_ava_production.py
 
 RUN git init /opt/ava \
     && git -C /opt/ava remote add origin https://github.com/hkjarral/AVA-AI-Voice-Agent-for-Asterisk.git \
@@ -52,9 +53,12 @@ RUN git init /opt/ava \
     && test "$(git -C /opt/ava rev-parse HEAD)" = "${AVA_COMMIT}" \
     && test -f /opt/ava/local_ai_server/server.py \
     && python3 /opt/floodman-build/patch_ava.py --ava-root /opt/ava \
+    && python3 /opt/floodman-build/patch_ava_production.py --ava-root /opt/ava \
     && grep -q "Floodman JSON body safety patch" /opt/ava/src/tools/http/in_call_lookup.py \
     && grep -q "Floodman Piper API compatibility patch" /opt/ava/local_ai_server/server.py \
-    && rm -f /opt/floodman-build/patch_ava.py
+    && grep -q "Floodman Groq reasoning controls patch" /opt/ava/src/pipelines/openai.py \
+    && rm -f /opt/floodman-build/patch_ava.py \
+       /opt/floodman-build/patch_ava_production.py
 
 RUN pip install --no-cache-dir -r /opt/ava/requirements.txt \
     && pip install --no-cache-dir -r /opt/ava/local_ai_server/requirements-base.txt \
