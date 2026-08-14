@@ -39,6 +39,17 @@ def production_patch() -> dict[str, Any]:
             "lock_remote_endpoint": True,
         },
         "downstream_mode": "stream",
+        # TALK_DETECT currently emits a stale ChannelTalkingStarted
+        # event as response playback ends. Keep production calls
+        # turn-based until barge-in is proven stable.
+        "barge_in": {
+            "enabled": False,
+            "pipeline_talk_detect_enabled": False,
+            "mode": "stop",
+            "mute_ms": 120,
+            "force_unmute": True,
+            "post_tts_end_protection_ms": 750,
+        },
         "pipelines": {
             # AVA upstream ships demo pipelines that Floodman does not use.
             # Null values are deletion markers in AVA local overrides.
@@ -72,7 +83,9 @@ def production_patch() -> dict[str, Any]:
                         "timeout_sec": "${GROQ_LLM_TIMEOUT_SECONDS:-12}",
                         "reasoning_effort": "none",
                         "reasoning_format": "hidden",
-                        "service_tier": "${GROQ_SERVICE_TIER:-auto}",
+                        "service_tier": "${GROQ_SERVICE_TIER:-on_demand}",
+                        "rate_limit_retries": "${GROQ_RATE_LIMIT_RETRIES:-2}",
+                        "rate_limit_max_wait_sec": "${GROQ_RATE_LIMIT_MAX_WAIT_SECONDS:-10}",
                     },
                     "tts": {
                         "voice_id": "${ELEVENLABS_VOICE_ID:-21m00Tcm4TlvDq8ikWAM}",

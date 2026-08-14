@@ -45,6 +45,7 @@ RUN python3 -m venv /opt/venv && pip install --upgrade pip setuptools wheel
 
 COPY scripts/patch_ava.py /opt/floodman-build/patch_ava.py
 COPY scripts/patch_ava_production.py /opt/floodman-build/patch_ava_production.py
+COPY scripts/patch_ava_groq_resilience.py /opt/floodman-build/patch_ava_groq_resilience.py
 COPY scripts/patch_ava_flux.py /opt/floodman-build/patch_ava_flux.py
 
 RUN git init /opt/ava \
@@ -55,13 +56,17 @@ RUN git init /opt/ava \
     && test -f /opt/ava/local_ai_server/server.py \
     && python3 /opt/floodman-build/patch_ava.py --ava-root /opt/ava \
     && python3 /opt/floodman-build/patch_ava_production.py --ava-root /opt/ava \
+    && python3 /opt/floodman-build/patch_ava_groq_resilience.py --ava-root /opt/ava \
     && python3 /opt/floodman-build/patch_ava_flux.py --ava-root /opt/ava \
     && grep -q "Floodman JSON body safety patch" /opt/ava/src/tools/http/in_call_lookup.py \
     && grep -q "Floodman Piper API compatibility patch" /opt/ava/local_ai_server/server.py \
     && grep -q "Floodman Groq reasoning controls patch" /opt/ava/src/pipelines/openai.py \
+    && grep -q "Floodman Groq 429 backoff patch" /opt/ava/src/pipelines/openai.py \
     && grep -q "Floodman Flux v2 query contract patch" /opt/ava/src/pipelines/deepgram_flux.py \
     && rm -f /opt/floodman-build/patch_ava.py \
-       /opt/floodman-build/patch_ava_production.py
+       /opt/floodman-build/patch_ava_production.py \
+       /opt/floodman-build/patch_ava_groq_resilience.py \
+       /opt/floodman-build/patch_ava_flux.py
 
 RUN pip install --no-cache-dir -r /opt/ava/requirements.txt \
     && pip install --no-cache-dir -r /opt/ava/local_ai_server/requirements-base.txt \
