@@ -13,6 +13,8 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+import httpx
+
 
 class ValidationError(RuntimeError):
     pass
@@ -36,33 +38,64 @@ def json_request(
     payload: dict[str, Any] | None = None,
     timeout: float = 20.0,
 ) -> dict[str, Any]:
-    data = None
-    request_headers = dict(headers)
-    if payload is not None:
-        data = json.dumps(payload).encode("utf-8")
-        request_headers["Content-Type"] = "application/json"
-    request = urllib.request.Request(
-        url,
-        data=data,
-        headers=request_headers,
-        method="POST" if payload is not None else "GET",
-    )
+    request_headers = {
+        "Accept": "application/json",
+        "User-Agent": getenv(
+            "FLOODMAN_HTTP_USER_AGENT",
+            "Asterisk-AI-Voice-Agent/1.0",
+        ),
+        **dict(headers),
+    }
+    method = "POST" if payload is not None else "GET"
+
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            raw = response.read()
-    except urllib.error.HTTPError as exc:
+        with httpx.Client(
+            timeout=timeout,
+            follow_redirects=True,
+        ) as client:
+            response = client.request(
+                method,
+                url,
+                headers=request_headers,
+                json=payload,
+            )
+    except httpx.HTTPError as exc:
         raise ValidationError(
-            f"{url} returned HTTP {exc.code}: {read_http_error(exc)}"
+            f"{url} connection failed: {exc}"
         ) from exc
-    except OSError as exc:
-        raise ValidationError(f"{url} connection failed: {exc}") from exc
+
+    if response.status_code >= 400:
+        diagnostics = []
+        cf_ray = response.headers.get("cf-ray")
+        cf_error_type = response.headers.get("cf-error-type")
+        if cf_ray:
+            diagnostics.append(f"cf-ray={cf_ray}")
+        if cf_error_type:
+            diagnostics.append(f"cf-error-type={cf_error_type}")
+        suffix = (
+            " (" + ", ".join(diagnostics) + ")"
+            if diagnostics
+            else ""
+        )
+        body = response.text[:700]
+        raise ValidationError(
+            f"{url} returned HTTP {response.status_code}"
+            f"{suffix}: {body}"
+        )
+
     try:
-        value = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ValidationError(f"{url} returned invalid JSON") from exc
+        value = response.json()
+    except ValueError as exc:
+        raise ValidationError(
+            f"{url} returned invalid JSON"
+        ) from exc
     if not isinstance(value, dict):
-        raise ValidationError(f"{url} returned an unexpected response")
+        raise ValidationError(
+            f"{url} returned an unexpected response"
+        )
     return value
+
+
 
 
 async def validate_deepgram(
