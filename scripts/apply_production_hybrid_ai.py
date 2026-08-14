@@ -23,6 +23,11 @@ def production_patch() -> dict[str, Any]:
         "default_provider": "${AVA_PROVIDER:-floodman_production}",
         "active_pipeline": "${AVA_PIPELINE:-floodman_production}",
         "pipelines": {
+            # AVA upstream ships demo pipelines that Floodman does not use.
+            # Null values are deletion markers in AVA local overrides.
+            "local_hybrid": None,
+            "local_hybrid_groq": None,
+            "hybrid_elevenlabs": None,
             "floodman_production": {
                 "stt": "deepgram_flux_stt",
                 "llm": "groq_llm",
@@ -113,6 +118,12 @@ def local_patch() -> dict[str, Any]:
     return {
         "default_provider": "${AVA_PROVIDER:-local_hybrid}",
         "active_pipeline": "${AVA_PIPELINE:-local_hybrid}",
+        "pipelines": {
+            # Remove stale cloud and upstream demo pipelines on fallback.
+            "floodman_production": None,
+            "local_hybrid_groq": None,
+            "hybrid_elevenlabs": None,
+        },
     }
 
 
