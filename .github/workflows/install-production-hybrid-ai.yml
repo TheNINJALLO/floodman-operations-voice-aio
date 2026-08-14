@@ -1,0 +1,612 @@
+name: Install Floodman Production Hybrid AI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/install-production-hybrid-ai.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: floodman-production-hybrid-ai
+  cancel-in-progress: false
+
+jobs:
+  install:
+    name: Install Deepgram Flux, Groq Qwen, and ElevenLabs Flash
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Add production profile selector
+        shell: bash
+        run: |
+          cat > scripts/select_ai_profile.sh <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          requested="${FLOODMAN_AI_PROFILE:-auto}"
+          missing=()
+
+          require_cloud_keys() {
+            [[ -n "${DEEPGRAM_API_KEY:-}" ]] || missing+=("DEEPGRAM_API_KEY")
+            [[ -n "${GROQ_API_KEY:-}" ]] || missing+=("GROQ_API_KEY")
+            [[ -n "${ELEVENLABS_API_KEY:-}" ]] || missing+=("ELEVENLABS_API_KEY")
+          }
+
+          case "${requested,,}" in
+            auto)
+              require_cloud_keys
+              if [[ "${#missing[@]}" -eq 0 ]]; then
+                requested="production_hybrid"
+              else
+                requested="local_hybrid"
+                echo "Floodman production AI keys are incomplete; using local_hybrid. Missing: ${missing[*]}"
+              fi
+              ;;
+            production|production_hybrid|floodman_production)
+              requested="production_hybrid"
+              require_cloud_keys
+              if [[ "${#missing[@]}" -ne 0 ]]; then
+                echo "FLOODMAN_AI_PROFILE=production_hybrid requires: ${missing[*]}" >&2
+                return 1 2>/dev/null || exit 1
+              fi
+              ;;
+            local|local_hybrid)
+              requested="local_hybrid"
+              ;;
+            *)
+              echo "Invalid FLOODMAN_AI_PROFILE=${requested}; use auto, production_hybrid, or local_hybrid" >&2
+              return 1 2>/dev/null || exit 1
+              ;;
+          esac
+
+          export FLOODMAN_AI_PROFILE="${requested}"
+
+          if [[ "${requested}" == "production_hybrid" ]]; then
+            export AVA_PIPELINE="floodman_production"
+            export AVA_PROVIDER="floodman_production"
+            export DEFAULT_PROVIDER="floodman_production"
+            export ENABLE_LOCAL_AI_SERVER="${FLOODMAN_KEEP_LOCAL_FALLBACK_WARM:-false}"
+            export AUTO_INSTALL_LOCAL_MODELS="false"
+            export LOCAL_ENABLE_FILLER_AUDIO="false"
+            echo "Floodman AI profile: production_hybrid"
+            echo "  Listening: Deepgram Flux"
+            echo "  Reasoning: Groq-hosted Qwen"
+            echo "  Speaking: ElevenLabs Flash v2.5"
+          else
+            export AVA_PIPELINE="local_hybrid"
+            export AVA_PROVIDER="local_hybrid"
+            export DEFAULT_PROVIDER="local_hybrid"
+            export ENABLE_LOCAL_AI_SERVER="true"
+            echo "Floodman AI profile: local_hybrid"
+          fi
+          SH
+          chmod +x scripts/select_ai_profile.sh
+
+      - name: Add idempotent AVA production overlay
+        shell: bash
+        run: |
+          cat > scripts/apply_production_hybrid_ai.py <<'PY'
+          #!/usr/bin/env python3
+          from __future__ import annotations
+
+          import argparse
+          import os
+          from pathlib import Path
+          from typing import Any
+
+          import yaml
+
+
+          def deep_merge(target: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
+              for key, value in patch.items():
+                  if isinstance(value, dict) and isinstance(target.get(key), dict):
+                      deep_merge(target[key], value)
+                  else:
+                      target[key] = value
+              return target
+
+
+          def production_patch() -> dict[str, Any]:
+              return {
+                  "default_provider": "${AVA_PROVIDER:-floodman_production}",
+                  "active_pipeline": "${AVA_PIPELINE:-floodman_production}",
+                  "pipelines": {
+                      "floodman_production": {
+                          "stt": "deepgram_flux_stt",
+                          "llm": "groq_llm",
+                          "tts": "elevenlabs_tts",
+                          "options": {
+                              "stt": {
+                                  "base_url": "wss://api.deepgram.com/v2/listen",
+                                  "model": "${DEEPGRAM_FLUX_MODEL:-flux-general-en}",
+                                  "language": "en-US",
+                                  "encoding": "linear16",
+                                  "sample_rate": 16000,
+                                  "channels": 1,
+                                  "streaming": True,
+                                  "stream_format": "pcm16_16k",
+                                  "eot_threshold": "${DEEPGRAM_EOT_THRESHOLD:-0.70}",
+                                  "eager_eot_threshold": "${DEEPGRAM_EAGER_EOT_THRESHOLD:-0.50}",
+                                  "eot_timeout_ms": "${DEEPGRAM_EOT_TIMEOUT_MS:-1200}",
+                              },
+                              "llm": {
+                                  "chat_base_url": "https://api.groq.com/openai/v1",
+                                  "model": "${GROQ_LLM_MODEL:-qwen/qwen3.6-27b}",
+                                  "temperature": "${GROQ_LLM_TEMPERATURE:-0.65}",
+                                  "top_p": "${GROQ_LLM_TOP_P:-0.80}",
+                                  "presence_penalty": "${GROQ_LLM_PRESENCE_PENALTY:-1.0}",
+                                  "max_tokens": "${GROQ_LLM_MAX_TOKENS:-160}",
+                                  "timeout_sec": "${GROQ_LLM_TIMEOUT_SECONDS:-12}",
+                                  "reasoning_effort": "none",
+                                  "reasoning_format": "hidden",
+                                  "service_tier": "${GROQ_SERVICE_TIER:-auto}",
+                              },
+                              "tts": {
+                                  "voice_id": "${ELEVENLABS_VOICE_ID:-21m00Tcm4TlvDq8ikWAM}",
+                                  "model_id": "${ELEVENLABS_TTS_MODEL:-eleven_flash_v2_5}",
+                                  "output_format": "ulaw_8000",
+                                  "stability": "${ELEVENLABS_STABILITY:-0.45}",
+                                  "similarity_boost": "${ELEVENLABS_SIMILARITY_BOOST:-0.85}",
+                                  "style": "${ELEVENLABS_STYLE:-0.15}",
+                                  "use_speaker_boost": True,
+                                  "chunk_size_ms": 20,
+                                  "format": {"encoding": "mulaw", "sample_rate": 8000},
+                              },
+                          },
+                      },
+                  },
+                  "providers": {
+                      "deepgram": {
+                          "type": "full",
+                          "enabled": True,
+                          "capabilities": ["stt", "llm", "tts"],
+                          "api_key": "${DEEPGRAM_API_KEY:-}",
+                          "base_url": "wss://api.deepgram.com/v2/listen",
+                          "model": "${DEEPGRAM_FLUX_MODEL:-flux-general-en}",
+                          "stt_language": "en-US",
+                          "eot_threshold": 0.70,
+                          "eager_eot_threshold": 0.50,
+                          "eot_timeout_ms": 1200,
+                          "continuous_input": True,
+                      },
+                      "groq_llm": {
+                          "type": "openai",
+                          "enabled": True,
+                          "capabilities": ["llm"],
+                          "api_key": "${GROQ_API_KEY:-}",
+                          "chat_base_url": "https://api.groq.com/openai/v1",
+                          "chat_model": "${GROQ_LLM_MODEL:-qwen/qwen3.6-27b}",
+                          "response_timeout_sec": 12,
+                          "temperature": 0.65,
+                          "tools_enabled": True,
+                      },
+                      "elevenlabs_tts": {
+                          "type": "elevenlabs",
+                          "enabled": True,
+                          "capabilities": ["tts"],
+                          "api_key": "${ELEVENLABS_API_KEY:-}",
+                          "voice_id": "${ELEVENLABS_VOICE_ID:-21m00Tcm4TlvDq8ikWAM}",
+                          "model_id": "${ELEVENLABS_TTS_MODEL:-eleven_flash_v2_5}",
+                          "base_url": "https://api.elevenlabs.io/v1",
+                          "output_format": "ulaw_8000",
+                          "stability": 0.45,
+                          "similarity_boost": 0.85,
+                          "style": 0.15,
+                          "use_speaker_boost": True,
+                      },
+                  },
+              }
+
+
+          def local_patch() -> dict[str, Any]:
+              return {
+                  "default_provider": "${AVA_PROVIDER:-local_hybrid}",
+                  "active_pipeline": "${AVA_PIPELINE:-local_hybrid}",
+              }
+
+
+          def update(path: Path, profile: str) -> None:
+              if not path.is_file():
+                  raise FileNotFoundError(path)
+              current = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+              if not isinstance(current, dict):
+                  raise TypeError(f"{path} must contain a YAML mapping")
+              patch = production_patch() if profile == "production_hybrid" else local_patch()
+              merged = deep_merge(current, patch)
+              path.write_text(
+                  yaml.safe_dump(merged, sort_keys=False, allow_unicode=True),
+                  encoding="utf-8",
+                  newline="\n",
+              )
+
+
+          def main() -> int:
+              parser = argparse.ArgumentParser()
+              parser.add_argument("--config", type=Path, action="append", required=True)
+              parser.add_argument(
+                  "--profile",
+                  choices=("production_hybrid", "local_hybrid"),
+                  default=os.getenv("FLOODMAN_AI_PROFILE", "local_hybrid"),
+              )
+              args = parser.parse_args()
+              for path in args.config:
+                  update(path, args.profile)
+                  print(f"Applied Floodman {args.profile} AI configuration to {path}")
+              return 0
+
+
+          if __name__ == "__main__":
+              raise SystemExit(main())
+          PY
+          chmod +x scripts/apply_production_hybrid_ai.py
+
+      - name: Patch pinned AVA for Groq non-thinking controls
+        shell: bash
+        run: |
+          cat > scripts/patch_ava_production.py <<'PY'
+          #!/usr/bin/env python3
+          from __future__ import annotations
+
+          import argparse
+          from pathlib import Path
+
+
+          GROQ_MARKER = "Floodman Groq reasoning controls patch"
+
+
+          class PatchError(RuntimeError):
+              pass
+
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise PatchError(f"{label}: expected one source match, found {count}")
+              return text.replace(old, new, 1)
+
+
+          def patch_groq(path: Path) -> bool:
+              text = path.read_text(encoding="utf-8")
+              if GROQ_MARKER in text:
+                  return False
+
+              text = replace_once(
+                  text,
+                  '''            "max_tokens": runtime_options.get("max_tokens", self._pipeline_defaults.get("max_tokens")),
+                      "timeout_sec": float(runtime_options.get("timeout_sec", self._pipeline_defaults.get("timeout_sec", self._default_timeout))),
+                      "use_realtime": runtime_options.get("use_realtime", self._pipeline_defaults.get("use_realtime", False)),
+                  ''',
+                  '''            "max_tokens": runtime_options.get("max_tokens", self._pipeline_defaults.get("max_tokens")),
+                      # Floodman Groq reasoning controls patch.
+                      "top_p": runtime_options.get("top_p", self._pipeline_defaults.get("top_p")),
+                      "presence_penalty": runtime_options.get(
+                          "presence_penalty", self._pipeline_defaults.get("presence_penalty")
+                      ),
+                      "reasoning_effort": runtime_options.get(
+                          "reasoning_effort", self._pipeline_defaults.get("reasoning_effort")
+                      ),
+                      "reasoning_format": runtime_options.get(
+                          "reasoning_format", self._pipeline_defaults.get("reasoning_format")
+                      ),
+                      "service_tier": runtime_options.get(
+                          "service_tier", self._pipeline_defaults.get("service_tier")
+                      ),
+                      "timeout_sec": float(runtime_options.get("timeout_sec", self._pipeline_defaults.get("timeout_sec", self._default_timeout))),
+                      "use_realtime": runtime_options.get("use_realtime", self._pipeline_defaults.get("use_realtime", False)),
+                  ''',
+                  f"{path} Groq options",
+              )
+
+              text = replace_once(
+                  text,
+                  '''        if merged.get("max_tokens") is not None:
+                      payload["max_tokens"] = merged["max_tokens"]
+                  return payload''',
+                  '''        if merged.get("max_tokens") is not None:
+                      payload["max_tokens"] = merged["max_tokens"]
+                  for optional_key in (
+                      "top_p",
+                      "presence_penalty",
+                      "reasoning_effort",
+                      "reasoning_format",
+                      "service_tier",
+                  ):
+                      if merged.get(optional_key) is not None:
+                          payload[optional_key] = merged[optional_key]
+                  return payload''',
+                  f"{path} Groq payload",
+              )
+              path.write_text(text, encoding="utf-8", newline="\n")
+              return True
+
+
+          def main() -> int:
+              parser = argparse.ArgumentParser()
+              parser.add_argument("--ava-root", type=Path, default=Path("/opt/ava"))
+              args = parser.parse_args()
+              path = args.ava_root.resolve() / "src/pipelines/openai.py"
+              if not path.is_file():
+                  raise PatchError(f"required AVA source is missing: {path}")
+              if patch_groq(path):
+                  print(f"patched {path}")
+              else:
+                  print("Groq AVA patch already applied")
+              return 0
+
+
+          if __name__ == "__main__":
+              raise SystemExit(main())
+          PY
+          chmod +x scripts/patch_ava_production.py
+
+      - name: Wire production configuration into startup and Docker build
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: Path, old: str, new: str, label: str) -> None:
+              text = path.read_text(encoding="utf-8")
+              if new in text:
+                  return
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected one anchor, found {count}")
+              path.write_text(text.replace(old, new, 1), encoding="utf-8", newline="\n")
+
+          entrypoint = Path("scripts/entrypoint.sh")
+          replace_once(
+              entrypoint,
+              'export AVA_RUNTIME_DIR="${AVA_RUNTIME_DIR:-${DATA_DIR}/runtime/ava}"\n',
+              'export AVA_RUNTIME_DIR="${AVA_RUNTIME_DIR:-${DATA_DIR}/runtime/ava}"\n'
+              'source /opt/floodman/scripts/select_ai_profile.sh\n',
+              "profile selector hook",
+          )
+          replace_once(
+              entrypoint,
+              '/opt/floodman/scripts/prepare_ava_runtime.sh\n',
+              '/opt/floodman/scripts/prepare_ava_runtime.sh\n'
+              '/opt/venv/bin/python /opt/floodman/scripts/apply_production_hybrid_ai.py \\\n'
+              '  --profile "${FLOODMAN_AI_PROFILE}" \\\n'
+              '  --config "${CONFIG_DIR}/ava/ai-agent.local.yaml" \\\n'
+              '  --config "${AVA_RUNTIME_DIR}/config/ai-agent.local.yaml"\n',
+              "production overlay hook",
+          )
+
+          dockerfile = Path("Dockerfile")
+          replace_once(
+              dockerfile,
+              'COPY scripts/patch_ava.py /opt/floodman-build/patch_ava.py\n',
+              'COPY scripts/patch_ava.py /opt/floodman-build/patch_ava.py\n'
+              'COPY scripts/patch_ava_production.py /opt/floodman-build/patch_ava_production.py\n',
+              "production patcher copy",
+          )
+          replace_once(
+              dockerfile,
+              '    && python3 /opt/floodman-build/patch_ava.py --ava-root /opt/ava \\\n',
+              '    && python3 /opt/floodman-build/patch_ava.py --ava-root /opt/ava \\\n'
+              '    && python3 /opt/floodman-build/patch_ava_production.py --ava-root /opt/ava \\\n',
+              "production patcher execution",
+          )
+          replace_once(
+              dockerfile,
+              '    && grep -q "Floodman Piper API compatibility patch" /opt/ava/local_ai_server/server.py \\\n',
+              '    && grep -q "Floodman Piper API compatibility patch" /opt/ava/local_ai_server/server.py \\\n'
+              '    && grep -q "Floodman Groq reasoning controls patch" /opt/ava/src/pipelines/openai.py \\\n',
+              "production patch verification",
+          )
+          replace_once(
+              dockerfile,
+              '    && rm -f /opt/floodman-build/patch_ava.py\n',
+              '    && rm -f /opt/floodman-build/patch_ava.py \\\n'
+              '       /opt/floodman-build/patch_ava_production.py\n',
+              "production patcher cleanup",
+          )
+          PY
+
+      - name: Add production configuration example and tests
+        shell: bash
+        run: |
+          if ! grep -q '^FLOODMAN_AI_PROFILE=' .env.twilio.example; then
+            cat >> .env.twilio.example <<'ENV'
+
+          # Production conversational AI profile.
+          # Keep keys private in Pterodactyl Startup or data/runtime.env.
+          FLOODMAN_AI_PROFILE=auto
+          DEEPGRAM_API_KEY=
+          GROQ_API_KEY=
+          ELEVENLABS_API_KEY=
+          DEEPGRAM_FLUX_MODEL=flux-general-en
+          DEEPGRAM_EOT_TIMEOUT_MS=1200
+          GROQ_LLM_MODEL=qwen/qwen3.6-27b
+          ELEVENLABS_TTS_MODEL=eleven_flash_v2_5
+          ELEVENLABS_VOICE_ID=21m00Tcm4TlvDq8ikWAM
+          ENV
+          fi
+
+          mkdir -p docs
+          cat > docs/PRODUCTION_HYBRID_AI.md <<'MD'
+          # Floodman production hybrid voice stack
+
+          The production profile keeps Asterisk, Floodman's business knowledge,
+          customer records, Roomflow tools, scheduling rules, recordings, and
+          call history self-hosted.
+
+          It uses Deepgram Flux for listening, Groq-hosted Qwen for conversation
+          and tools, and ElevenLabs Flash v2.5 for natural speech.
+
+          Configure these secrets in `data/runtime.env` or Pterodactyl Startup:
+
+          ```bash
+          export FLOODMAN_AI_PROFILE='production_hybrid'
+          export DEEPGRAM_API_KEY='...'
+          export GROQ_API_KEY='...'
+          export ELEVENLABS_API_KEY='...'
+          ```
+
+          Never commit provider keys to GitHub.
+          MD
+
+          cat > tests/test_production_hybrid_ai.py <<'PY'
+          from __future__ import annotations
+
+          import importlib.util
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          import yaml
+
+
+          def load_module(path: Path):
+              spec = importlib.util.spec_from_file_location("production_ai_config", path)
+              assert spec and spec.loader
+              module = importlib.util.module_from_spec(spec)
+              sys.modules[spec.name] = module
+              spec.loader.exec_module(module)
+              return module
+
+
+          def test_profile_selector_contains_cloud_and_local_paths(
+              project_root: Path,
+          ) -> None:
+              script = (
+                  project_root / "scripts/select_ai_profile.sh"
+              ).read_text(encoding="utf-8")
+              assert "production_hybrid" in script
+              assert "local_hybrid" in script
+              assert "DEEPGRAM_API_KEY" in script
+              assert "GROQ_API_KEY" in script
+              assert "ELEVENLABS_API_KEY" in script
+
+
+          def test_production_overlay_builds_expected_pipeline(
+              project_root: Path,
+              tmp_path: Path,
+          ) -> None:
+              module = load_module(
+                  project_root / "scripts/apply_production_hybrid_ai.py"
+              )
+              target = tmp_path / "ai-agent.local.yaml"
+              target.write_text(
+                  "pipelines:\n  local_hybrid:\n    stt: local_stt\n",
+                  encoding="utf-8",
+              )
+              module.update(target, "production_hybrid")
+              parsed = yaml.safe_load(target.read_text(encoding="utf-8"))
+
+              pipeline = parsed["pipelines"]["floodman_production"]
+              assert pipeline["stt"] == "deepgram_flux_stt"
+              assert pipeline["llm"] == "groq_llm"
+              assert pipeline["tts"] == "elevenlabs_tts"
+              assert pipeline["options"]["stt"]["streaming"] is True
+              assert parsed["providers"]["deepgram"]["enabled"] is True
+              assert parsed["providers"]["elevenlabs_tts"]["enabled"] is True
+
+
+          def test_docker_build_applies_production_ava_patches(
+              project_root: Path,
+          ) -> None:
+              dockerfile = (project_root / "Dockerfile").read_text(encoding="utf-8")
+              assert "patch_ava_production.py" in dockerfile
+              assert "Floodman Groq reasoning controls patch" in dockerfile
+
+
+          def test_scripts_have_valid_syntax(project_root: Path) -> None:
+              subprocess.run(
+                  ["bash", "-n", str(project_root / "scripts/select_ai_profile.sh")],
+                  check=True,
+                  cwd=project_root,
+              )
+              for path in (
+                  project_root / "scripts/apply_production_hybrid_ai.py",
+                  project_root / "scripts/patch_ava_production.py",
+              ):
+                  compile(path.read_text(encoding="utf-8"), str(path), "exec")
+          PY
+
+      - name: Verify generated files
+        shell: bash
+        run: |
+          python -m py_compile \
+            scripts/apply_production_hybrid_ai.py \
+            scripts/patch_ava_production.py \
+            tests/test_production_hybrid_ai.py
+          bash -n scripts/select_ai_profile.sh
+          bash -n scripts/entrypoint.sh
+          git diff --check
+
+      - name: Install project test dependencies
+        run: pip install -e '.[dev]'
+
+      - name: Run focused production tests
+        run: python -m pytest tests/test_production_hybrid_ai.py -q
+
+      - name: Run complete repository tests
+        run: python -m pytest tests/ -x -q
+
+      - name: Compile and validate repository
+        shell: bash
+        run: |
+          python -m compileall app scripts tests
+          bash -n scripts/*.sh
+          python scripts/validate_configs.py
+          git diff --check
+
+      - name: Commit tested production stack
+        id: commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add \
+            .env.twilio.example \
+            Dockerfile \
+            docs/PRODUCTION_HYBRID_AI.md \
+            scripts/apply_production_hybrid_ai.py \
+            scripts/entrypoint.sh \
+            scripts/patch_ava_production.py \
+            scripts/select_ai_profile.sh \
+            tests/test_production_hybrid_ai.py
+
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Production hybrid AI stack is already installed."
+          else
+            git commit -m "feat: add production Deepgram Groq ElevenLabs voice stack"
+            git push origin HEAD:main
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Launch full and lite container builds
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run ci-container.yml --ref main
+
+      - name: Summary
+        run: |
+          echo "### Floodman production hybrid AI" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Deepgram Flux streaming STT and turn detection" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Groq-hosted Qwen in non-thinking mode with Floodman tools" >> "$GITHUB_STEP_SUMMARY"
+          echo "- ElevenLabs Flash v2.5 telephony TTS" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Automatic local fallback until all provider keys exist" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Full repository tests passed before commit" >> "$GITHUB_STEP_SUMMARY"
