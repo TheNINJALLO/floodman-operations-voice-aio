@@ -1,0 +1,264 @@
+name: Repair Floodman Production Caller Audio Transport
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/repair-production-externalmedia-input.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: floodman-production-externalmedia-input
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    name: Move production pipeline input to ExternalMedia RTP
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Apply production transport repair
+        shell: bash
+        run: |
+          python - <<'PY_PATCH'
+          from __future__ import annotations
+
+          import ast
+          from pathlib import Path
+
+          path = Path("scripts/apply_production_hybrid_ai.py")
+          text = path.read_text(encoding="utf-8")
+
+          production_anchor = '''    return {
+              "default_provider": "${AVA_PROVIDER:-floodman_production}",
+              "active_pipeline": "${AVA_PIPELINE:-floodman_production}",
+              "pipelines": {
+          '''
+          production_replacement = '''    return {
+              "default_provider": "${AVA_PROVIDER:-floodman_production}",
+              "active_pipeline": "${AVA_PIPELINE:-floodman_production}",
+              # Modular cloud pipelines are most reliable with Asterisk
+              # ExternalMedia RTP. It provides a dedicated full-duplex media
+              # leg instead of sharing caller capture with AudioSocket TTS.
+              "audio_transport": "externalmedia",
+              "external_media": {
+                  "codec": "ulaw",
+                  "direction": "both",
+                  "port_range": "${FLOODMAN_EXTERNALMEDIA_PORT_RANGE:-18080:18099}",
+                  "rtp_host": "${FLOODMAN_EXTERNALMEDIA_RTP_HOST:-127.0.0.1}",
+                  "advertise_host": "${FLOODMAN_EXTERNALMEDIA_ADVERTISE_HOST:-127.0.0.1}",
+                  "rtp_port": "${FLOODMAN_EXTERNALMEDIA_RTP_PORT:-18080}",
+              },
+              "downstream_mode": "stream",
+              "pipelines": {
+          '''
+          if '"audio_transport": "externalmedia"' not in text:
+              if text.count(production_anchor) != 1:
+                  raise SystemExit(
+                      f"Expected one production transport anchor, found {text.count(production_anchor)}"
+                  )
+              text = text.replace(
+                  production_anchor,
+                  production_replacement,
+                  1,
+              )
+
+          local_anchor = '''    return {
+              "default_provider": "${AVA_PROVIDER:-local_hybrid}",
+              "active_pipeline": "${AVA_PIPELINE:-local_hybrid}",
+              "pipelines": {
+          '''
+          local_replacement = '''    return {
+              "default_provider": "${AVA_PROVIDER:-local_hybrid}",
+              "active_pipeline": "${AVA_PIPELINE:-local_hybrid}",
+              # Keep the known local stack on its existing AudioSocket path.
+              "audio_transport": "audiosocket",
+              "audiosocket": {
+                  "host": "127.0.0.1",
+                  "advertise_host": "127.0.0.1",
+                  "port": 8090,
+                  "format": "slin",
+              },
+              "downstream_mode": "stream",
+              "pipelines": {
+          '''
+          if '"audio_transport": "audiosocket"' not in text:
+              if text.count(local_anchor) != 1:
+                  raise SystemExit(
+                      f"Expected one local transport anchor, found {text.count(local_anchor)}"
+                  )
+              text = text.replace(
+                  local_anchor,
+                  local_replacement,
+                  1,
+              )
+
+          ast.parse(text)
+          path.write_text(text, encoding="utf-8", newline="\n")
+
+          test_path = Path("tests/test_production_externalmedia_input.py")
+          test_path.write_text(
+              '''from __future__ import annotations
+
+          import importlib.util
+          import sys
+          from pathlib import Path
+
+
+          def load_module(name: str, path: Path):
+              spec = importlib.util.spec_from_file_location(name, path)
+              assert spec and spec.loader
+              module = importlib.util.module_from_spec(spec)
+              sys.modules[spec.name] = module
+              spec.loader.exec_module(module)
+              return module
+
+
+          def test_production_pipeline_uses_full_duplex_externalmedia(
+              project_root: Path,
+          ) -> None:
+              module = load_module(
+                  "production_externalmedia_config",
+                  project_root / "scripts/apply_production_hybrid_ai.py",
+              )
+              patch = module.production_patch()
+              assert patch["audio_transport"] == "externalmedia"
+              assert patch["external_media"]["direction"] == "both"
+              assert patch["external_media"]["codec"] == "ulaw"
+              assert patch["external_media"]["rtp_host"] == (
+                  "${FLOODMAN_EXTERNALMEDIA_RTP_HOST:-127.0.0.1}"
+              )
+              assert patch["external_media"]["advertise_host"] == (
+                  "${FLOODMAN_EXTERNALMEDIA_ADVERTISE_HOST:-127.0.0.1}"
+              )
+              assert patch["external_media"]["port_range"] == (
+                  "${FLOODMAN_EXTERNALMEDIA_PORT_RANGE:-18080:18099}"
+              )
+              assert patch["downstream_mode"] == "stream"
+
+
+          def test_local_fallback_keeps_audiosocket(
+              project_root: Path,
+          ) -> None:
+              module = load_module(
+                  "local_audiosocket_config",
+                  project_root / "scripts/apply_production_hybrid_ai.py",
+              )
+              patch = module.local_patch()
+              assert patch["audio_transport"] == "audiosocket"
+              assert patch["audiosocket"]["port"] == 8090
+              assert patch["audiosocket"]["format"] == "slin"
+
+
+          def test_transport_ports_do_not_overlap_twilio_rtp_range(
+              project_root: Path,
+          ) -> None:
+              module = load_module(
+                  "production_externalmedia_ports",
+                  project_root / "scripts/apply_production_hybrid_ai.py",
+              )
+              port_range = module.production_patch()["external_media"]["port_range"]
+              assert "18080:18099" in port_range
+              assert "10000:10040" not in port_range
+          ''',
+              encoding="utf-8",
+              newline="\n",
+          )
+
+          example = Path(".env.twilio.example")
+          if example.is_file():
+              current = example.read_text(encoding="utf-8")
+              if "FLOODMAN_EXTERNALMEDIA_PORT_RANGE=" not in current:
+                  current = current.rstrip() + '''
+
+          # Internal Asterisk <-> Ava media path for production modular pipelines.
+          # These UDP ports are inside the all-in-one container and are separate
+          # from Twilio's public RTP range.
+          FLOODMAN_EXTERNALMEDIA_RTP_HOST=127.0.0.1
+          FLOODMAN_EXTERNALMEDIA_ADVERTISE_HOST=127.0.0.1
+          FLOODMAN_EXTERNALMEDIA_RTP_PORT=18080
+          FLOODMAN_EXTERNALMEDIA_PORT_RANGE=18080:18099
+          '''
+                  example.write_text(
+                      current.lstrip("\n"),
+                      encoding="utf-8",
+                      newline="\n",
+                  )
+          PY_PATCH
+
+      - name: Verify generated syntax
+        shell: bash
+        run: |
+          python -m py_compile \
+            scripts/apply_production_hybrid_ai.py \
+            tests/test_production_externalmedia_input.py
+          git diff --check
+
+      - name: Install project test dependencies
+        run: pip install -e '.[dev]'
+
+      - name: Run focused transport tests
+        run: python -m pytest tests/test_production_externalmedia_input.py -q
+
+      - name: Run complete repository tests
+        run: python -m pytest tests/ -x -q
+
+      - name: Compile and validate repository
+        shell: bash
+        run: |
+          python -m compileall app scripts tests
+          bash -n scripts/*.sh
+          python scripts/validate_configs.py
+          git diff --check
+
+      - name: Commit tested transport repair
+        id: commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add \
+            scripts/apply_production_hybrid_ai.py \
+            tests/test_production_externalmedia_input.py \
+            .env.twilio.example
+
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Production ExternalMedia repair is already installed."
+          else
+            git commit -m "fix: use full-duplex ExternalMedia for production calls"
+            git push origin HEAD:main
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Launch full and lite container builds
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run ci-container.yml --ref main
+
+      - name: Summary
+        run: |
+          echo "### Floodman production caller-audio repair" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Production hybrid calls now use full-duplex ExternalMedia RTP" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Internal RTP uses 127.0.0.1 ports 18080-18099" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Twilio public RTP remains on 10000-10040" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Local fallback remains on AudioSocket" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Complete repository tests passed before commit" >> "$GITHUB_STEP_SUMMARY"
