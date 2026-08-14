@@ -1,0 +1,434 @@
+name: Repair Floodman Deepgram Flux v2 Contract
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/repair-deepgram-flux-contract.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: floodman-deepgram-flux-contract
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    name: Remove invalid Flux language parameter and rebuild AVA
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Correct Floodman production configuration and validator
+        shell: bash
+        run: |
+          python - <<'PY_FIX'
+          from pathlib import Path
+
+          validator = Path("scripts/validate_production_ai.py")
+          text = validator.read_text(encoding="utf-8")
+          invalid = '            "language": "en-US",\n'
+          if invalid in text:
+              if text.count(invalid) != 1:
+                  raise SystemExit(
+                      f"Expected one invalid Deepgram language parameter, found {text.count(invalid)}"
+                  )
+              text = text.replace(invalid, "", 1)
+              validator.write_text(text, encoding="utf-8", newline="\n")
+
+          config_builder = Path("scripts/apply_production_hybrid_ai.py")
+          text = config_builder.read_text(encoding="utf-8")
+          invalid = '                        "language": "en-US",\n'
+          if invalid in text:
+              if text.count(invalid) != 1:
+                  raise SystemExit(
+                      f"Expected one production STT language field, found {text.count(invalid)}"
+                  )
+              text = text.replace(invalid, "", 1)
+              config_builder.write_text(text, encoding="utf-8", newline="\n")
+          PY_FIX
+
+      - name: Add the pinned AVA Flux patch
+        shell: bash
+        run: |
+          cat > scripts/patch_ava_flux.py <<'PY_PATCHER'
+          #!/usr/bin/env python3
+          from __future__ import annotations
+
+          import argparse
+          from pathlib import Path
+
+
+          MARKER = "Floodman Flux v2 query contract patch"
+
+
+          class PatchError(RuntimeError):
+              pass
+
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise PatchError(
+                      f"{label}: expected one source match, found {count}"
+                  )
+              return text.replace(old, new, 1)
+
+
+          def patch_flux(path: Path) -> bool:
+              text = path.read_text(encoding="utf-8")
+              if MARKER in text:
+                  return False
+
+              old_validate = (
+                  '        query_params = {\n'
+                  '            "model": "flux-general-en",\n'
+                  '            "language": merged.get("language", "en-US"),\n'
+                  '            "encoding": merged.get("encoding", "linear16"),\n'
+                  '            "sample_rate": merged.get("sample_rate", "16000"),\n'
+                  '            "channels": "1",\n'
+                  '        }\n'
+              )
+              new_validate = (
+                  '        model = str(merged.get("model") or "flux-general-en")\n'
+                  '        query_params = {\n'
+                  '            "model": model,\n'
+                  '            "encoding": merged.get("encoding", "linear16"),\n'
+                  '            "sample_rate": merged.get("sample_rate", "16000"),\n'
+                  '            "channels": "1",\n'
+                  '        }\n'
+                  '        # Floodman Flux v2 query contract patch.\n'
+                  '        # flux-general-en selects English through the model name and\n'
+                  '        # rejects the legacy language= query parameter with HTTP 400.\n'
+                  '        if model == "flux-general-multi":\n'
+                  '            language_hint = merged.get("language_hint") or merged.get("language")\n'
+                  '            if language_hint:\n'
+                  '                query_params["language_hint"] = str(language_hint).split("-", 1)[0]\n'
+              )
+              text = replace_once(
+                  text,
+                  old_validate,
+                  new_validate,
+                  f"{path} Flux validation query",
+              )
+
+              old_call = (
+                  '        query_params = {\n'
+                  '            "model": "flux-general-en",  # Required for Flux\n'
+                  '            "language": merged.get("language", "en-US"),\n'
+                  '            "encoding": merged.get("encoding", "linear16"),\n'
+                  '            "sample_rate": merged.get("sample_rate", "16000"),\n'
+                  '            "channels": "1",  # Mono audio (required for Flux)\n'
+                  '            # Turn detection parameters\n'
+                  '            "eot_threshold": merged.get("eot_threshold", "0.7"),\n'
+                  '            "eot_timeout_ms": merged.get("eot_timeout_ms", "5000"),\n'
+                  '        }\n'
+              )
+              new_call = (
+                  '        model = str(merged.get("model") or "flux-general-en")\n'
+                  '        query_params = {\n'
+                  '            "model": model,\n'
+                  '            "encoding": merged.get("encoding", "linear16"),\n'
+                  '            "sample_rate": merged.get("sample_rate", "16000"),\n'
+                  '            "channels": "1",  # Mono audio (required for Flux)\n'
+                  '            # Turn detection parameters\n'
+                  '            "eot_threshold": merged.get("eot_threshold", "0.7"),\n'
+                  '            "eot_timeout_ms": merged.get("eot_timeout_ms", "5000"),\n'
+                  '        }\n'
+                  '        if model == "flux-general-multi":\n'
+                  '            language_hint = merged.get("language_hint") or merged.get("language")\n'
+                  '            if language_hint:\n'
+                  '                query_params["language_hint"] = str(language_hint).split("-", 1)[0]\n'
+              )
+              text = replace_once(
+                  text,
+                  old_call,
+                  new_call,
+                  f"{path} Flux live-call query",
+              )
+
+              old_options = (
+                  '        merged = {\n'
+                  '            "base_url": runtime_options.get(\n'
+                  '                "base_url",\n'
+                  '                self._pipeline_defaults.get("base_url", self._provider_defaults.base_url),\n'
+                  '            ),\n'
+                  '            "language": runtime_options.get(\n'
+                  '                "language",\n'
+                  '                self._pipeline_defaults.get("language", self._provider_defaults.stt_language),\n'
+                  '            ),\n'
+                  '            "encoding": runtime_options.get(\n'
+              )
+              new_options = (
+                  '        merged = {\n'
+                  '            "base_url": runtime_options.get(\n'
+                  '                "base_url",\n'
+                  '                self._pipeline_defaults.get("base_url", self._provider_defaults.base_url),\n'
+                  '            ),\n'
+                  '            "model": runtime_options.get(\n'
+                  '                "model",\n'
+                  '                self._pipeline_defaults.get("model", "flux-general-en"),\n'
+                  '            ),\n'
+                  '            "language": runtime_options.get(\n'
+                  '                "language",\n'
+                  '                self._pipeline_defaults.get("language", self._provider_defaults.stt_language),\n'
+                  '            ),\n'
+                  '            "language_hint": runtime_options.get(\n'
+                  '                "language_hint",\n'
+                  '                self._pipeline_defaults.get("language_hint"),\n'
+                  '            ),\n'
+                  '            "encoding": runtime_options.get(\n'
+              )
+              text = replace_once(
+                  text,
+                  old_options,
+                  new_options,
+                  f"{path} Flux option composition",
+              )
+
+              path.write_text(text, encoding="utf-8", newline="\n")
+              return True
+
+
+          def main() -> int:
+              parser = argparse.ArgumentParser()
+              parser.add_argument(
+                  "--ava-root",
+                  type=Path,
+                  default=Path("/opt/ava"),
+              )
+              args = parser.parse_args()
+              path = (
+                  args.ava_root.resolve()
+                  / "src/pipelines/deepgram_flux.py"
+              )
+              if not path.is_file():
+                  raise PatchError(f"required AVA source is missing: {path}")
+              if patch_flux(path):
+                  print(f"patched {path}")
+              else:
+                  print("Floodman Flux patch already applied")
+              return 0
+
+
+          if __name__ == "__main__":
+              raise SystemExit(main())
+          PY_PATCHER
+          chmod +x scripts/patch_ava_flux.py
+
+      - name: Wire the Flux patch into the Docker build
+        shell: bash
+        run: |
+          python - <<'PY_DOCKER'
+          from pathlib import Path
+
+          path = Path("Dockerfile")
+          text = path.read_text(encoding="utf-8")
+
+          copy_anchor = (
+              "COPY scripts/patch_ava_production.py "
+              "/opt/floodman-build/patch_ava_production.py\n"
+          )
+          copy_addition = (
+              copy_anchor
+              + "COPY scripts/patch_ava_flux.py "
+              "/opt/floodman-build/patch_ava_flux.py\n"
+          )
+          if "COPY scripts/patch_ava_flux.py" not in text:
+              if text.count(copy_anchor) != 1:
+                  raise SystemExit(
+                      f"Expected one Flux COPY anchor, found {text.count(copy_anchor)}"
+                  )
+              text = text.replace(copy_anchor, copy_addition, 1)
+
+          run_anchor = (
+              "    && python3 /opt/floodman-build/patch_ava_production.py "
+              "--ava-root /opt/ava \\\n"
+          )
+          run_addition = (
+              run_anchor
+              + "    && python3 /opt/floodman-build/patch_ava_flux.py "
+              "--ava-root /opt/ava \\\n"
+          )
+          if "patch_ava_flux.py --ava-root" not in text:
+              if text.count(run_anchor) != 1:
+                  raise SystemExit(
+                      f"Expected one Flux execution anchor, found {text.count(run_anchor)}"
+                  )
+              text = text.replace(run_anchor, run_addition, 1)
+
+          grep_anchor = (
+              '    && grep -q "Floodman Groq reasoning controls patch" '
+              '/opt/ava/src/pipelines/openai.py \\\n'
+          )
+          grep_addition = (
+              grep_anchor
+              + '    && grep -q "Floodman Flux v2 query contract patch" '
+              '/opt/ava/src/pipelines/deepgram_flux.py \\\n'
+          )
+          if "grep -q \"Floodman Flux v2 query contract patch\"" not in text:
+              if text.count(grep_anchor) != 1:
+                  raise SystemExit(
+                      f"Expected one Flux verification anchor, found {text.count(grep_anchor)}"
+                  )
+              text = text.replace(grep_anchor, grep_addition, 1)
+
+          remove_anchor = (
+              "       /opt/floodman-build/patch_ava_production.py\n"
+          )
+          remove_addition = (
+              "       /opt/floodman-build/patch_ava_production.py \\\n"
+              "       /opt/floodman-build/patch_ava_flux.py\n"
+          )
+          if "/opt/floodman-build/patch_ava_flux.py\n" not in text:
+              if text.count(remove_anchor) != 1:
+                  raise SystemExit(
+                      f"Expected one Flux cleanup anchor, found {text.count(remove_anchor)}"
+                  )
+              text = text.replace(remove_anchor, remove_addition, 1)
+
+          path.write_text(text, encoding="utf-8", newline="\n")
+          PY_DOCKER
+
+      - name: Add regression tests
+        shell: bash
+        run: |
+          cat > tests/test_deepgram_flux_contract.py <<'PY_TEST'
+          from __future__ import annotations
+
+          import importlib.util
+          import sys
+          from pathlib import Path
+
+
+          def load_module(name: str, path: Path):
+              spec = importlib.util.spec_from_file_location(name, path)
+              assert spec and spec.loader
+              module = importlib.util.module_from_spec(spec)
+              sys.modules[spec.name] = module
+              spec.loader.exec_module(module)
+              return module
+
+
+          def test_preflight_does_not_send_legacy_flux_language(
+              project_root: Path,
+          ) -> None:
+              source = (
+                  project_root / "scripts/validate_production_ai.py"
+              ).read_text(encoding="utf-8")
+              assert '"language": "en-US"' not in source
+              assert "flux-general-en" in source
+              assert "eot_timeout_ms" in source
+
+
+          def test_production_pipeline_does_not_force_language_query(
+              project_root: Path,
+          ) -> None:
+              module = load_module(
+                  "production_ai_config_flux_test",
+                  project_root / "scripts/apply_production_hybrid_ai.py",
+              )
+              stt = module.production_patch()["pipelines"][
+                  "floodman_production"
+              ]["options"]["stt"]
+              assert stt["model"] == "${DEEPGRAM_FLUX_MODEL:-flux-general-en}"
+              assert "language" not in stt
+
+
+          def test_docker_applies_and_verifies_flux_patch(
+              project_root: Path,
+          ) -> None:
+              patcher = (
+                  project_root / "scripts/patch_ava_flux.py"
+              ).read_text(encoding="utf-8")
+              dockerfile = (
+                  project_root / "Dockerfile"
+              ).read_text(encoding="utf-8")
+              assert "Floodman Flux v2 query contract patch" in patcher
+              assert "language_hint" in patcher
+              assert "COPY scripts/patch_ava_flux.py" in dockerfile
+              assert "patch_ava_flux.py --ava-root /opt/ava" in dockerfile
+              assert (
+                  'grep -q "Floodman Flux v2 query contract patch"'
+                  in dockerfile
+              )
+          PY_TEST
+
+      - name: Verify generated syntax
+        shell: bash
+        run: |
+          python -m py_compile \
+            scripts/validate_production_ai.py \
+            scripts/apply_production_hybrid_ai.py \
+            scripts/patch_ava_flux.py \
+            tests/test_deepgram_flux_contract.py
+          bash -n scripts/select_ai_profile.sh
+          git diff --check
+
+      - name: Install project test dependencies
+        run: pip install -e '.[dev]'
+
+      - name: Run focused Flux tests
+        run: python -m pytest tests/test_deepgram_flux_contract.py -q
+
+      - name: Run complete repository tests
+        run: python -m pytest tests/ -x -q
+
+      - name: Compile and validate repository
+        shell: bash
+        run: |
+          python -m compileall app scripts tests
+          bash -n scripts/*.sh
+          python scripts/validate_configs.py
+          git diff --check
+
+      - name: Commit tested Flux repair
+        id: commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add \
+            Dockerfile \
+            scripts/validate_production_ai.py \
+            scripts/apply_production_hybrid_ai.py \
+            scripts/patch_ava_flux.py \
+            tests/test_deepgram_flux_contract.py
+
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Deepgram Flux contract repair is already installed."
+          else
+            git commit -m "fix: use the Deepgram Flux v2 query contract"
+            git push origin HEAD:main
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Launch full and lite container builds
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run ci-container.yml --ref main
+
+      - name: Summary
+        run: |
+          echo "### Floodman Deepgram Flux v2 repair" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Removed the unsupported language query from flux-general-en" >> "$GITHUB_STEP_SUMMARY"
+          echo "- The selected DEEPGRAM_FLUX_MODEL now reaches the runtime adapter" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Multilingual Flux uses language_hint instead of language" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Startup validation and live calls now share the same Flux contract" >> "$GITHUB_STEP_SUMMARY"
