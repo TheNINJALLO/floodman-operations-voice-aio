@@ -1,4 +1,4 @@
-name: Repair Floodman Production Caller Audio Transport
+name: Repair Floodman Production Caller Audio Transport v2
 
 on:
   push:
@@ -12,14 +12,14 @@ permissions:
   actions: write
 
 concurrency:
-  group: floodman-production-externalmedia-input
+  group: floodman-production-externalmedia-input-v2
   cancel-in-progress: false
 
 jobs:
   repair:
-    name: Move production pipeline input to ExternalMedia RTP
+    name: Structurally apply full-duplex ExternalMedia transport
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 45
 
     steps:
       - name: Check out main
@@ -33,61 +33,145 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Apply production transport repair
+      - name: Apply production transport repair structurally
         shell: bash
         run: |
           python - <<'PY_PATCH'
           from __future__ import annotations
 
           import ast
+          import textwrap
           from pathlib import Path
 
-          path = Path("scripts/apply_production_hybrid_ai.py")
-          text = path.read_text(encoding="utf-8")
+          target = Path("scripts/apply_production_hybrid_ai.py")
+          source = target.read_text(encoding="utf-8")
 
-          production_anchor = '''    return {
-              "default_provider": "${AVA_PROVIDER:-floodman_production}",
-              "active_pipeline": "${AVA_PIPELINE:-floodman_production}",
-              "pipelines": {
-          '''
-          production_replacement = '''    return {
-              "default_provider": "${AVA_PROVIDER:-floodman_production}",
-              "active_pipeline": "${AVA_PIPELINE:-floodman_production}",
-              # Modular cloud pipelines are most reliable with Asterisk
-              # ExternalMedia RTP. It provides a dedicated full-duplex media
-              # leg instead of sharing caller capture with AudioSocket TTS.
+
+          def top_level_return_dict(text: str, function_name: str) -> ast.Dict:
+              tree = ast.parse(text)
+              function = next(
+                  (
+                      node
+                      for node in tree.body
+                      if isinstance(node, ast.FunctionDef)
+                      and node.name == function_name
+                  ),
+                  None,
+              )
+              if function is None:
+                  raise SystemExit(
+                      f"Function {function_name!r} was not found in {target}"
+                  )
+              return_node = next(
+                  (
+                      node
+                      for node in function.body
+                      if isinstance(node, ast.Return)
+                      and isinstance(node.value, ast.Dict)
+                  ),
+                  None,
+              )
+              if return_node is None:
+                  raise SystemExit(
+                      f"Function {function_name!r} does not directly return a dictionary"
+                  )
+              return return_node.value
+
+
+          def constant_key(node: ast.expr | None) -> str | None:
+              if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                  return node.value
+              return None
+
+
+          def insert_mapping_entries(
+              text: str,
+              *,
+              function_name: str,
+              required_keys: set[str],
+              entries: str,
+              after_key: str = "active_pipeline",
+          ) -> str:
+              mapping = top_level_return_dict(text, function_name)
+              key_map = {
+                  key: (key_node, value_node)
+                  for key_node, value_node in zip(mapping.keys, mapping.values)
+                  if (key := constant_key(key_node)) is not None
+              }
+              existing = required_keys.intersection(key_map)
+              if existing == required_keys:
+                  return text
+              if existing:
+                  raise SystemExit(
+                      f"{function_name} has a partial transport patch: "
+                      f"present={sorted(existing)!r}, expected={sorted(required_keys)!r}"
+                  )
+              if after_key not in key_map:
+                  raise SystemExit(
+                      f"{function_name} has no top-level {after_key!r} key"
+                  )
+
+              anchor_key, anchor_value = key_map[after_key]
+              if anchor_value.end_lineno is None:
+                  raise SystemExit(
+                      f"Could not determine insertion point in {function_name}"
+                  )
+
+              lines = text.splitlines(keepends=True)
+              anchor_line = lines[anchor_key.lineno - 1]
+              indent = anchor_line[: len(anchor_line) - len(anchor_line.lstrip())]
+              rendered = textwrap.indent(
+                  textwrap.dedent(entries).strip("\n"),
+                  indent,
+              ) + "\n"
+              insertion_index = anchor_value.end_lineno
+              lines[insertion_index:insertion_index] = rendered.splitlines(
+                  keepends=True
+              )
+              patched = "".join(lines)
+              ast.parse(patched)
+              return patched
+
+
+          source = insert_mapping_entries(
+              source,
+              function_name="production_patch",
+              required_keys={
+                  "audio_transport",
+                  "external_media",
+                  "downstream_mode",
+              },
+              entries='''
+              # Production modular STT/LLM/TTS uses a dedicated full-duplex
+              # Asterisk ExternalMedia leg. This keeps caller capture independent
+              # from the greeting and response playback stream.
               "audio_transport": "externalmedia",
               "external_media": {
-                  "codec": "ulaw",
-                  "direction": "both",
-                  "port_range": "${FLOODMAN_EXTERNALMEDIA_PORT_RANGE:-18080:18099}",
                   "rtp_host": "${FLOODMAN_EXTERNALMEDIA_RTP_HOST:-127.0.0.1}",
                   "advertise_host": "${FLOODMAN_EXTERNALMEDIA_ADVERTISE_HOST:-127.0.0.1}",
                   "rtp_port": "${FLOODMAN_EXTERNALMEDIA_RTP_PORT:-18080}",
+                  "port_range": "${FLOODMAN_EXTERNALMEDIA_PORT_RANGE:-18080:18099}",
+                  "codec": "ulaw",
+                  "direction": "both",
+                  "format": "slin16",
+                  "sample_rate": 16000,
+                  "allowed_remote_hosts": ["127.0.0.1"],
+                  "lock_remote_endpoint": True,
               },
               "downstream_mode": "stream",
-              "pipelines": {
-          '''
-          if '"audio_transport": "externalmedia"' not in text:
-              if text.count(production_anchor) != 1:
-                  raise SystemExit(
-                      f"Expected one production transport anchor, found {text.count(production_anchor)}"
-                  )
-              text = text.replace(
-                  production_anchor,
-                  production_replacement,
-                  1,
-              )
+              ''',
+          )
 
-          local_anchor = '''    return {
-              "default_provider": "${AVA_PROVIDER:-local_hybrid}",
-              "active_pipeline": "${AVA_PIPELINE:-local_hybrid}",
-              "pipelines": {
-          '''
-          local_replacement = '''    return {
-              "default_provider": "${AVA_PROVIDER:-local_hybrid}",
-              "active_pipeline": "${AVA_PIPELINE:-local_hybrid}",
-              # Keep the known local stack on its existing AudioSocket path.
+          source = insert_mapping_entries(
+              source,
+              function_name="local_patch",
+              required_keys={
+                  "audio_transport",
+                  "audiosocket",
+                  "downstream_mode",
+              },
+              entries='''
+              # Preserve the existing local recovery stack on AudioSocket.
               "audio_transport": "audiosocket",
               "audiosocket": {
                   "host": "127.0.0.1",
@@ -96,107 +180,122 @@ jobs:
                   "format": "slin",
               },
               "downstream_mode": "stream",
-              "pipelines": {
-          '''
-          if '"audio_transport": "audiosocket"' not in text:
-              if text.count(local_anchor) != 1:
-                  raise SystemExit(
-                      f"Expected one local transport anchor, found {text.count(local_anchor)}"
-                  )
-              text = text.replace(
-                  local_anchor,
-                  local_replacement,
-                  1,
-              )
+              ''',
+          )
 
-          ast.parse(text)
-          path.write_text(text, encoding="utf-8", newline="\n")
+          target.write_text(source, encoding="utf-8", newline="\n")
 
           test_path = Path("tests/test_production_externalmedia_input.py")
-          test_path.write_text(
-              '''from __future__ import annotations
+          test_source = textwrap.dedent(
+              '''
+              from __future__ import annotations
 
-          import importlib.util
-          import sys
-          from pathlib import Path
-
-
-          def load_module(name: str, path: Path):
-              spec = importlib.util.spec_from_file_location(name, path)
-              assert spec and spec.loader
-              module = importlib.util.module_from_spec(spec)
-              sys.modules[spec.name] = module
-              spec.loader.exec_module(module)
-              return module
+              import importlib.util
+              import sys
+              from pathlib import Path
 
 
-          def test_production_pipeline_uses_full_duplex_externalmedia(
-              project_root: Path,
-          ) -> None:
-              module = load_module(
-                  "production_externalmedia_config",
-                  project_root / "scripts/apply_production_hybrid_ai.py",
-              )
-              patch = module.production_patch()
-              assert patch["audio_transport"] == "externalmedia"
-              assert patch["external_media"]["direction"] == "both"
-              assert patch["external_media"]["codec"] == "ulaw"
-              assert patch["external_media"]["rtp_host"] == (
-                  "${FLOODMAN_EXTERNALMEDIA_RTP_HOST:-127.0.0.1}"
-              )
-              assert patch["external_media"]["advertise_host"] == (
-                  "${FLOODMAN_EXTERNALMEDIA_ADVERTISE_HOST:-127.0.0.1}"
-              )
-              assert patch["external_media"]["port_range"] == (
-                  "${FLOODMAN_EXTERNALMEDIA_PORT_RANGE:-18080:18099}"
-              )
-              assert patch["downstream_mode"] == "stream"
+              def load_module(name: str, path: Path):
+                  spec = importlib.util.spec_from_file_location(name, path)
+                  assert spec and spec.loader
+                  module = importlib.util.module_from_spec(spec)
+                  sys.modules[spec.name] = module
+                  spec.loader.exec_module(module)
+                  return module
 
 
-          def test_local_fallback_keeps_audiosocket(
-              project_root: Path,
-          ) -> None:
-              module = load_module(
-                  "local_audiosocket_config",
-                  project_root / "scripts/apply_production_hybrid_ai.py",
-              )
-              patch = module.local_patch()
-              assert patch["audio_transport"] == "audiosocket"
-              assert patch["audiosocket"]["port"] == 8090
-              assert patch["audiosocket"]["format"] == "slin"
+              def test_production_pipeline_uses_full_duplex_externalmedia(
+                  project_root: Path,
+              ) -> None:
+                  module = load_module(
+                      "production_externalmedia_config",
+                      project_root / "scripts/apply_production_hybrid_ai.py",
+                  )
+                  patch = module.production_patch()
+                  external = patch["external_media"]
+
+                  assert patch["audio_transport"] == "externalmedia"
+                  assert patch["downstream_mode"] == "stream"
+                  assert external["direction"] == "both"
+                  assert external["codec"] == "ulaw"
+                  assert external["format"] == "slin16"
+                  assert external["sample_rate"] == 16000
+                  assert external["rtp_host"] == (
+                      "${FLOODMAN_EXTERNALMEDIA_RTP_HOST:-127.0.0.1}"
+                  )
+                  assert external["advertise_host"] == (
+                      "${FLOODMAN_EXTERNALMEDIA_ADVERTISE_HOST:-127.0.0.1}"
+                  )
+                  assert external["port_range"] == (
+                      "${FLOODMAN_EXTERNALMEDIA_PORT_RANGE:-18080:18099}"
+                  )
+                  assert external["allowed_remote_hosts"] == ["127.0.0.1"]
+                  assert external["lock_remote_endpoint"] is True
 
 
-          def test_transport_ports_do_not_overlap_twilio_rtp_range(
-              project_root: Path,
-          ) -> None:
-              module = load_module(
-                  "production_externalmedia_ports",
-                  project_root / "scripts/apply_production_hybrid_ai.py",
-              )
-              port_range = module.production_patch()["external_media"]["port_range"]
-              assert "18080:18099" in port_range
-              assert "10000:10040" not in port_range
-          ''',
-              encoding="utf-8",
-              newline="\n",
-          )
+              def test_production_pipeline_components_are_preserved(
+                  project_root: Path,
+              ) -> None:
+                  module = load_module(
+                      "production_externalmedia_components",
+                      project_root / "scripts/apply_production_hybrid_ai.py",
+                  )
+                  pipeline = module.production_patch()["pipelines"][
+                      "floodman_production"
+                  ]
+                  assert pipeline["stt"] == "deepgram_flux_stt"
+                  assert pipeline["llm"] == "groq_llm"
+                  assert pipeline["tts"] == "elevenlabs_tts"
+
+
+              def test_local_fallback_keeps_audiosocket(
+                  project_root: Path,
+              ) -> None:
+                  module = load_module(
+                      "local_audiosocket_config",
+                      project_root / "scripts/apply_production_hybrid_ai.py",
+                  )
+                  patch = module.local_patch()
+                  assert patch["audio_transport"] == "audiosocket"
+                  assert patch["downstream_mode"] == "stream"
+                  assert patch["audiosocket"]["host"] == "127.0.0.1"
+                  assert patch["audiosocket"]["port"] == 8090
+                  assert patch["audiosocket"]["format"] == "slin"
+
+
+              def test_internal_ports_do_not_overlap_twilio_rtp(
+                  project_root: Path,
+              ) -> None:
+                  module = load_module(
+                      "production_externalmedia_ports",
+                      project_root / "scripts/apply_production_hybrid_ai.py",
+                  )
+                  port_range = module.production_patch()["external_media"][
+                      "port_range"
+                  ]
+                  assert "18080:18099" in port_range
+                  assert "10000:10040" not in port_range
+              '''
+          ).lstrip()
+          test_path.write_text(test_source, encoding="utf-8", newline="\n")
 
           example = Path(".env.twilio.example")
           if example.is_file():
               current = example.read_text(encoding="utf-8")
               if "FLOODMAN_EXTERNALMEDIA_PORT_RANGE=" not in current:
-                  current = current.rstrip() + '''
+                  addition = textwrap.dedent(
+                      '''
 
-          # Internal Asterisk <-> Ava media path for production modular pipelines.
-          # These UDP ports are inside the all-in-one container and are separate
-          # from Twilio's public RTP range.
-          FLOODMAN_EXTERNALMEDIA_RTP_HOST=127.0.0.1
-          FLOODMAN_EXTERNALMEDIA_ADVERTISE_HOST=127.0.0.1
-          FLOODMAN_EXTERNALMEDIA_RTP_PORT=18080
-          FLOODMAN_EXTERNALMEDIA_PORT_RANGE=18080:18099
-          '''
+                      # Internal Asterisk <-> Ava media path for production modular pipelines.
+                      # These loopback UDP ports are separate from Twilio's public RTP range.
+                      FLOODMAN_EXTERNALMEDIA_RTP_HOST=127.0.0.1
+                      FLOODMAN_EXTERNALMEDIA_ADVERTISE_HOST=127.0.0.1
+                      FLOODMAN_EXTERNALMEDIA_RTP_PORT=18080
+                      FLOODMAN_EXTERNALMEDIA_PORT_RANGE=18080:18099
+                      '''
+                  )
                   example.write_text(
-                      current.lstrip("\n"),
+                      current.rstrip() + addition,
                       encoding="utf-8",
                       newline="\n",
                   )
@@ -256,9 +355,8 @@ jobs:
 
       - name: Summary
         run: |
-          echo "### Floodman production caller-audio repair" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Production hybrid calls now use full-duplex ExternalMedia RTP" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Internal RTP uses 127.0.0.1 ports 18080-18099" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Twilio public RTP remains on 10000-10040" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Floodman production caller-audio repair v2" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Used AST locations instead of whitespace-sensitive source matching" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Production hybrid uses loopback full-duplex ExternalMedia RTP" >> "$GITHUB_STEP_SUMMARY"
           echo "- Local fallback remains on AudioSocket" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Complete repository tests passed before commit" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Complete repository tests pass before commit and image dispatch" >> "$GITHUB_STEP_SUMMARY"
