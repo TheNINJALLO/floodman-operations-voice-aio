@@ -74,7 +74,6 @@ async def validate_deepgram(api_key: str, model: str) -> None:
     query = urllib.parse.urlencode(
         {
             "model": model,
-            "language": "en-US",
             "encoding": "linear16",
             "sample_rate": "16000",
             "channels": "1",

@@ -31,7 +31,6 @@ def production_patch() -> dict[str, Any]:
                     "stt": {
                         "base_url": "wss://api.deepgram.com/v2/listen",
                         "model": "${DEEPGRAM_FLUX_MODEL:-flux-general-en}",
-                        "language": "en-US",
                         "encoding": "linear16",
                         "sample_rate": 16000,
                         "channels": 1,
