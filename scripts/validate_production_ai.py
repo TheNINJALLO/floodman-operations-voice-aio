@@ -65,45 +65,160 @@ def json_request(
     return value
 
 
-async def validate_deepgram(api_key: str, model: str) -> None:
+async def validate_deepgram(
+    api_key: str,
+    model: str,
+) -> None:
     try:
         import websockets
     except ImportError as exc:
-        raise ValidationError("websockets is not installed") from exc
+        raise ValidationError(
+            "websockets is not installed"
+        ) from exc
+
+    query_items = [
+        ("model", model),
+        ("encoding", "linear16"),
+        ("sample_rate", "16000"),
+    ]
+    if model == "flux-general-multi":
+        language_hint = getenv(
+            "DEEPGRAM_LANGUAGE_HINT",
+            "",
+        )
+        if language_hint:
+            query_items.append(
+                (
+                    "language_hint",
+                    language_hint.split("-", 1)[0],
+                )
+            )
 
     query = urllib.parse.urlencode(
-        {
-            "model": model,
-            "encoding": "linear16",
-            "sample_rate": "16000",
-            "channels": "1",
-            "eot_threshold": getenv("DEEPGRAM_EOT_THRESHOLD", "0.70"),
-            "eager_eot_threshold": getenv(
-                "DEEPGRAM_EAGER_EOT_THRESHOLD", "0.50"
-            ),
-            "eot_timeout_ms": getenv("DEEPGRAM_EOT_TIMEOUT_MS", "1200"),
-        }
+        query_items,
+        doseq=True,
     )
-    url = f"wss://api.deepgram.com/v2/listen?{query}"
+    url = (
+        "wss://api.deepgram.com/v2/listen?"
+        f"{query}"
+    )
+
     try:
         async with websockets.connect(
             url,
-            additional_headers=[
-                ("Authorization", f"Token {api_key}"),
-                ("User-Agent", "Floodman-Voice-AIO/provider-check"),
-            ],
+            additional_headers={
+                "Authorization": f"Token {api_key}",
+            },
+            user_agent_header=(
+                "Floodman-Voice-AIO/provider-check"
+            ),
+            compression=None,
+            proxy=None,
             open_timeout=12,
             close_timeout=3,
             ping_interval=None,
             max_size=2 * 1024 * 1024,
         ) as websocket:
-            await websocket.send(b"\x00" * 3200)
-            try:
-                await asyncio.wait_for(websocket.recv(), timeout=1.5)
-            except asyncio.TimeoutError:
-                pass
+            connected_raw = await asyncio.wait_for(
+                websocket.recv(),
+                timeout=5.0,
+            )
+            connected = json.loads(connected_raw)
+            if connected.get("type") != "Connected":
+                raise ValidationError(
+                    "Deepgram returned an unexpected "
+                    f"opening message: {connected!r}"
+                )
+
+            thresholds = {
+                "eot_threshold": float(
+                    getenv(
+                        "DEEPGRAM_EOT_THRESHOLD",
+                        "0.70",
+                    )
+                ),
+                "eager_eot_threshold": float(
+                    getenv(
+                        "DEEPGRAM_EAGER_EOT_THRESHOLD",
+                        "0.50",
+                    )
+                ),
+                "eot_timeout_ms": int(
+                    getenv(
+                        "DEEPGRAM_EOT_TIMEOUT_MS",
+                        "1200",
+                    )
+                ),
+            }
+            await websocket.send(
+                json.dumps(
+                    {
+                        "type": "Configure",
+                        "thresholds": thresholds,
+                    }
+                )
+            )
+            configured_raw = await asyncio.wait_for(
+                websocket.recv(),
+                timeout=5.0,
+            )
+            configured = json.loads(configured_raw)
+            if configured.get("type") != "ConfigureSuccess":
+                raise ValidationError(
+                    "Deepgram rejected Flux thresholds: "
+                    f"{configured!r}"
+                )
+
+    except ValidationError:
+        raise
     except Exception as exc:
-        raise ValidationError(f"Deepgram Flux failed: {exc}") from exc
+        response = getattr(exc, "response", None)
+        status = getattr(
+            response,
+            "status_code",
+            None,
+        )
+        body = getattr(response, "body", b"")
+        if isinstance(body, bytes):
+            body_text = body.decode(
+                "utf-8",
+                errors="replace",
+            ).strip()
+        else:
+            body_text = str(body or "").strip()
+
+        request_id = ""
+        headers = getattr(
+            response,
+            "headers",
+            None,
+        )
+        if headers is not None:
+            try:
+                request_id = (
+                    headers.get("x-dg-request-id")
+                    or headers.get("dg-request-id")
+                    or ""
+                )
+            except Exception:
+                request_id = ""
+
+        pieces = []
+        if status is not None:
+            pieces.append(f"HTTP {status}")
+        if request_id:
+            pieces.append(
+                f"request_id={request_id}"
+            )
+        if body_text:
+            pieces.append(body_text[:800])
+        if not pieces:
+            pieces.append(str(exc))
+
+        raise ValidationError(
+            "Deepgram Flux failed: "
+            + ": ".join(pieces)
+        ) from exc
 
 
 def validate_groq(api_key: str, model: str) -> None:
