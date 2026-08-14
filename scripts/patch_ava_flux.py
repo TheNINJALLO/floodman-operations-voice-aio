@@ -521,12 +521,12 @@ RECEIVE_LOOP = r'''
 
                 msg_type = data.get("type")
                 if msg_type == "TurnInfo":
-                    event = str(data.get("event") or "")
+                    turn_event = str(data.get("event") or "")
                     transcript = self._extract_transcript(
                         data
                     )
 
-                    if event == "EndOfTurn":
+                    if turn_event == "EndOfTurn":
                         logger.info(
                             "Deepgram Flux end of turn detected",
                             call_id=call_id,
@@ -551,7 +551,7 @@ RECEIVE_LOOP = r'''
                                 )
                         session.turn_complete_event.set()
 
-                    elif event == "EagerEndOfTurn":
+                    elif turn_event == "EagerEndOfTurn":
                         logger.debug(
                             "Deepgram Flux eager end of turn",
                             call_id=call_id,
@@ -562,7 +562,7 @@ RECEIVE_LOOP = r'''
                             ),
                         )
 
-                    elif event in {
+                    elif turn_event in {
                         "StartOfTurn",
                         "TurnResumed",
                     }:
@@ -570,14 +570,14 @@ RECEIVE_LOOP = r'''
                         logger.debug(
                             "Deepgram Flux turn active",
                             call_id=call_id,
-                            event=event,
+                            turn_event=turn_event,
                         )
 
                     else:
                         logger.debug(
                             "Deepgram Flux TurnInfo",
                             call_id=call_id,
-                            event=event,
+                            turn_event=turn_event,
                         )
 
                 elif msg_type == "Results":

@@ -54,3 +54,14 @@ def test_docker_still_applies_flux_patcher(
         "Floodman Flux v2 query contract patch"
         in dockerfile
     )
+
+def test_flux_turninfo_logging_does_not_shadow_structlog_event(
+    project_root: Path,
+) -> None:
+    source = (
+        project_root
+        / "scripts/patch_ava_flux.py"
+    ).read_text(encoding="utf-8")
+    assert 'turn_event = str(data.get("event") or "")' in source
+    assert "event=event" not in source
+    assert source.count("turn_event=turn_event") == 2
