@@ -1,0 +1,700 @@
+name: Repair Floodman Cloud Safety and Quiet SIP Console
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/repair-cloud-safe-console.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: floodman-cloud-safe-console
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    name: Validate cloud providers and suppress rejected SIP scan notices
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Add production provider validator
+        shell: bash
+        run: |
+          cat > scripts/validate_production_ai.py <<'PY_VALIDATOR'
+          #!/usr/bin/env python3
+          from __future__ import annotations
+
+          import argparse
+          import asyncio
+          import json
+          import os
+          import sys
+          import time
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+          from pathlib import Path
+          from typing import Any
+
+
+          class ValidationError(RuntimeError):
+              pass
+
+
+          def getenv(name: str, default: str = "") -> str:
+              return os.getenv(name, default).strip()
+
+
+          def read_http_error(exc: urllib.error.HTTPError) -> str:
+              try:
+                  return exc.read(700).decode("utf-8", errors="replace")
+              except Exception:
+                  return str(exc)
+
+
+          def json_request(
+              url: str,
+              *,
+              headers: dict[str, str],
+              payload: dict[str, Any] | None = None,
+              timeout: float = 20.0,
+          ) -> dict[str, Any]:
+              data = None
+              request_headers = dict(headers)
+              if payload is not None:
+                  data = json.dumps(payload).encode("utf-8")
+                  request_headers["Content-Type"] = "application/json"
+              request = urllib.request.Request(
+                  url,
+                  data=data,
+                  headers=request_headers,
+                  method="POST" if payload is not None else "GET",
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=timeout) as response:
+                      raw = response.read()
+              except urllib.error.HTTPError as exc:
+                  raise ValidationError(
+                      f"{url} returned HTTP {exc.code}: {read_http_error(exc)}"
+                  ) from exc
+              except OSError as exc:
+                  raise ValidationError(f"{url} connection failed: {exc}") from exc
+              try:
+                  value = json.loads(raw.decode("utf-8"))
+              except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                  raise ValidationError(f"{url} returned invalid JSON") from exc
+              if not isinstance(value, dict):
+                  raise ValidationError(f"{url} returned an unexpected response")
+              return value
+
+
+          async def validate_deepgram(api_key: str, model: str) -> None:
+              try:
+                  import websockets
+              except ImportError as exc:
+                  raise ValidationError("websockets is not installed") from exc
+
+              query = urllib.parse.urlencode(
+                  {
+                      "model": model,
+                      "language": "en-US",
+                      "encoding": "linear16",
+                      "sample_rate": "16000",
+                      "channels": "1",
+                      "eot_threshold": getenv("DEEPGRAM_EOT_THRESHOLD", "0.70"),
+                      "eager_eot_threshold": getenv(
+                          "DEEPGRAM_EAGER_EOT_THRESHOLD", "0.50"
+                      ),
+                      "eot_timeout_ms": getenv("DEEPGRAM_EOT_TIMEOUT_MS", "1200"),
+                  }
+              )
+              url = f"wss://api.deepgram.com/v2/listen?{query}"
+              try:
+                  async with websockets.connect(
+                      url,
+                      additional_headers=[
+                          ("Authorization", f"Token {api_key}"),
+                          ("User-Agent", "Floodman-Voice-AIO/provider-check"),
+                      ],
+                      open_timeout=12,
+                      close_timeout=3,
+                      ping_interval=None,
+                      max_size=2 * 1024 * 1024,
+                  ) as websocket:
+                      await websocket.send(b"\x00" * 3200)
+                      try:
+                          await asyncio.wait_for(websocket.recv(), timeout=1.5)
+                      except asyncio.TimeoutError:
+                          pass
+              except Exception as exc:
+                  raise ValidationError(f"Deepgram Flux failed: {exc}") from exc
+
+
+          def validate_groq(api_key: str, model: str) -> None:
+              result = json_request(
+                  "https://api.groq.com/openai/v1/chat/completions",
+                  headers={"Authorization": f"Bearer {api_key}"},
+                  payload={
+                      "model": model,
+                      "messages": [
+                          {
+                              "role": "user",
+                              "content": "Reply with the single word READY.",
+                          }
+                      ],
+                      "max_tokens": 8,
+                      "temperature": 0,
+                      "reasoning_effort": "none",
+                      "reasoning_format": "hidden",
+                  },
+                  timeout=25,
+              )
+              choices = result.get("choices")
+              if not isinstance(choices, list) or not choices:
+                  raise ValidationError(f"Groq model {model!r} returned no choices")
+
+
+          def validate_elevenlabs(
+              api_key: str,
+              voice_id: str,
+              model_id: str,
+              *,
+              audio_probe: bool,
+          ) -> None:
+              if not voice_id:
+                  raise ValidationError(
+                      "ELEVENLABS_VOICE_ID is empty. Copy one from My Voices."
+                  )
+
+              base = "https://api.elevenlabs.io/v1"
+              headers = {"xi-api-key": api_key}
+              voice = json_request(
+                  f"{base}/voices/{urllib.parse.quote(voice_id, safe='')}",
+                  headers=headers,
+                  timeout=15,
+              )
+              if str(voice.get("voice_id") or "") != voice_id:
+                  raise ValidationError(
+                      f"ElevenLabs did not return voice {voice_id!r}"
+                  )
+              if not audio_probe:
+                  return
+
+              url = (
+                  f"{base}/text-to-speech/"
+                  f"{urllib.parse.quote(voice_id, safe='')}"
+                  "?output_format=ulaw_8000"
+              )
+              payload = {
+                  "text": "Ready.",
+                  "model_id": model_id,
+                  "voice_settings": {
+                      "stability": 0.45,
+                      "similarity_boost": 0.85,
+                      "style": 0.0,
+                      "use_speaker_boost": True,
+                  },
+              }
+              request = urllib.request.Request(
+                  url,
+                  data=json.dumps(payload).encode("utf-8"),
+                  headers={
+                      "xi-api-key": api_key,
+                      "Content-Type": "application/json",
+                      "Accept": "audio/*",
+                  },
+                  method="POST",
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      audio = response.read(4096)
+              except urllib.error.HTTPError as exc:
+                  raise ValidationError(
+                      f"ElevenLabs TTS returned HTTP {exc.code}: "
+                      f"{read_http_error(exc)}"
+                  ) from exc
+              except OSError as exc:
+                  raise ValidationError(
+                      f"ElevenLabs TTS connection failed: {exc}"
+                  ) from exc
+              if len(audio) < 80:
+                  raise ValidationError(
+                      "ElevenLabs returned empty or truncated telephone audio"
+                  )
+
+
+          def write_marker(path: Path, details: dict[str, str]) -> None:
+              path.parent.mkdir(parents=True, exist_ok=True)
+              temporary = path.with_suffix(path.suffix + ".tmp")
+              temporary.write_text(
+                  json.dumps(
+                      {
+                          "validated_at": int(time.time()),
+                          **details,
+                      },
+                      indent=2,
+                      sort_keys=True,
+                  )
+                  + "\n",
+                  encoding="utf-8",
+              )
+              os.chmod(temporary, 0o600)
+              os.replace(temporary, path)
+
+
+          def main() -> int:
+              parser = argparse.ArgumentParser()
+              parser.add_argument("--marker", type=Path, required=True)
+              parser.add_argument("--no-audio-probe", action="store_true")
+              args = parser.parse_args()
+
+              deepgram_key = getenv("DEEPGRAM_API_KEY")
+              groq_key = getenv("GROQ_API_KEY")
+              elevenlabs_key = getenv("ELEVENLABS_API_KEY")
+              voice_id = getenv("ELEVENLABS_VOICE_ID")
+
+              missing = [
+                  name
+                  for name, value in (
+                      ("DEEPGRAM_API_KEY", deepgram_key),
+                      ("GROQ_API_KEY", groq_key),
+                      ("ELEVENLABS_API_KEY", elevenlabs_key),
+                      ("ELEVENLABS_VOICE_ID", voice_id),
+                  )
+                  if not value
+              ]
+              if missing:
+                  args.marker.unlink(missing_ok=True)
+                  print(
+                      "Production AI validation failed: missing "
+                      + ", ".join(missing),
+                      file=sys.stderr,
+                  )
+                  return 1
+
+              deepgram_model = getenv(
+                  "DEEPGRAM_FLUX_MODEL", "flux-general-en"
+              )
+              groq_model = getenv(
+                  "GROQ_LLM_MODEL", "qwen/qwen3.6-27b"
+              )
+              elevenlabs_model = getenv(
+                  "ELEVENLABS_TTS_MODEL", "eleven_flash_v2_5"
+              )
+
+              try:
+                  asyncio.run(validate_deepgram(deepgram_key, deepgram_model))
+                  validate_groq(groq_key, groq_model)
+                  validate_elevenlabs(
+                      elevenlabs_key,
+                      voice_id,
+                      elevenlabs_model,
+                      audio_probe=not args.no_audio_probe,
+                  )
+              except ValidationError as exc:
+                  args.marker.unlink(missing_ok=True)
+                  print(f"Production AI validation failed: {exc}", file=sys.stderr)
+                  return 1
+
+              write_marker(
+                  args.marker,
+                  {
+                      "profile": "production_hybrid",
+                      "deepgram_model": deepgram_model,
+                      "groq_model": groq_model,
+                      "elevenlabs_model": elevenlabs_model,
+                      "elevenlabs_voice_id": voice_id,
+                  },
+              )
+              print(
+                  "Production AI validation passed: "
+                  "Deepgram, Groq, and ElevenLabs"
+              )
+              return 0
+
+
+          if __name__ == "__main__":
+              raise SystemExit(main())
+          PY_VALIDATOR
+          chmod +x scripts/validate_production_ai.py
+
+      - name: Replace profile selector with safe fallback
+        shell: bash
+        run: |
+          cat > scripts/select_ai_profile.sh <<'SH_PROFILE'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          truthy() {
+            case "${1,,}" in
+              1|true|yes|on) return 0 ;;
+              *) return 1 ;;
+            esac
+          }
+
+          requested="${FLOODMAN_AI_PROFILE:-auto}"
+          marker="${DATA_DIR:-/home/container/data}/runtime/production-ai-validated.json"
+          mkdir -p "$(dirname "${marker}")"
+          rm -f "${marker}"
+
+          missing=()
+          require_cloud_values() {
+            missing=()
+            [[ -n "${DEEPGRAM_API_KEY:-}" ]] || missing+=("DEEPGRAM_API_KEY")
+            [[ -n "${GROQ_API_KEY:-}" ]] || missing+=("GROQ_API_KEY")
+            [[ -n "${ELEVENLABS_API_KEY:-}" ]] || missing+=("ELEVENLABS_API_KEY")
+            [[ -n "${ELEVENLABS_VOICE_ID:-}" ]] || missing+=("ELEVENLABS_VOICE_ID")
+          }
+
+          fallback_or_fail() {
+            local reason="$1"
+            if truthy "${FLOODMAN_PRODUCTION_STRICT:-false}"; then
+              echo "Production AI strict mode blocked startup: ${reason}" >&2
+              return 1 2>/dev/null || exit 1
+            fi
+            echo "Production AI unavailable; switching to local_hybrid: ${reason}" >&2
+            requested="local_hybrid"
+          }
+
+          case "${requested,,}" in
+            auto)
+              require_cloud_values
+              if [[ "${#missing[@]}" -eq 0 ]]; then
+                requested="production_hybrid"
+              else
+                requested="local_hybrid"
+                echo "Floodman cloud configuration incomplete; using local_hybrid. Missing: ${missing[*]}"
+              fi
+              ;;
+            production|production_hybrid|floodman_production)
+              requested="production_hybrid"
+              ;;
+            local|local_hybrid)
+              requested="local_hybrid"
+              ;;
+            *)
+              echo "Invalid FLOODMAN_AI_PROFILE=${requested}; use auto, production_hybrid, or local_hybrid" >&2
+              return 1 2>/dev/null || exit 1
+              ;;
+          esac
+
+          if [[ "${requested}" == "production_hybrid" ]]; then
+            require_cloud_values
+            if [[ "${#missing[@]}" -ne 0 ]]; then
+              fallback_or_fail "missing ${missing[*]}"
+            else
+              probe_args=(--marker "${marker}")
+              if ! truthy "${FLOODMAN_CLOUD_AUDIO_PROBE:-true}"; then
+                probe_args+=(--no-audio-probe)
+              fi
+              if ! /opt/venv/bin/python \
+                /opt/floodman/scripts/validate_production_ai.py \
+                "${probe_args[@]}"; then
+                fallback_or_fail "one or more provider checks failed"
+              fi
+            fi
+          fi
+
+          export FLOODMAN_AI_PROFILE="${requested}"
+
+          if [[ "${requested}" == "production_hybrid" ]]; then
+            export AVA_PIPELINE="floodman_production"
+            export AVA_PROVIDER="floodman_production"
+            export DEFAULT_PROVIDER="floodman_production"
+            export ENABLE_LOCAL_AI_SERVER="${FLOODMAN_KEEP_LOCAL_FALLBACK_WARM:-false}"
+            export AUTO_INSTALL_LOCAL_MODELS="false"
+            export LOCAL_ENABLE_FILLER_AUDIO="false"
+            echo "Floodman AI profile: production_hybrid"
+            echo "  Listening: Deepgram Flux"
+            echo "  Reasoning: Groq-hosted Qwen"
+            echo "  Speaking: ElevenLabs Flash v2.5"
+          else
+            export AVA_PIPELINE="local_hybrid"
+            export AVA_PROVIDER="local_hybrid"
+            export DEFAULT_PROVIDER="local_hybrid"
+            export ENABLE_LOCAL_AI_SERVER="true"
+            echo "Floodman AI profile: local_hybrid"
+          fi
+          SH_PROFILE
+          chmod +x scripts/select_ai_profile.sh
+
+      - name: Patch Asterisk logger and Ava readiness
+        shell: bash
+        run: |
+          python - <<'PY_PATCH'
+          from pathlib import Path
+
+          root = Path(".").resolve()
+
+          def replace_once(path: Path, old: str, new: str, label: str) -> None:
+              text = path.read_text(encoding="utf-8")
+              if new in text:
+                  return
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(
+                      f"{label}: expected one anchor, found {count}"
+                  )
+              path.write_text(
+                  text.replace(old, new, 1),
+                  encoding="utf-8",
+                  newline="\n",
+              )
+
+          renderer = root / "scripts/render_asterisk.py"
+          old_logger = (
+              '    write(destination / "logger.conf", """\n'
+              '[general]\n'
+              'dateformat=%F %T\n'
+              'queue_log=no\n'
+              '\n'
+              '[logfiles]\n'
+              'console => notice,warning,error,verbose\n'
+              'full => notice,warning,error,verbose,debug\n'
+              'security => security\n'
+              '""")\n'
+          )
+          new_logger = (
+              '    console_levels = safe(\n'
+              '        env("ASTERISK_CONSOLE_LEVELS", "warning,error,verbose"),\n'
+              '        r"[A-Za-z,]+",\n'
+              '        "Asterisk console levels",\n'
+              '        False,\n'
+              '    )\n'
+              '    write(destination / "logger.conf", f"""\n'
+              '[general]\n'
+              'dateformat=%F %T\n'
+              'queue_log=no\n'
+              '\n'
+              '[logfiles]\n'
+              'console => {console_levels}\n'
+              'full => notice,warning,error,verbose,debug\n'
+              'security => security\n'
+              '""")\n'
+          )
+          replace_once(
+              renderer,
+              old_logger,
+              new_logger,
+              "Asterisk console levels",
+          )
+
+          run_ava = root / "scripts/run_ava.sh"
+          old_ready = (
+              '  if curl -fsS -u "${ARI_USERNAME}:${ARI_SECRET}" \\\n'
+              '    "${ARI_BASE_URL}/applications/${AVA_APP}" >/dev/null 2>&1; then\n'
+              '    STASIS_READY=1\n'
+              '    : > "${AVA_READY_FILE}"\n'
+              '    chmod 600 "${AVA_READY_FILE}"\n'
+              '    echo "Floodman AVA Stasis application ready: ${AVA_APP}"\n'
+              '    break\n'
+              '  fi\n'
+          )
+          new_ready = (
+              '  if curl -fsS -u "${ARI_USERNAME}:${ARI_SECRET}" \\\n'
+              '    "${ARI_BASE_URL}/applications/${AVA_APP}" >/dev/null 2>&1; then\n'
+              '    if [[ "${FLOODMAN_AI_PROFILE:-local_hybrid}" == "production_hybrid" ]] \\\n'
+              '      && [[ ! -s "${DATA_DIR}/runtime/production-ai-validated.json" ]]; then\n'
+              '      echo "Ava registered, but production provider validation is missing" >&2\n'
+              '      sleep 1\n'
+              '      continue\n'
+              '    fi\n'
+              '    STASIS_READY=1\n'
+              '    : > "${AVA_READY_FILE}"\n'
+              '    chmod 600 "${AVA_READY_FILE}"\n'
+              '    echo "Floodman AVA Stasis application ready: ${AVA_APP}"\n'
+              '    break\n'
+              '  fi\n'
+          )
+          replace_once(
+              run_ava,
+              old_ready,
+              new_ready,
+              "Ava production readiness",
+          )
+
+          example = root / ".env.twilio.example"
+          if example.is_file():
+              text = example.read_text(encoding="utf-8")
+              if "ASTERISK_CONSOLE_LEVELS=" not in text:
+                  text = text.rstrip() + '''
+
+          # Cloud provider startup safety.
+          FLOODMAN_PRODUCTION_STRICT=false
+          FLOODMAN_CLOUD_AUDIO_PROBE=true
+          FLOODMAN_KEEP_LOCAL_FALLBACK_WARM=false
+
+          # Suppress routine rejected SIP scanner NOTICE lines from the console.
+          # Full NOTICE details remain in data/asterisk/logs/full.
+          ASTERISK_CONSOLE_LEVELS=warning,error,verbose
+          '''
+                  example.write_text(
+                      text,
+                      encoding="utf-8",
+                      newline="\n",
+                  )
+
+          test_path = root / "tests/test_cloud_safe_console.py"
+          test_path.write_text(
+              '''from __future__ import annotations
+
+          import os
+          import subprocess
+          from pathlib import Path
+
+
+          def test_provider_validator_covers_all_cloud_services(
+              project_root: Path,
+          ) -> None:
+              source = (
+                  project_root / "scripts/validate_production_ai.py"
+              ).read_text(encoding="utf-8")
+              assert "api.deepgram.com/v2/listen" in source
+              assert "api.groq.com/openai/v1/chat/completions" in source
+              assert "api.elevenlabs.io/v1" in source
+              assert "ulaw_8000" in source
+
+
+          def test_profile_selector_falls_back_safely(
+              project_root: Path,
+          ) -> None:
+              source = (
+                  project_root / "scripts/select_ai_profile.sh"
+              ).read_text(encoding="utf-8")
+              assert "validate_production_ai.py" in source
+              assert "switching to local_hybrid" in source
+              assert "ELEVENLABS_VOICE_ID" in source
+
+
+          def test_live_console_hides_notice_but_full_log_keeps_it(
+              project_root: Path,
+              tmp_path: Path,
+          ) -> None:
+              env = os.environ.copy()
+              env.update(
+                  {
+                      "DATA_DIR": str(tmp_path / "runtime"),
+                      "ASTERISK_CONFIG_DIR": str(
+                          tmp_path / "runtime/asterisk/etc"
+                      ),
+                      "ASTERISK_MODULE_DIR": str(tmp_path / "modules"),
+                      "SIP_TRUNK_MODE": "disabled",
+                      "ARI_SECRET": "ari-test-secret",
+                      "AMI_SECRET": "ami-test-secret",
+                  }
+              )
+              subprocess.run(
+                  [
+                      "python",
+                      str(project_root / "scripts/render_asterisk.py"),
+                  ],
+                  check=True,
+                  env=env,
+                  cwd=project_root,
+              )
+              logger_conf = (
+                  tmp_path / "runtime/asterisk/etc/logger.conf"
+              ).read_text(encoding="utf-8")
+              assert "console => warning,error,verbose" in logger_conf
+              assert "console => notice" not in logger_conf
+              assert (
+                  "full => notice,warning,error,verbose,debug"
+                  in logger_conf
+              )
+
+
+          def test_ava_requires_cloud_validation_marker(
+              project_root: Path,
+          ) -> None:
+              source = (
+                  project_root / "scripts/run_ava.sh"
+              ).read_text(encoding="utf-8")
+              assert "production-ai-validated.json" in source
+          ''',
+              encoding="utf-8",
+              newline="\n",
+          )
+          PY_PATCH
+
+      - name: Verify generated syntax
+        shell: bash
+        run: |
+          python -m py_compile \
+            scripts/validate_production_ai.py \
+            scripts/render_asterisk.py \
+            tests/test_cloud_safe_console.py
+          bash -n scripts/select_ai_profile.sh
+          bash -n scripts/run_ava.sh
+
+      - name: Install project test dependencies
+        run: pip install -e '.[dev]'
+
+      - name: Run focused cloud-safety tests
+        run: python -m pytest tests/test_cloud_safe_console.py -q
+
+      - name: Run complete repository tests
+        run: python -m pytest tests/ -x -q
+
+      - name: Compile and validate repository
+        shell: bash
+        run: |
+          python -m compileall app scripts tests
+          bash -n scripts/*.sh
+          python scripts/validate_configs.py
+          git diff --check
+
+      - name: Commit tested repair
+        id: commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add \
+            scripts/validate_production_ai.py \
+            scripts/select_ai_profile.sh \
+            scripts/run_ava.sh \
+            scripts/render_asterisk.py \
+            tests/test_cloud_safe_console.py \
+            .env.twilio.example
+
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Cloud-safety and quiet-console repair is already installed."
+          else
+            git commit -m "fix: validate cloud voice providers and quiet SIP scans"
+            git push origin HEAD:main
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Launch full and lite container builds
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run ci-container.yml --ref main
+
+      - name: Summary
+        run: |
+          echo "### Floodman cloud-safety and quiet-console repair" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Deepgram Flux is opened before production_hybrid is accepted" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Groq runs a real completion with the configured model" >> "$GITHUB_STEP_SUMMARY"
+          echo "- ElevenLabs verifies the selected voice and μ-law TTS" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Failed cloud checks fall back to local_hybrid unless strict mode is enabled" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Rejected SIP scanner NOTICE lines are hidden from the live console" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Full NOTICE logs remain under data/asterisk/logs/full" >> "$GITHUB_STEP_SUMMARY"
