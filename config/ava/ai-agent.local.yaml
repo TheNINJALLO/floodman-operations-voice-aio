@@ -573,7 +573,7 @@ in_call_tools:
     kind: in_call_http_lookup
     enabled: true
     is_global: false
-    description: Non-terminal service routing step. Classify the request and return intake questions plus next_question. After this tool returns, immediately ask next_question in the same spoken response. Never stop after stating the category.
+    description: Non-terminal service routing step. Do not read back only the service category. Speak safe_message exactly once; it contains one focused continuation question.
     timeout_ms: 2500
     url: ${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/classify-service
     method: POST
@@ -595,14 +595,14 @@ in_call_tools:
     kind: in_call_http_lookup
     enabled: true
     is_global: false
-    description: Persist the complete intake snapshot known so far. Call after every substantive caller answer. When ready_to_submit is false, immediately ask next_question in the same spoken response. Never leave the caller in silence after saving.
+    description: Persist every recovered field, including extra fields the caller volunteers. The server returns exactly one collection or confirmation question. Speak safe_message exactly once. For a yes/no confirmation, send confirm_field and confirmation. Never ask the missing-field list yourself.
     timeout_ms: 2500
     url: ${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/capture-intake-progress
     method: POST
     headers:
       Content-Type: application/json
       X-Internal-Token: ${INTERNAL_TOKEN}
-    body_template: '{"call_id":"{call_id}","caller_number":"{caller_number}","data":{"name":"{name}","phone":"{phone}","email":"{email}","email_status":"{email_status}","address":"{address}","service_requested":"{service_requested}","service_key":"{service_key}","service_status":"{service_status}","service_reason":"{service_reason}","description":"{description}","property_context":"{property_context}","safety_summary":"{safety_summary}","timing_summary":"{timing_summary}","insurance_summary":"{insurance_summary}","evidence_summary":"{evidence_summary}","urgency":"{urgency}","department":"{department}","status":"{status}"}}'
+    body_template: '{"call_id":"{call_id}","caller_number":"{caller_number}","data":{"name":"{name}","phone":"{phone}","email":"{email}","email_status":"{email_status}","address":"{address}","service_requested":"{service_requested}","service_key":"{service_key}","service_status":"{service_status}","service_reason":"{service_reason}","description":"{description}","property_context":"{property_context}","safety_summary":"{safety_summary}","timing_summary":"{timing_summary}","insurance_summary":"{insurance_summary}","evidence_summary":"{evidence_summary}","urgency":"{urgency}","department":"{department}","status":"{status}","confirm_field":"{confirm_field}","confirmation":"{confirmation}"}}'
     parameters:
     - name: name
       type: string
@@ -692,6 +692,16 @@ in_call_tools:
     - name: status
       type: string
       description: collecting unless the call has reached another explicit intake stage
+      required: false
+      default: ''
+    - name: confirm_field
+      type: string
+      description: 'The one field being confirmed: name, email, phone, or address'
+      required: false
+      default: ''
+    - name: confirmation
+      type: string
+      description: yes when the caller confirms; no when the caller rejects or corrects the value
       required: false
       default: ''
     return_raw_json: true

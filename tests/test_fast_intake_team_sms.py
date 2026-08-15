@@ -96,7 +96,7 @@ def test_production_latency_defaults_are_reduced(project_root: Path) -> None:
     stt = patch["pipelines"]["floodman_production"]["options"]["stt"]
     llm = patch["pipelines"]["floodman_production"]["options"]["llm"]
     assert stt["eot_timeout_ms"] == "${DEEPGRAM_EOT_TIMEOUT_MS:-700}"
-    assert llm["max_tokens"] == "${GROQ_LLM_MAX_TOKENS:-96}"
+    assert llm["max_tokens"] == "${GROQ_LLM_MAX_TOKENS:-160}"
     assert llm["rate_limit_retries"] == (
         "${GROQ_RATE_LIMIT_RETRIES:-1}"
     )
@@ -104,10 +104,10 @@ def test_production_latency_defaults_are_reduced(project_root: Path) -> None:
         "${GROQ_RATE_LIMIT_MAX_WAIT_SECONDS:-3}"
     )
     assert patch["streaming"]["jitter_buffer_ms"] == (
-        "${FLOODMAN_STREAMING_JITTER_BUFFER_MS:-120}"
+        "${FLOODMAN_STREAMING_JITTER_BUFFER_MS:-80}"
     )
     assert patch["profiles"]["telephony_enhanced_8k"]["idle_cutoff_ms"] == (
-        "${FLOODMAN_TTS_IDLE_CUTOFF_MS:-300}"
+        "${FLOODMAN_TTS_IDLE_CUTOFF_MS:-220}"
     )
 
 

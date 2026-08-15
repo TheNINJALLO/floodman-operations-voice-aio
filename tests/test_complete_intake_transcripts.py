@@ -109,6 +109,17 @@ async def test_detailed_snapshot_requires_email_or_explicit_disposition(settings
         call_id="call-unsupported-1",
         caller_number="+12315550199",
     )
+
+    for field in ("name", "email", "phone", "address"):
+        await service.execute(
+            "capture_intake_progress",
+            {
+                "confirm_field": field,
+                "confirmation": "yes",
+            },
+            call_id="call-unsupported-1",
+            caller_number="+12315550199",
+        )
     submitted = await service.execute(
         "submit_intake",
         {},

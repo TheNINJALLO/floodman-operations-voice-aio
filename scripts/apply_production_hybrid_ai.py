@@ -42,15 +42,15 @@ def production_patch() -> dict[str, Any]:
         # Balanced low-latency playback. The upstream 950 ms jitter buffer made
         # short answers feel disconnected even when provider generation was fast.
         "streaming": {
-            "jitter_buffer_ms": "${FLOODMAN_STREAMING_JITTER_BUFFER_MS:-120}",
-            "min_start_ms": "${FLOODMAN_STREAMING_MIN_START_MS:-40}",
-            "greeting_min_start_ms": "${FLOODMAN_STREAMING_GREETING_MIN_START_MS:-30}",
-            "low_watermark_ms": "${FLOODMAN_STREAMING_LOW_WATERMARK_MS:-60}",
-            "provider_grace_ms": "${FLOODMAN_STREAMING_PROVIDER_GRACE_MS:-80}",
+            "jitter_buffer_ms": "${FLOODMAN_STREAMING_JITTER_BUFFER_MS:-80}",
+            "min_start_ms": "${FLOODMAN_STREAMING_MIN_START_MS:-25}",
+            "greeting_min_start_ms": "${FLOODMAN_STREAMING_GREETING_MIN_START_MS:-20}",
+            "low_watermark_ms": "${FLOODMAN_STREAMING_LOW_WATERMARK_MS:-40}",
+            "provider_grace_ms": "${FLOODMAN_STREAMING_PROVIDER_GRACE_MS:-40}",
         },
         "profiles": {
             "telephony_enhanced_8k": {
-                "idle_cutoff_ms": "${FLOODMAN_TTS_IDLE_CUTOFF_MS:-300}",
+                "idle_cutoff_ms": "${FLOODMAN_TTS_IDLE_CUTOFF_MS:-220}",
             },
         },
         # TALK_DETECT currently emits a stale ChannelTalkingStarted
@@ -103,7 +103,7 @@ def production_patch() -> dict[str, Any]:
                         "temperature": "${GROQ_LLM_TEMPERATURE:-0.30}",
                         "top_p": "${GROQ_LLM_TOP_P:-0.70}",
                         "presence_penalty": "${GROQ_LLM_PRESENCE_PENALTY:-0.2}",
-                        "max_tokens": "${GROQ_LLM_MAX_TOKENS:-96}",
+                        "max_tokens": "${GROQ_LLM_MAX_TOKENS:-160}",
                         "timeout_sec": "${GROQ_LLM_TIMEOUT_SECONDS:-8}",
                         "reasoning_effort": "none",
                         "reasoning_format": "hidden",
@@ -147,8 +147,8 @@ def production_patch() -> dict[str, Any]:
                 "api_key": "${GROQ_API_KEY:-}",
                 "chat_base_url": "https://api.groq.com/openai/v1",
                 "chat_model": "${GROQ_LLM_MODEL:-qwen/qwen3.6-27b}",
-                "response_timeout_sec": 12,
-                "temperature": 0.65,
+                "response_timeout_sec": 8,
+                "temperature": 0.30,
                 "tools_enabled": True,
             },
             "elevenlabs_tts": {

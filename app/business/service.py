@@ -22,6 +22,12 @@ from app.intake import (
     normalize_service_status,
     transcript_excerpt,
 )
+from app.intake_flow import (
+    contact_confirmations,
+    intake_submission_missing_fields,
+    next_intake_state,
+    update_confirmation_metadata,
+)
 from app.roomflow.client import RoomflowClient, RoomflowResult
 from app.security import SignedTokenManager
 
@@ -181,6 +187,18 @@ class BusinessOperations:
             str(data.get("caller_number") or "")
         )
         call_id = str(data.get("call_id") or "").strip()
+        existing = (
+            self.database.get_call_intake(call_id) or {}
+            if call_id
+            else {}
+        )
+        metadata = dict(existing.get("metadata") or {})
+        metadata["contact_flow_enabled"] = True
+        metadata.setdefault("contact_confirmations", {})
+        metadata.setdefault("contact_rejections", {})
+        metadata["service_questions"] = list(
+            result.get("intake_questions") or ()
+        )
         snapshot: dict[str, Any] = {
             "caller_number": caller_number,
             "phone": caller_number,
@@ -192,6 +210,7 @@ class BusinessOperations:
             "service_reason": result.get("service_reason") or "",
             "description": description,
             "status": "collecting",
+            "metadata": metadata,
         }
         if call_id:
             snapshot = self.database.upsert_call_intake(
@@ -199,7 +218,7 @@ class BusinessOperations:
                 snapshot,
             )
 
-        next_question = next_intake_question(
+        state = next_intake_state(
             snapshot,
             service_questions=result.get("intake_questions") or (),
         )
@@ -207,29 +226,32 @@ class BusinessOperations:
             result.get("service_status")
         )
 
+        prefix = ""
         if service_status == "unsupported":
             prefix = str(result.get("safe_message") or "").strip()
         elif service_status == "review":
             prefix = (
                 "I could not confirm that service from Floodman's "
-                "approved service list, but I will still collect the "
-                "details for the team."
+                "approved service list, but I will still send the "
+                "details to the team."
             )
-        else:
-            prefix = "Thank you."
 
         safe_message = " ".join(
             part
-            for part in (prefix, next_question)
+            for part in (
+                prefix,
+                state["safe_message"],
+            )
             if part
         ).strip()
 
         return {
             "operation": "classify_service",
             **result,
-            "continuation_required": True,
-            "next_question": next_question,
+            **state,
+            "continuation_required": not state["ready_to_submit"],
             "safe_message": safe_message,
+            "speak_verbatim": True,
         }
 
     async def _op_capture_intake_progress(
@@ -246,20 +268,34 @@ class BusinessOperations:
                 "error": "call_id_required",
             }
 
+        existing = self.database.get_call_intake(call_id) or {}
+
         requested_phone = normalize_phone(
             str(data.get("phone") or "")
         )
         caller_phone = normalize_phone(
-            str(data.get("caller_number") or "")
-        )
-        phone = (
-            requested_phone
-            if re.fullmatch(
-                r"\+[1-9][0-9]{7,14}",
-                requested_phone,
+            str(
+                data.get("caller_number")
+                or existing.get("caller_number")
+                or ""
             )
-            else caller_phone
         )
+        existing_phone = normalize_phone(
+            str(existing.get("phone") or "")
+        )
+        if re.fullmatch(
+            r"\+[1-9][0-9]{7,14}",
+            requested_phone,
+        ):
+            phone = requested_phone
+        elif re.fullmatch(
+            r"\+[1-9][0-9]{7,14}",
+            existing_phone,
+        ):
+            phone = existing_phone
+        else:
+            phone = caller_phone
+
         update = {
             **data,
             "direction": "inbound",
@@ -268,8 +304,20 @@ class BusinessOperations:
             "status": str(data.get("status") or "collecting"),
         }
         row = self.database.upsert_call_intake(call_id, update)
-        missing = intake_missing_fields(row)
-        next_question = next_intake_question(row)
+
+        metadata = update_confirmation_metadata(
+            existing,
+            row,
+            confirm_field=data.get("confirm_field") or "",
+            confirmation=data.get("confirmation") or "",
+        )
+        row = self.database.upsert_call_intake(
+            call_id,
+            {"metadata": metadata},
+        )
+
+        state = next_intake_state(row)
+        missing = list(state["missing"])
 
         self.database.add_call_event(
             call_id,
@@ -293,32 +341,37 @@ class BusinessOperations:
                     )
                     if row.get(key)
                 ),
+                "confirmed_fields": sorted(
+                    contact_confirmations(row)
+                ),
                 "missing": missing,
-                "next_question": next_question,
+                "stage": state["stage"],
+                "next_field": state["field"],
+                "next_question": state["next_question"],
                 "service_status": (
                     row.get("service_status") or "unknown"
                 ),
             },
         )
 
-        ready = not missing
         return {
             "ok": True,
             "operation": "capture_intake_progress",
             "saved": True,
             "missing": missing,
-            "ready_to_submit": ready,
-            "continuation_required": not ready,
-            "next_question": next_question,
+            "ready_to_submit": state["ready_to_submit"],
+            "continuation_required": not state["ready_to_submit"],
+            "stage": state["stage"],
+            "next_field": state["field"],
+            "confirmation_required": state[
+                "confirmation_required"
+            ],
+            "next_question": state["next_question"],
             "service_status": (
                 row.get("service_status") or "unknown"
             ),
-            "safe_message": (
-                "The complete intake is ready to send to the "
-                "Floodman team."
-                if ready
-                else next_question
-            ),
+            "safe_message": state["safe_message"],
+            "speak_verbatim": True,
         }
 
     async def _op_submit_intake(
@@ -371,7 +424,8 @@ class BusinessOperations:
                 }
             )
 
-        missing = intake_missing_fields(snapshot)
+        flow_state = next_intake_state(snapshot)
+        missing = list(flow_state["missing"])
         self.database.upsert_call_intake(
             call_id,
             {
@@ -385,7 +439,8 @@ class BusinessOperations:
                 "operation": "submit_intake",
                 "error": "required_intake_fields_missing",
                 "missing": missing,
-                "safe_message": "I still need " + ", ".join(missing) + ".",
+                "next_question": flow_state["next_question"],
+                "safe_message": flow_state["safe_message"],
             }
 
         service_status = normalize_service_status(snapshot.get("service_status")) or "review"
