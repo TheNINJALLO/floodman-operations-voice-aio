@@ -111,6 +111,7 @@ def production_patch() -> dict[str, Any]:
                         "rate_limit_retries": "${GROQ_RATE_LIMIT_RETRIES:-1}",
                         "rate_limit_max_wait_sec": "${GROQ_RATE_LIMIT_MAX_WAIT_SECONDS:-3}",
                         "rate_limit_fallback_model": "${GROQ_RATE_LIMIT_FALLBACK_MODEL:-llama-3.3-70b-versatile}",
+                        "aggregation_timeout_sec": "${GROQ_AGGREGATION_TIMEOUT_SECONDS:-0.15}",
                     },
                     "tts": {
                         "voice_id": "${ELEVENLABS_VOICE_ID:-21m00Tcm4TlvDq8ikWAM}",

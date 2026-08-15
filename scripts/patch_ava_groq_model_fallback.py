@@ -6,6 +6,7 @@ from pathlib import Path
 
 
 MARKER = "Floodman Groq model fallback patch"
+TURN_MARKER = "Floodman Groq turn recovery patch"
 
 
 class PatchError(RuntimeError):
@@ -28,8 +29,15 @@ def replace_once(
 
 def patch_file(path: Path) -> bool:
     text = path.read_text(encoding="utf-8")
-    if MARKER in text:
+    has_model_patch = MARKER in text
+    has_turn_patch = TURN_MARKER in text
+    if has_model_patch and has_turn_patch:
         return False
+    if has_model_patch or has_turn_patch:
+        raise PatchError(
+            "partial Groq fallback patch state detected; "
+            "rebuild from the pinned clean AVA source"
+        )
 
     text = replace_once(
         text,
@@ -61,6 +69,66 @@ def patch_file(path: Path) -> bool:
             "timeout_sec": float(runtime_options.get("timeout_sec", self._pipeline_defaults.get("timeout_sec", self._default_timeout))),
         ''',
         "Groq fallback option",
+    )
+
+    text = replace_once(
+        text,
+        '''        if _url_host(chat_base) == "api.groq.com" or chat_model.startswith("llama-") or "mixtral" in chat_model:
+''',
+        '''        # Floodman Groq turn recovery patch.
+        is_groq_component = str(
+            self.component_key or ""
+        ).strip().lower().startswith("groq")
+        if (
+            not is_groq_component
+            and (
+                _url_host(chat_base) == "api.groq.com"
+                or chat_model.startswith("llama-")
+                or "mixtral" in chat_model
+            )
+        ):
+''',
+        "Groq compatibility guard",
+    )
+
+    text = replace_once(
+        text,
+        '''        for optional_key in (
+            "top_p",
+            "presence_penalty",
+            "reasoning_effort",
+            "reasoning_format",
+            "service_tier",
+        ):
+            if merged.get(optional_key) is not None:
+                payload[optional_key] = merged[optional_key]
+        return payload''',
+        '''        for optional_key in (
+            "top_p",
+            "presence_penalty",
+            "reasoning_effort",
+            "reasoning_format",
+            "service_tier",
+        ):
+            value = merged.get(optional_key)
+            if value is None:
+                continue
+            if optional_key in {
+                "reasoning_effort",
+                "reasoning_format",
+            }:
+                model_name = str(
+                    merged.get("chat_model") or ""
+                ).strip().lower()
+                supports_reasoning_controls = (
+                    "qwen" in model_name
+                    or "gpt-oss" in model_name
+                )
+                if not supports_reasoning_controls:
+                    continue
+            payload[optional_key] = value
+        return payload''',
+        "model-aware reasoning payload",
     )
 
     text = replace_once(
@@ -101,6 +169,11 @@ def patch_file(path: Path) -> bool:
                                     fallback_model=fallback_model,
                                 )
                                 payload["model"] = fallback_model
+                                for incompatible_key in (
+                                    "reasoning_effort",
+                                    "reasoning_format",
+                                ):
+                                    payload.pop(incompatible_key, None)
                                 continue
                             if attempt < retries:
                                 delay = _rate_limit_retry_delay(
@@ -142,7 +215,7 @@ def patch_file(path: Path) -> bool:
                             merged.get("rate_limit_fallback_model") or ""
                         ).strip()
                         current_model = str(
-                            merged.get("model") or ""
+                            merged.get("chat_model") or ""
                         ).strip()
                         fallback_used = bool(
                             (options or {}).get(
@@ -164,7 +237,9 @@ def patch_file(path: Path) -> bool:
                             )
                             response.release()
                             retry_options = dict(options or {})
-                            retry_options["model"] = fallback_model
+                            retry_options["chat_model"] = fallback_model
+                            retry_options.pop("reasoning_effort", None)
+                            retry_options.pop("reasoning_format", None)
                             retry_options[
                                 "_floodman_rate_limit_fallback_used"
                             ] = True
@@ -207,7 +282,7 @@ def main() -> int:
     if patch_file(path):
         print(f"patched {path}")
     else:
-        print("Groq model fallback patch already applied")
+        print("Groq model fallback and turn recovery already applied")
     return 0
 
 

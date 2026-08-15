@@ -1,0 +1,83 @@
+from __future__ import annotations
+
+import base64
+import importlib.util
+import sys
+from pathlib import Path
+
+
+REPRESENTATIVE_SOURCE = base64.b64decode(
+    'ZnJvbSBfX2Z1dHVyZV9fIGltcG9ydCBhbm5vdGF0aW9ucwoKaW1wb3J0IGFzeW5jaW8KCgpkZWYgX3VybF9ob3N0KHZhbHVlKToKICAgIHJldHVybiB2YWx1ZQoKCmRlZiBfcmF0ZV9saW1pdF9yZXRyeV9kZWxheSgqYXJncywgKiprd2FyZ3MpOgogICAgcmV0dXJuIDEuMAoKCmNsYXNzIExvZ2dlcjoKICAgIGRlZiB3YXJuaW5nKHNlbGYsICphcmdzLCAqKmt3YXJncyk6CiAgICAgICAgcmV0dXJuIE5vbmUKCgpsb2dnZXIgPSBMb2dnZXIoKQoKCmNsYXNzIERlZmF1bHRzOgogICAgY2hhdF9iYXNlX3VybCA9ICJodHRwczovL2FwaS5ncm9xLmNvbS9vcGVuYWkvdjEiCiAgICBjaGF0X21vZGVsID0gInF3ZW4vcXdlbjMuNi0yN2IiCgoKY2xhc3MgUmVzcG9uc2U6CiAgICBzdGF0dXMgPSA0MjkKCiAgICBkZWYgcmVsZWFzZShzZWxmKToKICAgICAgICByZXR1cm4gTm9uZQoKCmNsYXNzIE9wZW5BSUxMTUFkYXB0ZXI6CiAgICBjb21wb25lbnRfa2V5ID0gImdyb3FfbGxtIgogICAgX3Byb3ZpZGVyX2RlZmF1bHRzID0gRGVmYXVsdHMoKQogICAgX3BpcGVsaW5lX2RlZmF1bHRzID0ge30KICAgIF9kZWZhdWx0X3RpbWVvdXQgPSA4LjAKCiAgICBkZWYgX2NvbXBvc2Vfb3B0aW9ucyhzZWxmLCBydW50aW1lX29wdGlvbnMpOgogICAgICAgIG1lcmdlZCA9IHsKICAgICAgICAgICAgImNoYXRfYmFzZV91cmwiOiAiaHR0cHM6Ly9hcGkuZ3JvcS5jb20vb3BlbmFpL3YxIiwKICAgICAgICAgICAgImNoYXRfbW9kZWwiOiBydW50aW1lX29wdGlvbnMuZ2V0KAogICAgICAgICAgICAgICAgImNoYXRfbW9kZWwiLAogICAgICAgICAgICAgICAgcnVudGltZV9vcHRpb25zLmdldCgibW9kZWwiLCAicXdlbi9xd2VuMy42LTI3YiIpLAogICAgICAgICAgICApLAogICAgICAgICAgICAicmF0ZV9saW1pdF9yZXRyaWVzIjogaW50KAogICAgICAgICAgICAgICAgcnVudGltZV9vcHRpb25zLmdldCgKICAgICAgICAgICAgICAgICAgICAicmF0ZV9saW1pdF9yZXRyaWVzIiwKICAgICAgICAgICAgICAgICAgICBzZWxmLl9waXBlbGluZV9kZWZhdWx0cy5nZXQoInJhdGVfbGltaXRfcmV0cmllcyIsIDIpLAogICAgICAgICAgICAgICAgKQogICAgICAgICAgICApLAogICAgICAgICAgICAicmF0ZV9saW1pdF9tYXhfd2FpdF9zZWMiOiBmbG9hdCgKICAgICAgICAgICAgICAgIHJ1bnRpbWVfb3B0aW9ucy5nZXQoCiAgICAgICAgICAgICAgICAgICAgInJhdGVfbGltaXRfbWF4X3dhaXRfc2VjIiwKICAgICAgICAgICAgICAgICAgICBzZWxmLl9waXBlbGluZV9kZWZhdWx0cy5nZXQoInJhdGVfbGltaXRfbWF4X3dhaXRfc2VjIiwgMTAuMCksCiAgICAgICAgICAgICAgICApCiAgICAgICAgICAgICksCiAgICAgICAgICAgICJ0aW1lb3V0X3NlYyI6IGZsb2F0KHJ1bnRpbWVfb3B0aW9ucy5nZXQoInRpbWVvdXRfc2VjIiwgc2VsZi5fcGlwZWxpbmVfZGVmYXVsdHMuZ2V0KCJ0aW1lb3V0X3NlYyIsIHNlbGYuX2RlZmF1bHRfdGltZW91dCkpKSwKICAgICAgICB9CiAgICAgICAgY2hhdF9iYXNlID0gc3RyKG1lcmdlZC5nZXQoImNoYXRfYmFzZV91cmwiKSBvciAiIikKICAgICAgICBjaGF0X21vZGVsID0gc3RyKG1lcmdlZC5nZXQoImNoYXRfbW9kZWwiKSBvciAiIikKICAgICAgICBpZiBfdXJsX2hvc3QoY2hhdF9iYXNlKSA9PSAiYXBpLmdyb3EuY29tIiBvciBjaGF0X21vZGVsLnN0YXJ0c3dpdGgoImxsYW1hLSIpIG9yICJtaXh0cmFsIiBpbiBjaGF0X21vZGVsOgogICAgICAgICAgICBsb2dnZXIud2FybmluZygiT3BlbkFJIExMTSBvcHRpb25zIGxvb2sgaW5jb21wYXRpYmxlIikKICAgICAgICAgICAgbWVyZ2VkWyJjaGF0X2Jhc2VfdXJsIl0gPSBzZWxmLl9wcm92aWRlcl9kZWZhdWx0cy5jaGF0X2Jhc2VfdXJsCiAgICAgICAgICAgIG1lcmdlZFsiY2hhdF9tb2RlbCJdID0gc2VsZi5fcHJvdmlkZXJfZGVmYXVsdHMuY2hhdF9tb2RlbAogICAgICAgIHJldHVybiBtZXJnZWQKCiAgICBkZWYgX2J1aWxkX2NoYXRfcGF5bG9hZChzZWxmLCBtZXJnZWQpOgogICAgICAgIHBheWxvYWQgPSB7fQogICAgICAgIGZvciBvcHRpb25hbF9rZXkgaW4gKAogICAgICAgICAgICAidG9wX3AiLAogICAgICAgICAgICAicHJlc2VuY2VfcGVuYWx0eSIsCiAgICAgICAgICAgICJyZWFzb25pbmdfZWZmb3J0IiwKICAgICAgICAgICAgInJlYXNvbmluZ19mb3JtYXQiLAogICAgICAgICAgICAic2VydmljZV90aWVyIiwKICAgICAgICApOgogICAgICAgICAgICBpZiBtZXJnZWQuZ2V0KG9wdGlvbmFsX2tleSkgaXMgbm90IE5vbmU6CiAgICAgICAgICAgICAgICBwYXlsb2FkW29wdGlvbmFsX2tleV0gPSBtZXJnZWRbb3B0aW9uYWxfa2V5XQogICAgICAgIHJldHVybiBwYXlsb2FkCgogICAgYXN5bmMgZGVmIGdlbmVyYXRlKHNlbGYsIGNhbGxfaWQsIHRyYW5zY3JpcHQsIGNvbnRleHQsIG9wdGlvbnMpOgogICAgICAgIG1lcmdlZCA9IHsKICAgICAgICAgICAgInJhdGVfbGltaXRfbWF4X3dhaXRfc2VjIjogMy4wLAogICAgICAgIH0KICAgICAgICBwYXlsb2FkID0geyJtb2RlbCI6ICJxd2VuL3F3ZW4zLjYtMjdiIn0KICAgICAgICByZXRyaWVzID0gMQogICAgICAgIGJvZHkgPSAiIgogICAgICAgIHJlc3BvbnNlID0gUmVzcG9uc2UoKQogICAgICAgIGlmIFRydWU6CiAgICAgICAgICAgIGlmIFRydWU6CiAgICAgICAgICAgICAgICBpZiBUcnVlOgogICAgICAgICAgICAgICAgICAgIGZvciBhdHRlbXB0IGluIHJhbmdlKHJldHJpZXMgKyAxKToKICAgICAgICAgICAgICAgICAgICAgICAgaWYgcmVzcG9uc2Uuc3RhdHVzID09IDQyOSBhbmQgYXR0ZW1wdCA8IHJldHJpZXM6CiAgICAgICAgICAgICAgICAgICAgICAgICAgICBkZWxheSA9IF9yYXRlX2xpbWl0X3JldHJ5X2RlbGF5KAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIHJlc3BvbnNlLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIGJvZHksCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgYXR0ZW1wdCwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBmbG9hdChtZXJnZWQuZ2V0KCJyYXRlX2xpbWl0X21heF93YWl0X3NlYyIsIDEwLjApKSwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICkKICAgICAgICAgICAgICAgICAgICAgICAgICAgIGxvZ2dlci53YXJuaW5nKAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICJHcm9xIHJhdGUgbGltaXQgcmVhY2hlZDsgd2FpdGluZyBiZWZvcmUgc2VyaWFsIHJldHJ5IiwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBjYWxsX2lkPWNhbGxfaWQsCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgYXR0ZW1wdD1hdHRlbXB0ICsgMSwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBtYXhfYXR0ZW1wdHM9cmV0cmllcyArIDEsCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgZGVsYXlfc2Vjb25kcz1yb3VuZChkZWxheSwgMyksCiAgICAgICAgICAgICAgICAgICAgICAgICAgICApCiAgICAgICAgICAgICAgICAgICAgICAgICAgICBhd2FpdCBhc3luY2lvLnNsZWVwKGRlbGF5KQogICAgICAgICAgICAgICAgICAgICAgICAgICAgY29udGludWUKICAgICAgICByZXR1cm4gTm9uZQoKICAgIGFzeW5jIGRlZiBnZW5lcmF0ZV9zdHJlYW0oCiAgICAgICAgc2VsZiwKICAgICAgICBjYWxsX2lkLAogICAgICAgIHRyYW5zY3JpcHQsCiAgICAgICAgY29udGV4dCwKICAgICAgICBvcHRpb25zLAogICAgKToKICAgICAgICBtZXJnZWQgPSB7CiAgICAgICAgICAgICJjaGF0X21vZGVsIjogInF3ZW4vcXdlbjMuNi0yN2IiLAogICAgICAgICAgICAicmF0ZV9saW1pdF9mYWxsYmFja19tb2RlbCI6ICJsbGFtYS0zLjMtNzBiLXZlcnNhdGlsZSIsCiAgICAgICAgfQogICAgICAgIHJlc3BvbnNlID0gUmVzcG9uc2UoKQogICAgICAgIGlmIFRydWU6CiAgICAgICAgICAgIGlmIFRydWU6CiAgICAgICAgICAgICAgICBpZiBUcnVlOgogICAgICAgICAgICAgICAgICAgIGlmIHJlc3BvbnNlLnN0YXR1cyA9PSA0Mjk6CiAgICAgICAgICAgICAgICAgICAgICAgIHJldHJ5X2F0dGVtcHQgPSBpbnQoCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAob3B0aW9ucyBvciB7fSkuZ2V0KAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICJfZmxvb2RtYW5fcmF0ZV9saW1pdF9hdHRlbXB0IiwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAwLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgKQogICAgICAgICAgICAgICAgICAgICAgICApCiAgICAgICAgaWYgRmFsc2U6CiAgICAgICAgICAgIHlpZWxkICIiCg=='
+).decode("utf-8")
+
+
+def _load(name: str, path: Path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_groq_turn_recovery_patch_is_complete_and_idempotent(
+    project_root: Path,
+    tmp_path: Path,
+) -> None:
+    patcher = _load(
+        "groq_turn_recovery_test",
+        project_root / "scripts/patch_ava_groq_model_fallback.py",
+    )
+    target = tmp_path / "openai.py"
+    target.write_text(REPRESENTATIVE_SOURCE, encoding="utf-8")
+
+    assert patcher.patch_file(target) is True
+    assert patcher.patch_file(target) is False
+
+    result = target.read_text(encoding="utf-8")
+    compile(result, str(target), "exec")
+    assert "Floodman Groq model fallback patch" in result
+    assert "Floodman Groq turn recovery patch" in result
+    assert "not is_groq_component" in result
+    assert 'merged.get("chat_model")' in result
+    assert 'retry_options["chat_model"] = fallback_model' in result
+    assert 'retry_options["model"] = fallback_model' not in result
+    assert "supports_reasoning_controls" in result
+    assert 'payload.pop(incompatible_key, None)' in result
+
+
+def test_production_pipeline_uses_fast_completed_turn_flush(
+    project_root: Path,
+) -> None:
+    module = _load(
+        "turn_latency_profile_test",
+        project_root / "scripts/apply_production_hybrid_ai.py",
+    )
+    patch = module.production_patch()
+    llm = patch["pipelines"]["floodman_production"]["options"]["llm"]
+    assert llm["aggregation_timeout_sec"] == (
+        "${GROQ_AGGREGATION_TIMEOUT_SECONDS:-0.15}"
+    )
+
+
+def test_existing_dockerfile_runs_the_upgraded_patch(
+    project_root: Path,
+) -> None:
+    dockerfile = (project_root / "Dockerfile").read_text(
+        encoding="utf-8"
+    )
+    assert (
+        "COPY scripts/patch_ava_groq_model_fallback.py "
+        "/opt/floodman-build/patch_ava_groq_model_fallback.py"
+        in dockerfile
+    )
+    assert (
+        "python3 /opt/floodman-build/"
+        "patch_ava_groq_model_fallback.py --ava-root /opt/ava"
+        in dockerfile
+    )
+    assert (
+        'grep -q "Floodman Groq model fallback patch" '
+        "/opt/ava/src/pipelines/openai.py"
+        in dockerfile
+    )
