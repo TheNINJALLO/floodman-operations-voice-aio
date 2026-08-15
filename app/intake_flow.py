@@ -484,9 +484,7 @@ def next_intake_state(
         "field": "",
         "confirmation_required": False,
         "next_question": "",
-        "safe_message": (
-            "The complete intake is ready to send to the Floodman team."
-        ),
+        "safe_message": "",
         "missing": intake_submission_missing_fields(snapshot),
         "ready_to_submit": True,
     }

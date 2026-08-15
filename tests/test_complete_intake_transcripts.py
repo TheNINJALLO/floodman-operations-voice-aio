@@ -324,7 +324,8 @@ def test_inbound_agent_restores_detailed_interview_and_progress_saves(project_ro
     inbound = source.split('slug="floodman_inbound"', 1)[1].split(
         'slug="floodman_google_business"', 1
     )[0]
-    assert "floodman_classify_service" in inbound
+    assert '"floodman_classify_service"' not in inbound
+    assert "classification happens internally and silently" in inbound.lower()
     assert "floodman_capture_intake_progress" in inbound
     assert "full name, best callback number, email" in inbound
     assert "standing water" in inbound
@@ -339,7 +340,7 @@ def test_ava_tools_include_progress_classification_and_finalize(project_root) ->
         (project_root / "config/ava/ai-agent.local.yaml").read_text(encoding="utf-8")
     )
     tools = config["in_call_tools"]
-    assert tools["floodman_classify_service"]["enabled"] is True
+    assert "floodman_classify_service" not in tools
     assert tools["floodman_capture_intake_progress"]["enabled"] is True
     assert tools["floodman_submit_intake"]["enabled"] is True
     assert tools["floodman_submit_intake"]["timeout_ms"] <= 2500

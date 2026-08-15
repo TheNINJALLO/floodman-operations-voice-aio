@@ -569,40 +569,18 @@ in_call_tools:
       description: Claimed organization or identity
       required: false
     return_raw_json: true
-  floodman_classify_service:
-    kind: in_call_http_lookup
-    enabled: true
-    is_global: false
-    description: Non-terminal service routing step. Do not read back only the service category. Speak safe_message exactly once; it contains one focused continuation question.
-    timeout_ms: 2500
-    url: ${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/classify-service
-    method: POST
-    headers:
-      Content-Type: application/json
-      X-Internal-Token: ${INTERNAL_TOKEN}
-    body_template: '{"call_id":"{call_id}","caller_number":"{caller_number}","data":{"requested_service":"{requested_service}","description":"{description}"}}'
-    parameters:
-    - name: requested_service
-      type: string
-      description: The service or result the caller is asking Floodman to provide
-      required: true
-    - name: description
-      type: string
-      description: The caller's own description of what is happening
-      required: true
-    return_raw_json: true
   floodman_capture_intake_progress:
     kind: in_call_http_lookup
     enabled: true
     is_global: false
-    description: Persist every recovered field, including extra fields the caller volunteers. The server returns exactly one collection or confirmation question. Speak safe_message exactly once. For a yes/no confirmation, send confirm_field and confirmation. Never ask the missing-field list yourself.
+    description: Persist every recovered field and classify the request silently inside Floodman. The response contains exactly one safe_message. Speak it once when non-empty. When all required details are confirmed, this tool submits the intake automatically and returns the final callback confirmation. Never announce an internal service category or read a missing-field list.
     timeout_ms: 2500
     url: ${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/capture-intake-progress
     method: POST
     headers:
       Content-Type: application/json
       X-Internal-Token: ${INTERNAL_TOKEN}
-    body_template: '{"call_id":"{call_id}","caller_number":"{caller_number}","data":{"name":"{name}","phone":"{phone}","email":"{email}","email_status":"{email_status}","address":"{address}","service_requested":"{service_requested}","service_key":"{service_key}","service_status":"{service_status}","service_reason":"{service_reason}","description":"{description}","property_context":"{property_context}","safety_summary":"{safety_summary}","timing_summary":"{timing_summary}","insurance_summary":"{insurance_summary}","evidence_summary":"{evidence_summary}","urgency":"{urgency}","department":"{department}","status":"{status}","confirm_field":"{confirm_field}","confirmation":"{confirmation}"}}'
+    body_template: '{"call_id":"{call_id}","caller_number":"{caller_number}","data":{"name":"{name}","phone":"{phone}","email":"{email}","email_status":"{email_status}","address":"{address}","service_requested":"{service_requested}","description":"{description}","property_context":"{property_context}","safety_summary":"{safety_summary}","timing_summary":"{timing_summary}","insurance_summary":"{insurance_summary}","evidence_summary":"{evidence_summary}","urgency":"{urgency}","department":"{department}","status":"{status}","confirm_field":"{confirm_field}","confirmation":"{confirmation}"}}'
     parameters:
     - name: name
       type: string
@@ -632,21 +610,6 @@ in_call_tools:
     - name: service_requested
       type: string
       description: Service or result requested by the caller
-      required: false
-      default: ''
-    - name: service_key
-      type: string
-      description: Canonical service key returned by classify-service
-      required: false
-      default: ''
-    - name: service_status
-      type: string
-      description: supported, unsupported, or review
-      required: false
-      default: ''
-    - name: service_reason
-      type: string
-      description: Reason returned by classify-service
       required: false
       default: ''
     - name: description

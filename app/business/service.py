@@ -166,6 +166,13 @@ class BusinessOperations:
         *,
         idempotency_key: str = "",
     ) -> dict[str, Any]:
+        """Compatibility endpoint for internal callers.
+
+        The inbound voice agent no longer calls this operation directly. Service
+        classification is performed silently inside capture_intake_progress so a
+        category label can never become a standalone spoken turn.
+        """
+
         requested = str(
             data.get("requested_service")
             or data.get("service_requested")
@@ -177,81 +184,29 @@ class BusinessOperations:
             or data.get("problem")
             or ""
         ).strip()
-        result = classify_service_request(
-            dict(self.settings.config.get("business") or {}),
-            requested,
-            description,
+
+        capture = await self._op_capture_intake_progress(
+            {
+                **data,
+                "service_requested": requested,
+                "description": description,
+            },
+            idempotency_key=idempotency_key,
         )
 
-        caller_number = normalize_phone(
-            str(data.get("caller_number") or "")
-        )
         call_id = str(data.get("call_id") or "").strip()
-        existing = (
+        stored = (
             self.database.get_call_intake(call_id) or {}
             if call_id
             else {}
         )
-        metadata = dict(existing.get("metadata") or {})
-        metadata["contact_flow_enabled"] = True
-        metadata.setdefault("contact_confirmations", {})
-        metadata.setdefault("contact_rejections", {})
-        metadata["service_questions"] = list(
-            result.get("intake_questions") or ()
-        )
-        snapshot: dict[str, Any] = {
-            "caller_number": caller_number,
-            "phone": caller_number,
-            "service_requested": requested,
-            "service_key": result.get("service_key") or "",
-            "service_status": (
-                result.get("service_status") or "review"
-            ),
-            "service_reason": result.get("service_reason") or "",
-            "description": description,
-            "status": "collecting",
-            "metadata": metadata,
-        }
-        if call_id:
-            snapshot = self.database.upsert_call_intake(
-                call_id,
-                snapshot,
-            )
-
-        state = next_intake_state(
-            snapshot,
-            service_questions=result.get("intake_questions") or (),
-        )
-        service_status = normalize_service_status(
-            result.get("service_status")
-        )
-
-        prefix = ""
-        if service_status == "unsupported":
-            prefix = str(result.get("safe_message") or "").strip()
-        elif service_status == "review":
-            prefix = (
-                "I could not confirm that service from Floodman's "
-                "approved service list, but I will still send the "
-                "details to the team."
-            )
-
-        safe_message = " ".join(
-            part
-            for part in (
-                prefix,
-                state["safe_message"],
-            )
-            if part
-        ).strip()
-
         return {
+            **capture,
             "operation": "classify_service",
-            **result,
-            **state,
-            "continuation_required": not state["ready_to_submit"],
-            "safe_message": safe_message,
-            "speak_verbatim": True,
+            "service_status": normalize_service_status(
+                stored.get("service_status")
+            ),
+            "service_key": str(stored.get("service_key") or ""),
         }
 
     async def _op_capture_intake_progress(
@@ -260,6 +215,13 @@ class BusinessOperations:
         *,
         idempotency_key: str = "",
     ) -> dict[str, Any]:
+        """Persist one caller turn and return one exact next action.
+
+        Service classification is server-owned and silent. The response deliberately
+        omits category labels, missing-field lists, and classification reasons so
+        the voice model has only one useful sentence to speak.
+        """
+
         call_id = str(data.get("call_id") or "").strip()
         if not call_id:
             return {
@@ -303,6 +265,71 @@ class BusinessOperations:
             "phone": phone,
             "status": str(data.get("status") or "collecting"),
         }
+
+        # Classification fields are controlled by the server, never by the LLM.
+        for key in (
+            "service_key",
+            "service_status",
+            "service_reason",
+        ):
+            update.pop(key, None)
+
+        requested = str(
+            data.get("service_requested")
+            or existing.get("service_requested")
+            or ""
+        ).strip()
+        description = str(
+            data.get("description")
+            or data.get("problem")
+            or existing.get("description")
+            or existing.get("problem")
+            or ""
+        ).strip()
+
+        raw_existing_status = str(
+            existing.get("service_status") or ""
+        ).strip().lower()
+        classification_new = False
+
+        if (
+            raw_existing_status
+            not in {"supported", "unsupported", "review"}
+            and (requested or description)
+        ):
+            classification = classify_service_request(
+                dict(self.settings.config.get("business") or {}),
+                requested,
+                description,
+            )
+            classification_new = True
+
+            metadata = dict(existing.get("metadata") or {})
+            incoming_metadata = data.get("metadata")
+            if isinstance(incoming_metadata, dict):
+                metadata.update(incoming_metadata)
+            metadata["classification_source"] = "server"
+            metadata["service_questions"] = list(
+                classification.get("intake_questions") or ()
+            )
+
+            update.update(
+                {
+                    "service_requested": requested,
+                    "service_key": (
+                        classification.get("service_key") or ""
+                    ),
+                    "service_status": (
+                        classification.get("service_status")
+                        or "review"
+                    ),
+                    "service_reason": (
+                        classification.get("service_reason") or ""
+                    ),
+                    "metadata": metadata,
+                }
+            )
+
         row = self.database.upsert_call_intake(call_id, update)
 
         metadata = update_confirmation_metadata(
@@ -316,8 +343,65 @@ class BusinessOperations:
             {"metadata": metadata},
         )
 
-        state = next_intake_state(row)
+        service_questions = (
+            dict(row.get("metadata") or {}).get(
+                "service_questions"
+            )
+            or ()
+        )
+        state = next_intake_state(
+            row,
+            service_questions=service_questions,
+        )
         missing = list(state["missing"])
+        status = normalize_service_status(
+            row.get("service_status")
+        )
+
+        prefix = ""
+        if classification_new and status == "unsupported":
+            prefix = (
+                "Floodman does not currently offer that type of "
+                "service, but I will still collect the details for "
+                "the team."
+            )
+        elif classification_new and status == "review":
+            prefix = (
+                "I will have the team review that request while I "
+                "collect the details."
+            )
+
+        safe_message = " ".join(
+            part
+            for part in (
+                prefix,
+                state["safe_message"],
+            )
+            if part
+        ).strip()
+
+        submitted = False
+        submission_result: dict[str, Any] = {}
+        if state["ready_to_submit"]:
+            submission_result = await self._op_submit_intake(
+                {
+                    "call_id": call_id,
+                    "caller_number": caller_phone,
+                },
+                idempotency_key=f"intake-{call_id}",
+            )
+            submitted = bool(submission_result.get("ok"))
+            safe_message = str(
+                submission_result.get("safe_message") or ""
+            ).strip()
+            if not safe_message:
+                safe_message = (
+                    "Thank you. I have forwarded everything to the "
+                    "Floodman team, and a team member will call you "
+                    "within 24 hours."
+                )
+
+        submit_required = False
 
         self.database.add_call_event(
             call_id,
@@ -345,32 +429,43 @@ class BusinessOperations:
                     contact_confirmations(row)
                 ),
                 "missing": missing,
-                "stage": state["stage"],
+                "stage": (
+                    "complete" if submitted else state["stage"]
+                ),
                 "next_field": state["field"],
                 "next_question": state["next_question"],
-                "service_status": (
-                    row.get("service_status") or "unknown"
-                ),
+                "service_status": status,
+                "classification_new": classification_new,
+                "submit_required": submit_required,
+                "submitted": submitted,
             },
         )
 
+        # Deliberately return only conversational control fields. Internal service
+        # labels stay in the database and never become something Ava can announce.
         return {
             "ok": True,
             "operation": "capture_intake_progress",
             "saved": True,
-            "missing": missing,
             "ready_to_submit": state["ready_to_submit"],
-            "continuation_required": not state["ready_to_submit"],
-            "stage": state["stage"],
+            "submit_required": submit_required,
+            "submitted": submitted,
+            "continuation_required": (
+                not state["ready_to_submit"] or not submitted
+            ),
+            "stage": (
+                "complete" if submitted else state["stage"]
+            ),
             "next_field": state["field"],
             "confirmation_required": state[
                 "confirmation_required"
             ],
-            "next_question": state["next_question"],
-            "service_status": (
-                row.get("service_status") or "unknown"
+            "next_question": (
+                ""
+                if submitted
+                else state["next_question"]
             ),
-            "safe_message": state["safe_message"],
+            "safe_message": safe_message,
             "speak_verbatim": True,
         }
 

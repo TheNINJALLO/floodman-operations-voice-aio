@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from app.business import BusinessOperations
 from app.db import Database
-from app.intake_flow import next_intake_state
 from app.roomflow.client import RoomflowClient
 
 
@@ -18,25 +17,10 @@ DETAILS = {
         "or access concern reported."
     ),
     "service_requested": "water damage restoration",
-    "service_key": "water_damage_restoration",
-    "service_status": "supported",
 }
 
 
-def test_next_question_is_one_field_at_a_time() -> None:
-    snapshot = {
-        "caller_number": "+12315550100",
-        "phone": "+12315550100",
-        **DETAILS,
-        "metadata": {"contact_flow_enabled": True},
-    }
-    state = next_intake_state(snapshot)
-    assert state["field"] == "name"
-    assert state["next_question"] == "What is your full name?"
-    assert state["next_question"].count("?") == 1
-
-
-async def test_classification_always_returns_one_question(
+async def test_first_capture_skips_category_and_asks_for_name(
     settings,
 ) -> None:
     db = Database(settings.database_path)
@@ -46,25 +30,19 @@ async def test_classification_always_returns_one_question(
         RoomflowClient(settings, db),
     )
     result = await service.execute(
-        "classify_service",
-        {
-            "requested_service": "water damage restoration",
-            "description": (
-                "A water heater leaked into the basement "
-                "utility room."
-            ),
-        },
+        "capture_intake_progress",
+        DETAILS,
         call_id="call-continuation-1",
         caller_number="+12315550101",
     )
-    assert result["service_status"] == "supported"
     assert result["continuation_required"] is True
-    assert result["next_question"].endswith("?")
-    assert result["next_question"].count("?") == 1
+    assert result["safe_message"] == "What is your full name?"
+    assert result["safe_message"].count("?") == 1
+    assert "water" not in result["safe_message"].lower()
     db.close()
 
 
-async def test_progress_confirms_name_email_phone_address(
+async def test_progress_continues_without_a_ready_statement(
     settings,
 ) -> None:
     db = Database(settings.database_path)
@@ -76,16 +54,6 @@ async def test_progress_confirms_name_email_phone_address(
     call_id = "call-continuation-2"
     caller_number = "+12315550102"
 
-    await service.execute(
-        "classify_service",
-        {
-            "requested_service": "water damage restoration",
-            "description": DETAILS["description"],
-        },
-        call_id=call_id,
-        caller_number=caller_number,
-    )
-
     details = await service.execute(
         "capture_intake_progress",
         DETAILS,
@@ -93,7 +61,6 @@ async def test_progress_confirms_name_email_phone_address(
         caller_number=caller_number,
     )
     assert details["next_field"] == "name"
-    assert details["stage"] == "collect_contact"
 
     named = await service.execute(
         "capture_intake_progress",
@@ -101,10 +68,11 @@ async def test_progress_confirms_name_email_phone_address(
         call_id=call_id,
         caller_number=caller_number,
     )
-    assert named["next_field"] == "name"
-    assert named["stage"] == "confirm_contact"
+    assert named["safe_message"] == (
+        "I have your name as Josh Aldrich. Is that correct?"
+    )
 
-    name_ok = await service.execute(
+    await service.execute(
         "capture_intake_progress",
         {
             "confirm_field": "name",
@@ -113,19 +81,13 @@ async def test_progress_confirms_name_email_phone_address(
         call_id=call_id,
         caller_number=caller_number,
     )
-    assert name_ok["next_field"] == "email"
-    assert name_ok["stage"] == "collect_contact"
-
-    emailed = await service.execute(
+    await service.execute(
         "capture_intake_progress",
         {"email": "josh@example.com"},
         call_id=call_id,
         caller_number=caller_number,
     )
-    assert emailed["next_field"] == "email"
-    assert emailed["stage"] == "confirm_contact"
-
-    email_ok = await service.execute(
+    await service.execute(
         "capture_intake_progress",
         {
             "confirm_field": "email",
@@ -134,10 +96,7 @@ async def test_progress_confirms_name_email_phone_address(
         call_id=call_id,
         caller_number=caller_number,
     )
-    assert email_ok["next_field"] == "phone"
-    assert email_ok["stage"] == "confirm_contact"
-
-    phone_ok = await service.execute(
+    await service.execute(
         "capture_intake_progress",
         {
             "confirm_field": "phone",
@@ -146,10 +105,7 @@ async def test_progress_confirms_name_email_phone_address(
         call_id=call_id,
         caller_number=caller_number,
     )
-    assert phone_ok["next_field"] == "address"
-    assert phone_ok["stage"] == "collect_contact"
-
-    addressed = await service.execute(
+    await service.execute(
         "capture_intake_progress",
         {
             "address": (
@@ -160,9 +116,6 @@ async def test_progress_confirms_name_email_phone_address(
         call_id=call_id,
         caller_number=caller_number,
     )
-    assert addressed["next_field"] == "address"
-    assert addressed["stage"] == "confirm_contact"
-
     complete = await service.execute(
         "capture_intake_progress",
         {
@@ -173,11 +126,13 @@ async def test_progress_confirms_name_email_phone_address(
         caller_number=caller_number,
     )
     assert complete["ready_to_submit"] is True
-    assert complete["next_question"] == ""
+    assert complete["submit_required"] is False
+    assert complete["submitted"] is True
+    assert "within 24 hours" in complete["safe_message"]
     db.close()
 
 
-def test_agent_and_tools_forbid_grouped_questions(
+def test_agent_and_config_use_silent_capture_flow(
     project_root,
 ) -> None:
     import yaml
@@ -185,9 +140,12 @@ def test_agent_and_tools_forbid_grouped_questions(
     agent = (
         project_root / "app/ava/agents.py"
     ).read_text(encoding="utf-8")
-    assert "Ask exactly one question per turn" in agent
-    assert "name, then email, then phone, then address" in agent
-    assert "immediately ask next_question" in agent
+    assert "classification happens internally and silently" in (
+        agent.lower()
+    )
+    assert "never announce an internal service category" in (
+        agent.lower()
+    )
 
     config = yaml.safe_load(
         (
@@ -196,9 +154,6 @@ def test_agent_and_tools_forbid_grouped_questions(
         ).read_text(encoding="utf-8")
     )
     tools = config["in_call_tools"]
-    assert "Non-terminal" in tools[
-        "floodman_classify_service"
-    ]["description"]
-    assert "exactly one" in tools[
-        "floodman_capture_intake_progress"
-    ]["description"].lower()
+    assert "floodman_classify_service" not in tools
+    assert tools["floodman_capture_intake_progress"]["enabled"] is True
+    assert tools["floodman_submit_intake"]["enabled"] is True
