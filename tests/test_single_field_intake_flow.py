@@ -101,7 +101,7 @@ def test_rejected_value_requests_correction_not_every_field() -> None:
     state = next_intake_state(after)
     assert state["stage"] == "collect_contact"
     assert state["field"] == "name"
-    assert "correct full name" in state["next_question"].lower()
+    assert "correct name" in state["next_question"].lower()
 
 
 async def test_service_confirms_each_contact_without_reasking(
@@ -254,7 +254,7 @@ def test_latency_defaults_are_conversational(project_root) -> None:
     llm = pipeline["options"]["llm"]
 
     assert stt["eot_timeout_ms"] == (
-        "${DEEPGRAM_EOT_TIMEOUT_MS:-700}"
+        "${DEEPGRAM_EOT_TIMEOUT_MS:-1500}"
     )
     assert llm["max_tokens"] == (
         "${GROQ_LLM_MAX_TOKENS:-160}"

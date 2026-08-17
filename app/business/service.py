@@ -361,15 +361,11 @@ class BusinessOperations:
         prefix = ""
         if classification_new and status == "unsupported":
             prefix = (
-                "Floodman does not currently offer that type of "
-                "service, but I will still collect the details for "
-                "the team."
+                "That is not a service Floodman offers, but I will "
+                "still send the details to the team."
             )
         elif classification_new and status == "review":
-            prefix = (
-                "I will have the team review that request while I "
-                "collect the details."
-            )
+            prefix = "I will have the team review it."
 
         safe_message = " ".join(
             part
@@ -396,9 +392,10 @@ class BusinessOperations:
             ).strip()
             if not safe_message:
                 safe_message = (
-                    "Thank you. I have forwarded everything to the "
-                    "Floodman team, and a team member will call you "
-                    "within 24 hours."
+                    "You're all set. The team has your information "
+                    f"and will call you within "
+                    f"{self.settings.callback_sla_hours} hours. "
+                    "Thanks for calling Floodman."
                 )
 
         submit_required = False
@@ -466,6 +463,7 @@ class BusinessOperations:
                 else state["next_question"]
             ),
             "safe_message": safe_message,
+            "end_call_after_message": submitted,
             "speak_verbatim": True,
         }
 
@@ -542,26 +540,30 @@ class BusinessOperations:
         requested_label = str(snapshot.get("service_requested") or "that service").strip()
 
         def caller_safe_message() -> str:
+            hours = self.settings.callback_sla_hours
             if service_status == "unsupported":
                 return (
-                    f"Floodman does not currently offer {requested_label}. "
-                    "I've still forwarded all of your information to the team, "
-                    f"and they'll call you within {self.settings.callback_sla_hours} hours."
+                    "Floodman does not currently offer that service. "
+                    "I have still sent your information to the team. "
+                    f"They will call you within {hours} hours. "
+                    "Thanks for calling Floodman."
                 )
             if service_status == "review":
                 return (
-                    "I could not confirm that service from Floodman's approved service list. "
-                    "I've forwarded everything to the team for review, "
-                    f"and they'll call you within {self.settings.callback_sla_hours} hours."
+                    "I have sent your information to the team for "
+                    f"review. They will call you within {hours} hours. "
+                    "Thanks for calling Floodman."
                 )
             if snapshot["urgency"] == "emergency":
                 return (
-                    "Thank you. I've forwarded everything and alerted the Floodman emergency team. "
-                    "Someone will call you as soon as possible."
+                    "You're all set. I have alerted the emergency "
+                    "team. Someone will call you as soon as possible. "
+                    "Thanks for calling Floodman."
                 )
             return (
-                "Thank you. I've forwarded everything to the Floodman team, "
-                f"and they'll call you within {self.settings.callback_sla_hours} hours."
+                "You're all set. The team has your information and "
+                f"will call you within {hours} hours. "
+                "Thanks for calling Floodman."
             )
 
         # Tool retries and model duplicates must not create a second lead or

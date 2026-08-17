@@ -49,6 +49,7 @@ COPY scripts/patch_ava_production.py /opt/floodman-build/patch_ava_production.py
 COPY scripts/patch_ava_groq_resilience.py /opt/floodman-build/patch_ava_groq_resilience.py
 COPY scripts/patch_ava_groq_model_fallback.py /opt/floodman-build/patch_ava_groq_model_fallback.py
 COPY scripts/patch_ava_flux.py /opt/floodman-build/patch_ava_flux.py
+COPY scripts/patch_ava_direct_tool_prompts.py /opt/floodman-build/patch_ava_direct_tool_prompts.py
 
 RUN git init /opt/ava \
     && git -C /opt/ava remote add origin https://github.com/hkjarral/AVA-AI-Voice-Agent-for-Asterisk.git \
@@ -62,6 +63,7 @@ RUN git init /opt/ava \
     && python3 /opt/floodman-build/patch_ava_groq_resilience.py --ava-root /opt/ava \
     && python3 /opt/floodman-build/patch_ava_groq_model_fallback.py --ava-root /opt/ava \
     && python3 /opt/floodman-build/patch_ava_flux.py --ava-root /opt/ava \
+    && python3 /opt/floodman-build/patch_ava_direct_tool_prompts.py --ava-root /opt/ava \
     && grep -q "Floodman JSON body safety patch" /opt/ava/src/tools/http/in_call_lookup.py \
     && grep -q "Floodman optional HTTP tool parameters patch" /opt/ava/src/tools/http/in_call_lookup.py \
     && grep -q "Floodman Piper API compatibility patch" /opt/ava/local_ai_server/server.py \
@@ -69,12 +71,14 @@ RUN git init /opt/ava \
     && grep -q "Floodman Groq 429 backoff patch" /opt/ava/src/pipelines/openai.py \
     && grep -q "Floodman Groq model fallback patch" /opt/ava/src/pipelines/openai.py \
     && grep -q "Floodman Flux v2 query contract patch" /opt/ava/src/pipelines/deepgram_flux.py \
+    && grep -q "Floodman direct tool continuation patch" /opt/ava/src/engine.py \
     && rm -f /opt/floodman-build/patch_ava.py \
        /opt/floodman-build/patch_ava_optional_params.py \
        /opt/floodman-build/patch_ava_production.py \
        /opt/floodman-build/patch_ava_groq_resilience.py \
        /opt/floodman-build/patch_ava_groq_model_fallback.py \
-       /opt/floodman-build/patch_ava_flux.py
+       /opt/floodman-build/patch_ava_flux.py \
+       /opt/floodman-build/patch_ava_direct_tool_prompts.py
 
 RUN pip install --no-cache-dir -r /opt/ava/requirements.txt \
     && pip install --no-cache-dir -r /opt/ava/local_ai_server/requirements-base.txt \

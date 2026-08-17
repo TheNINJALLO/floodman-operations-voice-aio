@@ -573,7 +573,7 @@ in_call_tools:
     kind: in_call_http_lookup
     enabled: true
     is_global: false
-    description: Persist every recovered field and classify the request silently inside Floodman. The response contains exactly one safe_message. Speak it once when non-empty. When all required details are confirmed, this tool submits the intake automatically and returns the final callback confirmation. Never announce an internal service category or read a missing-field list.
+    description: Tool-only intake update. Classify the request silently. Send every recovered field, then return no assistant narration. The engine speaks exactly one safe_message directly. Never say that information was recorded, never read a missing-field list, and never add another question.
     timeout_ms: 2500
     url: ${FLOODMAN_INTERNAL_URL:-http://127.0.0.1:9000}/internal/tools/capture-intake-progress
     method: POST

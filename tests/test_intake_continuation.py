@@ -36,7 +36,7 @@ async def test_first_capture_skips_category_and_asks_for_name(
         caller_number="+12315550101",
     )
     assert result["continuation_required"] is True
-    assert result["safe_message"] == "What is your full name?"
+    assert result["safe_message"] == "What name should I put this under?"
     assert result["safe_message"].count("?") == 1
     assert "water" not in result["safe_message"].lower()
     db.close()
@@ -69,7 +69,7 @@ async def test_progress_continues_without_a_ready_statement(
         caller_number=caller_number,
     )
     assert named["safe_message"] == (
-        "I have your name as Josh Aldrich. Is that correct?"
+        "Josh Aldrich, right?"
     )
 
     await service.execute(

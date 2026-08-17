@@ -235,23 +235,29 @@ def contact_collection_question(
     *,
     correction: bool = False,
 ) -> str:
-    prefix = "correct " if correction else ""
     if field == "name":
-        return f"What is your {prefix}full name?"
+        return (
+            "What's the correct name?"
+            if correction
+            else "What name should I put this under?"
+        )
     if field == "email":
         return (
-            f"What {prefix}email address should I use? "
-            "You can also say you do not have one or prefer not to provide it."
+            "What's the correct email?"
+            if correction
+            else "What's the best email for you? You can say skip."
         )
     if field == "phone":
         return (
-            f"What is the {prefix}phone number the Floodman team "
-            "should call?"
+            "What's the correct callback number?"
+            if correction
+            else "What's the best callback number?"
         )
     if field == "address":
         return (
-            f"What is the {prefix}full property address, including "
-            "the city, state, and ZIP code?"
+            "What's the correct service address?"
+            if correction
+            else "What's the full service address?"
         )
     return ""
 
@@ -262,27 +268,27 @@ def contact_confirmation_question(
 ) -> str:
     value = contact_value(snapshot, field)
     if field == "name":
-        return f"I have your name as {value}. Is that correct?"
+        return f"{value}, right?"
     if field == "email":
         if value.startswith("status:"):
-            return (
-                "I have email marked as not provided. "
-                "Is that correct?"
-            )
-        return (
-            f"I have your email as {_spoken_email(value)}. "
-            "Is that correct?"
-        )
+            return "No email, right?"
+        return f"{_spoken_email(value)}, right?"
     if field == "phone":
-        return (
-            f"I have your callback number as {_spoken_phone(value)}. "
-            "Is that correct?"
+        caller = clean_text(
+            snapshot.get("caller_number"),
+            maximum=40,
         )
+        if (
+            caller
+            and re.sub(r"\D", "", caller)
+            == re.sub(r"\D", "", value)
+        ):
+            return (
+                "Is this the best number to call you back on?"
+            )
+        return f"{_spoken_phone(value)}, right?"
     if field == "address":
-        return (
-            f"I have the property address as {value}. "
-            "Is that correct?"
-        )
+        return f"{value}, right?"
     return ""
 
 
@@ -311,71 +317,30 @@ def _single_detail_question(
     missing_set = set(missing)
 
     if "detailed description of what is happening" in missing_set:
-        return (
-            "description",
-            "What happened, and which area is affected?",
-        )
+        return ("description", "What happened, and where?")
 
     if "service review" in missing_set:
         return (
             "service_requested",
-            "What service or result are you looking for?",
+            "What do you need help with?",
         )
 
     if "property type and caller relationship" in missing_set:
         return (
             "property_context",
-            "Is the property residential or commercial?",
+            "Is this a home or a business?",
         )
-
-    questions = _service_questions(snapshot, service_questions)
 
     if (
         "when the issue began and whether it is active"
         in missing_set
     ):
-        timing_words = (
-            "when",
-            "begin",
-            "started",
-            "still",
-            "active",
-            "rising",
-            "recurring",
-            "worse",
-        )
-        for question in questions:
-            lowered = question.lower()
-            if any(word in lowered for word in timing_words):
-                service_key = clean_text(
-                    snapshot.get("service_key"),
-                    maximum=100,
-                )
-                if service_key == "water_damage_restoration":
-                    return (
-                        "timing_summary",
-                        "When did the water problem begin?",
-                    )
-                if service_key == "basement_waterproofing":
-                    return (
-                        "timing_summary",
-                        "When does the water or moisture usually appear?",
-                    )
-                return (
-                    "timing_summary",
-                    question
-                    if question.endswith("?")
-                    else question + "?",
-                )
-        return (
-            "timing_summary",
-            "When did the issue begin?",
-        )
+        return ("timing_summary", "When did this start?")
 
     if "safety and access concerns" in missing_set:
         return (
             "safety_summary",
-            "Is there any immediate safety or access concern?",
+            "Any electrical, sewage, or other safety concerns?",
         )
 
     return ("", "")

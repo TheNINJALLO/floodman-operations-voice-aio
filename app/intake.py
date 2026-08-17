@@ -352,67 +352,42 @@ def next_intake_question(
     *,
     service_questions: Any = (),
 ) -> str:
-    # Return one audible question that always advances intake.
-    missing = intake_missing_fields(snapshot)
-    missing_set = set(missing)
+    """Return one short question that advances the intake."""
+
+    missing_set = set(intake_missing_fields(snapshot))
 
     if "detailed description of what is happening" in missing_set:
-        return (
-            "Please tell me what happened, where the problem is, "
-            "and which rooms, areas, or materials are affected?"
-        )
+        return "What happened, and where?"
 
     if "service review" in missing_set:
-        return (
-            "What service or result are you hoping Floodman can "
-            "provide?"
-        )
+        return "What do you need help with?"
 
-    detail_fields = {
-        "property type and caller relationship",
-        "when the issue began and whether it is active",
-        "safety and access concerns",
-    }
-    if missing_set.intersection(detail_fields):
-        for value in service_questions or ():
-            question = clean_text(value, maximum=500)
-            if question:
-                return (
-                    question
-                    if question.endswith("?")
-                    else question + "?"
-                )
-        return (
-            "Before I collect your contact details, is this a "
-            "residential or commercial property, when did the "
-            "issue begin and is it still active or getting worse, "
-            "and are there any sewage, electrical, structural, or "
-            "safe-access concerns?"
-        )
+    if "property type and caller relationship" in missing_set:
+        return "Is this a home or a business?"
+
+    if (
+        "when the issue began and whether it is active"
+        in missing_set
+    ):
+        return "When did this start?"
+
+    if "safety and access concerns" in missing_set:
+        return "Any electrical, sewage, or other safety concerns?"
 
     if "full name" in missing_set:
-        return "What is your full name?"
-
-    if "callback number" in missing_set:
-        return (
-            "What is the best phone number for the Floodman team "
-            "to call you back on?"
-        )
-
-    if "full property address" in missing_set:
-        return (
-            "What is the full property address, including the city "
-            "and ZIP code?"
-        )
+        return "What name should I put this under?"
 
     if (
         "email address or confirmation that none is available"
         in missing_set
     ):
-        return (
-            "What email address should I include? You can also say "
-            "you do not have one or prefer not to provide it."
-        )
+        return "What's the best email for you? You can say skip."
+
+    if "callback number" in missing_set:
+        return "What's the best callback number?"
+
+    if "full property address" in missing_set:
+        return "What's the full service address?"
 
     return ""
 

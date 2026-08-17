@@ -26,7 +26,9 @@ def test_production_disables_unstable_talkdetect(
     assert barge["enabled"] is False
     assert barge["pipeline_talk_detect_enabled"] is False
     assert barge["force_unmute"] is True
-    assert barge["post_tts_end_protection_ms"] == 750
+    assert barge["post_tts_end_protection_ms"] == (
+        "${FLOODMAN_POST_TTS_END_PROTECTION_MS:-120}"
+    )
 
 
 def test_groq_fast_intake_bounds_rate_limit_waits(

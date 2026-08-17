@@ -95,7 +95,7 @@ def test_production_latency_defaults_are_reduced(project_root: Path) -> None:
     patch = module.production_patch()
     stt = patch["pipelines"]["floodman_production"]["options"]["stt"]
     llm = patch["pipelines"]["floodman_production"]["options"]["llm"]
-    assert stt["eot_timeout_ms"] == "${DEEPGRAM_EOT_TIMEOUT_MS:-700}"
+    assert stt["eot_timeout_ms"] == "${DEEPGRAM_EOT_TIMEOUT_MS:-1500}"
     assert llm["max_tokens"] == "${GROQ_LLM_MAX_TOKENS:-160}"
     assert llm["rate_limit_retries"] == (
         "${GROQ_RATE_LIMIT_RETRIES:-1}"
@@ -151,7 +151,7 @@ def test_submit_intake_queues_sms_instead_of_waiting_on_roomflow(
     assert "team_sms_alert" in queued_operations
     assert "create_lead" in queued_operations
     assert not awaited_sync_calls
-    assert "they'll call you within" in method_source
+    assert "will call you within" in method_source.lower()
 
 
 def test_invalid_legacy_workflow_is_removed(project_root: Path) -> None:

@@ -37,7 +37,7 @@ async def test_supported_issue_classifies_silently_and_asks_next_question(
     )
 
     assert result["ok"] is True
-    assert result["safe_message"] == "What is your full name?"
+    assert result["safe_message"] == "What name should I put this under?"
     assert result["safe_message"].count("?") == 1
     lowered = result["safe_message"].lower()
     assert "water leak repair" not in lowered
@@ -74,11 +74,11 @@ async def test_unsupported_notice_is_generic_and_intake_continues(
         call_id=call_id,
         caller_number="+12315550102",
     )
-    assert "does not currently offer that type of service" in (
+    assert "not a service floodman offers" in (
         first["safe_message"].lower()
     )
     assert first["safe_message"].endswith(
-        "What is your full name?"
+        "What name should I put this under?"
     )
     assert first["safe_message"].count("?") == 1
     assert "roof repair" not in first["safe_message"].lower()
@@ -91,7 +91,7 @@ async def test_unsupported_notice_is_generic_and_intake_continues(
         caller_number="+12315550102",
     )
     assert second["safe_message"] == (
-        "I have your name as Josh Aldrich. Is that correct?"
+        "Josh Aldrich, right?"
     )
     assert "does not currently offer" not in (
         second["safe_message"].lower()

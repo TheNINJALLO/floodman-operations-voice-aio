@@ -128,7 +128,7 @@ async def test_detailed_snapshot_requires_email_or_explicit_disposition(settings
     )
     assert submitted["ok"] is True
     assert submitted["service_status"] == "unsupported"
-    assert "does not currently offer roof repair" in submitted["safe_message"]
+    assert "does not currently offer that service" in submitted["safe_message"]
     assert "within 24 hours" in submitted["safe_message"]
 
     repeated = await service.execute(
