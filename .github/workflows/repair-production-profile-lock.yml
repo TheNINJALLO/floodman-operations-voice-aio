@@ -1,0 +1,228 @@
+name: Repair Floodman Production Profile Lock
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/repair-production-profile-lock.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: floodman-production-profile-lock
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    name: Keep explicit production on Deepgram, Groq, and ElevenLabs
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Apply production profile lock
+        shell: bash
+        run: |
+          printf '%s' 'ZnJvbSBfX2Z1dHVyZV9fIGltcG9ydCBhbm5vdGF0aW9ucwoKaW1wb3J0IGJhc2U2NApmcm9tIHBhdGhsaWIgaW1wb3J0IFBhdGgKCgpST09UID0gUGF0aCgiLiIpLnJlc29sdmUoKQoKCmRlZiB3cml0ZV9iNjQocGF0aDogc3RyLCBwYXlsb2FkOiBzdHIpIC0+IE5vbmU6CiAgICB0YXJnZXQgPSBST09UIC8gcGF0aAogICAgdGFyZ2V0LnBhcmVudC5ta2RpcihwYXJlbnRzPVRydWUsIGV4aXN0X29rPVRydWUpCiAgICB0YXJnZXQud3JpdGVfYnl0ZXMoYmFzZTY0LmI2NGRlY29kZShwYXlsb2FkKSkKCgp3cml0ZV9iNjQoCiAgICAic2NyaXB0cy9wYXRjaF9wcm9kdWN0aW9uX3Byb2ZpbGVfbG9jay5weSIsCiAgICAiWm5KdmJTQmZYMloxZEhWeVpWOWZJR2x0Y0c5eWRDQmhibTV2ZEdGMGFXOXVjd29LWm5KdmJTQndZWFJvYkdsaUlHbHRjRzl5ZENCUVlYUm9DZ29LVFVGU1MwVlNJRDBnSW1WNGNHeHBZMmwwSUhCeWIyUjFZM1JwYjI0Z2QybHNiQ0J1YjNRZ1ptRnNiQ0JpWVdOcklIUnZJR3h2WTJGc1gyaDVZbkpwWkNJS0NncGpiR0Z6Y3lCUVlYUmphRVZ5Y205eUtGSjFiblJwYldWRmNuSnZjaWs2Q2lBZ0lDQndZWE56Q2dvS1pHVm1JSEpsY0d4aFkyVmZiMjVqWlNnS0lDQWdJSFJsZUhRNklITjBjaXdLSUNBZ0lHOXNaRG9nYzNSeUxBb2dJQ0FnYm1WM09pQnpkSElzQ2lBZ0lDQnNZV0psYkRvZ2MzUnlMQW9wSUMwK0lITjBjam9LSUNBZ0lHTnZkVzUwSUQwZ2RHVjRkQzVqYjNWdWRDaHZiR1FwQ2lBZ0lDQnBaaUJqYjNWdWRDQWhQU0F4T2dvZ0lDQWdJQ0FnSUhKaGFYTmxJRkJoZEdOb1JYSnliM0lvQ2lBZ0lDQWdJQ0FnSUNBZ0lHWWllMnhoWW1Wc2ZUb2daWGh3WldOMFpXUWdaWGhoWTNSc2VTQnZibVVnYzI5MWNtTmxJRzFoZEdOb0xDQm1iM1Z1WkNCN1kyOTFiblI5SWdvZ0lDQWdJQ0FnSUNrS0lDQWdJSEpsZEhWeWJpQjBaWGgwTG5KbGNHeGhZMlVvYjJ4a0xDQnVaWGNzSURFcENnb0taR1ZtSUhCaGRHTm9YM05sYkdWamRHOXlLSEJoZEdnNklGQmhkR2dwSUMwK0lHSnZiMnc2Q2lBZ0lDQjBaWGgwSUQwZ2NHRjBhQzV5WldGa1gzUmxlSFFvWlc1amIyUnBibWM5SW5WMFppMDRJaWtLSUNBZ0lHbG1JRTFCVWt0RlVpQnBiaUIwWlhoME9nb2dJQ0FnSUNBZ0lISmxkSFZ5YmlCR1lXeHpaUW9LSUNBZ0lIUmxlSFFnUFNCeVpYQnNZV05sWDI5dVkyVW9DaUFnSUNBZ0lDQWdkR1Y0ZEN3S0lDQWdJQ0FnSUNBbmNtVnhkV1Z6ZEdWa1BTSWtlMFpNVDA5RVRVRk9YMEZKWDFCU1QwWkpURVU2TFdGMWRHOTlJbHh1Snl3S0lDQWdJQ0FnSUNBb0NpQWdJQ0FnSUNBZ0lDQWdJQ2R5WlhGMVpYTjBaV1JmYVc1d2RYUTlJaVI3Umt4UFQwUk5RVTVmUVVsZlVGSlBSa2xNUlRvdFlYVjBiMzBpWEc0bkNpQWdJQ0FnSUNBZ0lDQWdJQ2R5WlhGMVpYTjBaV1E5SWlSN2NtVnhkV1Z6ZEdWa1gybHVjSFYwZlNKY2JpY0tJQ0FnSUNBZ0lDQWdJQ0FnSjNKbGNYVmxjM1JmYlc5a1pUMGlZWFYwYnlKY2JpY0tJQ0FnSUNBZ0lDQXBMQW9nSUNBZ0lDQWdJQ0p5WlhGMVpYTjBaV1F0Y0hKdlptbHNaU0IwY21GamEybHVaeUlzQ2lBZ0lDQXBDZ29nSUNBZ2RHVjRkQ0E5SUhKbGNHeGhZMlZmYjI1alpTZ0tJQ0FnSUNBZ0lDQjBaWGgwTEFvZ0lDQWdJQ0FnSUNjbkoyWmhiR3hpWVdOclgyOXlYMlpoYVd3b0tTQjdDaUFnYkc5allXd2djbVZoYzI5dVBTSWtNU0lLSUNCcFppQjBjblYwYUhrZ0lpUjdSa3hQVDBSTlFVNWZVRkpQUkZWRFZFbFBUbDlUVkZKSlExUTZMV1poYkhObGZTSTdJSFJvWlc0S0lDQWdJR1ZqYUc4Z0lsQnliMlIxWTNScGIyNGdRVWtnYzNSeWFXTjBJRzF2WkdVZ1lteHZZMnRsWkNCemRHRnlkSFZ3T2lBa2UzSmxZWE52Ym4waUlENG1NZ29nSUNBZ2NtVjBkWEp1SURFZ01qNHZaR1YyTDI1MWJHd2dmSHdnWlhocGRDQXhDaUFnWm1rS0lDQmxZMmh2SUNKUWNtOWtkV04wYVc5dUlFRkpJSFZ1WVhaaGFXeGhZbXhsT3lCemQybDBZMmhwYm1jZ2RHOGdiRzlqWVd4ZmFIbGljbWxrT2lBa2UzSmxZWE52Ym4waUlENG1NZ29nSUhKbGNYVmxjM1JsWkQwaWJHOWpZV3hmYUhsaWNtbGtJZ3A5Q2ljbkp5d0tJQ0FnSUNBZ0lDQW5KeWRtWVd4c1ltRmphMTl2Y2w5bVlXbHNLQ2tnZXdvZ0lHeHZZMkZzSUhKbFlYTnZiajBpSkRFaUNpQWdhV1lnVzFzZ0lpUjdjbVZ4ZFdWemRGOXRiMlJsZlNJZ1BUMGdJbVY0Y0d4cFkybDBMWEJ5YjJSMVkzUnBiMjRpSUYxZElIeDhJRnhjQ2lBZ0lDQWdkSEoxZEdoNUlDSWtlMFpNVDA5RVRVRk9YMUJTVDBSVlExUkpUMDVmVTFSU1NVTlVPaTFtWVd4elpYMGlPeUIwYUdWdUNpQWdJQ0JsWTJodklDSlFjbTlrZFdOMGFXOXVJRUZKSUhOMFlYSjBkWEFnWW14dlkydGxaRHNnWlhod2JHbGphWFFnY0hKdlpIVmpkR2x2YmlCM2FXeHNJRzV2ZENCbVlXeHNJR0poWTJzZ2RHOGdiRzlqWVd4ZmFIbGljbWxrT2lBa2UzSmxZWE52Ym4waUlENG1NZ29nSUNBZ2NtVjBkWEp1SURFZ01qNHZaR1YyTDI1MWJHd2dmSHdnWlhocGRDQXhDaUFnWm1rS0lDQmxZMmh2SUNKUWNtOWtkV04wYVc5dUlFRkpJSFZ1WVhaaGFXeGhZbXhsSUdsdUlHRjFkRzhnYlc5a1pUc2djM2RwZEdOb2FXNW5JSFJ2SUd4dlkyRnNYMmg1WW5KcFpEb2dKSHR5WldGemIyNTlJaUErSmpJS0lDQnlaWEYxWlhOMFpXUTlJbXh2WTJGc1gyaDVZbkpwWkNJS2ZRb25KeWNzQ2lBZ0lDQWdJQ0FnSW5CeWIyUjFZM1JwYjI0Z1ptRnNiR0poWTJzZ2NHOXNhV041SWl3S0lDQWdJQ2tLQ2lBZ0lDQjBaWGgwSUQwZ2NtVndiR0ZqWlY5dmJtTmxLQW9nSUNBZ0lDQWdJSFJsZUhRc0NpQWdJQ0FnSUNBZ0p5Y25JQ0JoZFhSdktRb2dJQ0FnY21WeGRXbHlaVjlqYkc5MVpGOTJZV3gxWlhNS0p5Y25MQW9nSUNBZ0lDQWdJQ2NuSnlBZ1lYVjBieWtLSUNBZ0lISmxjWFZsYzNSZmJXOWtaVDBpWVhWMGJ5SUtJQ0FnSUhKbGNYVnBjbVZmWTJ4dmRXUmZkbUZzZFdWekNpY25KeXdLSUNBZ0lDQWdJQ0FpWVhWMGJ5QnlaWEYxWlhOMElHMXZaR1VpTEFvZ0lDQWdLUW9LSUNBZ0lIUmxlSFFnUFNCeVpYQnNZV05sWDI5dVkyVW9DaUFnSUNBZ0lDQWdkR1Y0ZEN3S0lDQWdJQ0FnSUNBbkp5Y2dJSEJ5YjJSMVkzUnBiMjU4Y0hKdlpIVmpkR2x2Ymw5b2VXSnlhV1I4Wm14dmIyUnRZVzVmY0hKdlpIVmpkR2x2YmlrS0lDQWdJSEpsY1hWbGMzUmxaRDBpY0hKdlpIVmpkR2x2Ymw5b2VXSnlhV1FpQ2ljbkp5d0tJQ0FnSUNBZ0lDQW5KeWNnSUhCeWIyUjFZM1JwYjI1OGNISnZaSFZqZEdsdmJsOW9lV0p5YVdSOFpteHZiMlJ0WVc1ZmNISnZaSFZqZEdsdmJpa0tJQ0FnSUhKbGNYVmxjM1JmYlc5a1pUMGlaWGh3YkdsamFYUXRjSEp2WkhWamRHbHZiaUlLSUNBZ0lISmxjWFZsYzNSbFpEMGljSEp2WkhWamRHbHZibDlvZVdKeWFXUWlDaWNuSnl3S0lDQWdJQ0FnSUNBaVpYaHdiR2xqYVhRZ2NISnZaSFZqZEdsdmJpQnlaWEYxWlhOMElHMXZaR1VpTEFvZ0lDQWdLUW9LSUNBZ0lIUmxlSFFnUFNCeVpYQnNZV05sWDI5dVkyVW9DaUFnSUNBZ0lDQWdkR1Y0ZEN3S0lDQWdJQ0FnSUNBbkp5Y2dJR3h2WTJGc2ZHeHZZMkZzWDJoNVluSnBaQ2tLSUNBZ0lISmxjWFZsYzNSbFpEMGliRzlqWVd4ZmFIbGljbWxrSWdvbkp5Y3NDaUFnSUNBZ0lDQWdKeWNuSUNCc2IyTmhiSHhzYjJOaGJGOW9lV0p5YVdRcENpQWdJQ0J5WlhGMVpYTjBYMjF2WkdVOUltVjRjR3hwWTJsMExXeHZZMkZzSWdvZ0lDQWdjbVZ4ZFdWemRHVmtQU0pzYjJOaGJGOW9lV0p5YVdRaUNpY25KeXdLSUNBZ0lDQWdJQ0FpWlhod2JHbGphWFFnYkc5allXd2djbVZ4ZFdWemRDQnRiMlJsSWl3S0lDQWdJQ2tLQ2lBZ0lDQjBaWGgwSUQwZ2NtVndiR0ZqWlY5dmJtTmxLQW9nSUNBZ0lDQWdJSFJsZUhRc0NpQWdJQ0FnSUNBZ0p5Y25JQ0FnSUdsbUlDRWdMMjl3ZEM5MlpXNTJMMkpwYmk5d2VYUm9iMjRnWEZ3S0lDQWdJQ0FnTDI5d2RDOW1iRzl2WkcxaGJpOXpZM0pwY0hSekwzWmhiR2xrWVhSbFgzQnliMlIxWTNScGIyNWZZV2t1Y0hrZ1hGd0tJQ0FnSUNBZ0lpUjdjSEp2WW1WZllYSm5jMXRBWFgwaU95QjBhR1Z1Q2ljbkp5d0tJQ0FnSUNBZ0lDQW5KeWNnSUNBZ2RtRnNhV1JoZEc5eVgzQjVkR2h2YmowaUpIdEdURTlQUkUxQlRsOVdRVXhKUkVGVVQxSmZVRmxVU0U5T09pMHZiM0IwTDNabGJuWXZZbWx1TDNCNWRHaHZibjBpQ2lBZ0lDQjJZV3hwWkdGMGIzSmZjMk55YVhCMFBTSWtlMFpNVDA5RVRVRk9YMUJTVDBSVlExUkpUMDVmVmtGTVNVUkJWRTlTT2kwdmIzQjBMMlpzYjI5a2JXRnVMM05qY21sd2RITXZkbUZzYVdSaGRHVmZjSEp2WkhWamRHbHZibDloYVM1d2VYMGlDaUFnSUNCcFppQWhJQ0lrZTNaaGJHbGtZWFJ2Y2w5d2VYUm9iMjU5SWlBaUpIdDJZV3hwWkdGMGIzSmZjMk55YVhCMGZTSWdYRndLSUNBZ0lDQWdJaVI3Y0hKdlltVmZZWEpuYzF0QVhYMGlPeUIwYUdWdUNpY25KeXdLSUNBZ0lDQWdJQ0FpZEdWemRHRmliR1VnY0hKdlpIVmpkR2x2YmlCMllXeHBaR0YwYjNJZ1kyOXRiV0Z1WkNJc0NpQWdJQ0FwQ2dvZ0lDQWdkR1Y0ZENBOUlISmxjR3hoWTJWZmIyNWpaU2dLSUNBZ0lDQWdJQ0IwWlhoMExBb2dJQ0FnSUNBZ0lDZGxlSEJ2Y25RZ1JreFBUMFJOUVU1ZlFVbGZVRkpQUmtsTVJUMGlKSHR5WlhGMVpYTjBaV1I5SWx4dUp5d0tJQ0FnSUNBZ0lDQW9DaUFnSUNBZ0lDQWdJQ0FnSUNkbGVIQnZjblFnUmt4UFQwUk5RVTVmUVVsZlVGSlBSa2xNUlY5U1JWRlZSVk5VUlVROUlpUjdjbVZ4ZFdWemRHVmtYMmx1Y0hWMGZTSmNiaWNLSUNBZ0lDQWdJQ0FnSUNBZ0oyVjRjRzl5ZENCR1RFOVBSRTFCVGw5QlNWOVFVazlHU1V4RlBTSWtlM0psY1hWbGMzUmxaSDBpWEc0bkNpQWdJQ0FnSUNBZ0tTd0tJQ0FnSUNBZ0lDQWljbVZ4ZFdWemRHVmtMWEJ5YjJacGJHVWdaWGh3YjNKMElpd0tJQ0FnSUNrS0NpQWdJQ0IwWlhoMElEMGdjbVZ3YkdGalpWOXZibU5sS0FvZ0lDQWdJQ0FnSUhSbGVIUXNDaUFnSUNBZ0lDQWdKeWNuYVdZZ1cxc2dJaVI3Y21WeGRXVnpkR1ZrZlNJZ1BUMGdJbkJ5YjJSMVkzUnBiMjVmYUhsaWNtbGtJaUJkWFRzZ2RHaGxiZ29nSUdWNGNHOXlkQ0JCVmtGZlVFbFFSVXhKVGtVOUltWnNiMjlrYldGdVgzQnliMlIxWTNScGIyNGlDaWNuSnl3S0lDQWdJQ0FnSUNBbkp5ZGxZMmh2SUNKR2JHOXZaRzFoYmlCQlNTQndjbTltYVd4bElISmxjWFZsYzNSbFpEb2dKSHR5WlhGMVpYTjBaV1JmYVc1d2RYUjlJZ29LYVdZZ1cxc2dJaVI3Y21WeGRXVnpkR1ZrZlNJZ1BUMGdJbkJ5YjJSMVkzUnBiMjVmYUhsaWNtbGtJaUJkWFRzZ2RHaGxiZ29nSUdWNGNHOXlkQ0JCVmtGZlVFbFFSVXhKVGtVOUltWnNiMjlrYldGdVgzQnliMlIxWTNScGIyNGlDaWNuSnl3S0lDQWdJQ0FnSUNBaWNISnZabWxzWlMxeVpYRjFaWE4wSUhOMFlYSjBkWEFnWkdsaFoyNXZjM1JwWXlJc0NpQWdJQ0FwQ2dvZ0lDQWdhV1lnVFVGU1MwVlNJRzV2ZENCcGJpQjBaWGgwT2dvZ0lDQWdJQ0FnSUhKaGFYTmxJRkJoZEdOb1JYSnliM0lvSW5CeWIyUjFZM1JwYjI0Z2JHOWpheUJ0WVhKclpYSWdkMkZ6SUc1dmRDQnBibk4wWVd4c1pXUWlLUW9LSUNBZ0lIQmhkR2d1ZDNKcGRHVmZkR1Y0ZENoMFpYaDBMQ0JsYm1OdlpHbHVaejBpZFhSbUxUZ2lMQ0J1Wlhkc2FXNWxQU0pjYmlJcENpQWdJQ0J5WlhSMWNtNGdWSEoxWlFvPSIsCikKd3JpdGVfYjY0KAogICAgInRlc3RzL3Rlc3RfcHJvZHVjdGlvbl9wcm9maWxlX2xvY2sucHkiLAogICAgIlpuSnZiU0JmWDJaMWRIVnlaVjlmSUdsdGNHOXlkQ0JoYm01dmRHRjBhVzl1Y3dvS2FXMXdiM0owSUc5ekNtbHRjRzl5ZENCemRXSndjbTlqWlhOekNtbHRjRzl5ZENCemVYTUtabkp2YlNCd1lYUm9iR2xpSUdsdGNHOXlkQ0JRWVhSb0Nnb0tRMHhQVlVSZlMwVlpVeUE5SUhzS0lDQWdJQ0pFUlVWUVIxSkJUVjlCVUVsZlMwVlpJam9nSW1SbkxYUmxjM1FpTEFvZ0lDQWdJa2RTVDFGZlFWQkpYMHRGV1NJNklDSm5jMnN0ZEdWemRDSXNDaUFnSUNBaVJVeEZWa1ZPVEVGQ1UxOUJVRWxmUzBWWklqb2dJbVZzTFhSbGMzUWlMQW9nSUNBZ0lrVk1SVlpGVGt4QlFsTmZWazlKUTBWZlNVUWlPaUFpZG05cFkyVXRkR1Z6ZENJc0NuMEtDZ3BrWldZZ1gzSjFibDl6Wld4bFkzUnZjaWdLSUNBZ0lIQnliMnBsWTNSZmNtOXZkRG9nVUdGMGFDd0tJQ0FnSUhSdGNGOXdZWFJvT2lCUVlYUm9MQW9nSUNBZ0tpd0tJQ0FnSUhKbGNYVmxjM1JsWkRvZ2MzUnlMQW9nSUNBZ2NISnZZbVZmWlhocGREb2dhVzUwSUQwZ01Dd0tJQ0FnSUhOMGNtbGpkRG9nYzNSeUlEMGdJbVpoYkhObElpd0tJQ0FnSUdsdVkyeDFaR1ZmYTJWNWN6b2dZbTl2YkNBOUlGUnlkV1VzQ2lrZ0xUNGdjM1ZpY0hKdlkyVnpjeTVEYjIxd2JHVjBaV1JRY205alpYTnpXM04wY2wwNkNpQWdJQ0IyWVd4cFpHRjBiM0lnUFNCMGJYQmZjR0YwYUNBdklDSm1ZV3RsWDNaaGJHbGtZWFJ2Y2k1d2VTSUtJQ0FnSUhaaGJHbGtZWFJ2Y2k1M2NtbDBaVjkwWlhoMEtBb2dJQ0FnSUNBZ0lDSnBiWEJ2Y25RZ2IzTXNJSE41YzF4dUlnb2dJQ0FnSUNBZ0lDSnplWE11WlhocGRDaHBiblFvYjNNdVpXNTJhWEp2Ymk1blpYUW9KMFpCUzBWZlVGSlBRa1ZmUlZoSlZDY3NJQ2N3SnlrcEtWeHVJaXdLSUNBZ0lDQWdJQ0JsYm1OdlpHbHVaejBpZFhSbUxUZ2lMQW9nSUNBZ0tRb0tJQ0FnSUdWdWRpQTlJRzl6TG1WdWRtbHliMjR1WTI5d2VTZ3BDaUFnSUNCbGJuWXVkWEJrWVhSbEtBb2dJQ0FnSUNBZ0lIc0tJQ0FnSUNBZ0lDQWdJQ0FnSWtSQlZFRmZSRWxTSWpvZ2MzUnlLSFJ0Y0Y5d1lYUm9JQzhnSW1SaGRHRWlLU3dLSUNBZ0lDQWdJQ0FnSUNBZ0lrWk1UMDlFVFVGT1gwRkpYMUJTVDBaSlRFVWlPaUJ5WlhGMVpYTjBaV1FzQ2lBZ0lDQWdJQ0FnSUNBZ0lDSkdURTlQUkUxQlRsOVFVazlFVlVOVVNVOU9YMU5VVWtsRFZDSTZJSE4wY21samRDd0tJQ0FnSUNBZ0lDQWdJQ0FnSWtaTVQwOUVUVUZPWDBOTVQxVkVYMEZWUkVsUFgxQlNUMEpGSWpvZ0ltWmhiSE5sSWl3S0lDQWdJQ0FnSUNBZ0lDQWdJa1pNVDA5RVRVRk9YMVpCVEVsRVFWUlBVbDlRV1ZSSVQwNGlPaUJ6ZVhNdVpYaGxZM1YwWVdKc1pTd0tJQ0FnSUNBZ0lDQWdJQ0FnSWtaTVQwOUVUVUZPWDFCU1QwUlZRMVJKVDA1ZlZrRk1TVVJCVkU5U0lqb2djM1J5S0haaGJHbGtZWFJ2Y2lrc0NpQWdJQ0FnSUNBZ0lDQWdJQ0pHUVV0RlgxQlNUMEpGWDBWWVNWUWlPaUJ6ZEhJb2NISnZZbVZmWlhocGRDa3NDaUFnSUNBZ0lDQWdmUW9nSUNBZ0tRb2dJQ0FnWm05eUlHNWhiV1VnYVc0Z1EweFBWVVJmUzBWWlV6b0tJQ0FnSUNBZ0lDQnBaaUJwYm1Oc2RXUmxYMnRsZVhNNkNpQWdJQ0FnSUNBZ0lDQWdJR1Z1ZGx0dVlXMWxYU0E5SUVOTVQxVkVYMHRGV1ZOYmJtRnRaVjBLSUNBZ0lDQWdJQ0JsYkhObE9nb2dJQ0FnSUNBZ0lDQWdJQ0JsYm5ZdWNHOXdLRzVoYldVc0lFNXZibVVwQ2dvZ0lDQWdjMk55YVhCMElEMGdjSEp2YW1WamRGOXliMjkwSUM4Z0luTmpjbWx3ZEhNdmMyVnNaV04wWDJGcFgzQnliMlpwYkdVdWMyZ2lDaUFnSUNCamIyMXRZVzVrSUQwZ2NpY25Kd3B6YjNWeVkyVWdJaVF4SWdwd2NtbHVkR1lnSjFCU1QwWkpURVU5SlhOY2JsQkpVRVZNU1U1RlBTVnpYRzVRVWs5V1NVUkZVajBsYzF4dVVrVlJWVVZUVkVWRVBTVnpYRzRuSUZ3S0lDQWlKRVpNVDA5RVRVRk9YMEZKWDFCU1QwWkpURVVpSUZ3S0lDQWlKRUZXUVY5UVNWQkZURWxPUlNJZ1hBb2dJQ0lrUVZaQlgxQlNUMVpKUkVWU0lpQmNDaUFnSWlSR1RFOVBSRTFCVGw5QlNWOVFVazlHU1V4RlgxSkZVVlZGVTFSRlJDSUtKeWNuQ2lBZ0lDQnlaWFIxY200Z2MzVmljSEp2WTJWemN5NXlkVzRvQ2lBZ0lDQWdJQ0FnV3lKaVlYTm9JaXdnSWkxaklpd2dZMjl0YldGdVpDd2dJbUpoYzJnaUxDQnpkSElvYzJOeWFYQjBLVjBzQ2lBZ0lDQWdJQ0FnWTNka1BYQnliMnBsWTNSZmNtOXZkQ3dLSUNBZ0lDQWdJQ0JsYm5ZOVpXNTJMQW9nSUNBZ0lDQWdJSFJsZUhROVZISjFaU3dLSUNBZ0lDQWdJQ0JqWVhCMGRYSmxYMjkxZEhCMWREMVVjblZsTEFvZ0lDQWdJQ0FnSUdOb1pXTnJQVVpoYkhObExBb2dJQ0FnS1FvS0NtUmxaaUIwWlhOMFgyVjRjR3hwWTJsMFgzQnliMlIxWTNScGIyNWZjM1ZqWTJWemMxOXpkR0Y1YzE5d2NtOWtkV04wYVc5dUtBb2dJQ0FnY0hKdmFtVmpkRjl5YjI5ME9pQlFZWFJvTEFvZ0lDQWdkRzF3WDNCaGRHZzZJRkJoZEdnc0Npa2dMVDRnVG05dVpUb0tJQ0FnSUhKbGMzVnNkQ0E5SUY5eWRXNWZjMlZzWldOMGIzSW9DaUFnSUNBZ0lDQWdjSEp2YW1WamRGOXliMjkwTEFvZ0lDQWdJQ0FnSUhSdGNGOXdZWFJvTEFvZ0lDQWdJQ0FnSUhKbGNYVmxjM1JsWkQwaWNISnZaSFZqZEdsdmJsOW9lV0p5YVdRaUxBb2dJQ0FnSUNBZ0lIQnliMkpsWDJWNGFYUTlNQ3dLSUNBZ0lDa0tJQ0FnSUdGemMyVnlkQ0J5WlhOMWJIUXVjbVYwZFhKdVkyOWtaU0E5UFNBd0xDQnlaWE4xYkhRdWMzUmtaWEp5Q2lBZ0lDQmhjM05sY25RZ0lsQlNUMFpKVEVVOWNISnZaSFZqZEdsdmJsOW9lV0p5YVdRaUlHbHVJSEpsYzNWc2RDNXpkR1J2ZFhRS0lDQWdJR0Z6YzJWeWRDQWlVRWxRUlV4SlRrVTlabXh2YjJSdFlXNWZjSEp2WkhWamRHbHZiaUlnYVc0Z2NtVnpkV3gwTG5OMFpHOTFkQW9nSUNBZ1lYTnpaWEowSUNKUVVrOVdTVVJGVWoxbWJHOXZaRzFoYmw5d2NtOWtkV04wYVc5dUlpQnBiaUJ5WlhOMWJIUXVjM1JrYjNWMENpQWdJQ0JoYzNObGNuUWdJbEpGVVZWRlUxUkZSRDF3Y205a2RXTjBhVzl1WDJoNVluSnBaQ0lnYVc0Z2NtVnpkV3gwTG5OMFpHOTFkQW9LQ21SbFppQjBaWE4wWDJWNGNHeHBZMmwwWDNCeWIyUjFZM1JwYjI1ZmNISnZZbVZmWm1GcGJIVnlaVjl1WlhabGNsOWlaV052YldWelgyeHZZMkZzS0FvZ0lDQWdjSEp2YW1WamRGOXliMjkwT2lCUVlYUm9MQW9nSUNBZ2RHMXdYM0JoZEdnNklGQmhkR2dzQ2lrZ0xUNGdUbTl1WlRvS0lDQWdJSEpsYzNWc2RDQTlJRjl5ZFc1ZmMyVnNaV04wYjNJb0NpQWdJQ0FnSUNBZ2NISnZhbVZqZEY5eWIyOTBMQW9nSUNBZ0lDQWdJSFJ0Y0Y5d1lYUm9MQW9nSUNBZ0lDQWdJSEpsY1hWbGMzUmxaRDBpY0hKdlpIVmpkR2x2Ymw5b2VXSnlhV1FpTEFvZ0lDQWdJQ0FnSUhCeWIySmxYMlY0YVhROU1Td0tJQ0FnSUNBZ0lDQnpkSEpwWTNROUltWmhiSE5sSWl3S0lDQWdJQ2tLSUNBZ0lHRnpjMlZ5ZENCeVpYTjFiSFF1Y21WMGRYSnVZMjlrWlNBaFBTQXdDaUFnSUNCaGMzTmxjblFnSW5kcGJHd2dibTkwSUdaaGJHd2dZbUZqYXlCMGJ5QnNiMk5oYkY5b2VXSnlhV1FpSUdsdUlISmxjM1ZzZEM1emRHUmxjbklLSUNBZ0lHRnpjMlZ5ZENBaVVGSlBSa2xNUlQxc2IyTmhiRjlvZVdKeWFXUWlJRzV2ZENCcGJpQnlaWE4xYkhRdWMzUmtiM1YwQ2dvS1pHVm1JSFJsYzNSZlpYaHdiR2xqYVhSZmNISnZaSFZqZEdsdmJsOXRhWE56YVc1blgydGxlWE5mYm1WMlpYSmZZbVZqYjIxbGMxOXNiMk5oYkNnS0lDQWdJSEJ5YjJwbFkzUmZjbTl2ZERvZ1VHRjBhQ3dLSUNBZ0lIUnRjRjl3WVhSb09pQlFZWFJvTEFvcElDMCtJRTV2Ym1VNkNpQWdJQ0J5WlhOMWJIUWdQU0JmY25WdVgzTmxiR1ZqZEc5eUtBb2dJQ0FnSUNBZ0lIQnliMnBsWTNSZmNtOXZkQ3dLSUNBZ0lDQWdJQ0IwYlhCZmNHRjBhQ3dLSUNBZ0lDQWdJQ0J5WlhGMVpYTjBaV1E5SW5CeWIyUjFZM1JwYjI1ZmFIbGljbWxrSWl3S0lDQWdJQ0FnSUNCcGJtTnNkV1JsWDJ0bGVYTTlSbUZzYzJVc0NpQWdJQ0FnSUNBZ2MzUnlhV04wUFNKbVlXeHpaU0lzQ2lBZ0lDQXBDaUFnSUNCaGMzTmxjblFnY21WemRXeDBMbkpsZEhWeWJtTnZaR1VnSVQwZ01Bb2dJQ0FnWVhOelpYSjBJQ0p0YVhOemFXNW5JRVJGUlZCSFVrRk5YMEZRU1Y5TFJWa2lJR2x1SUhKbGMzVnNkQzV6ZEdSbGNuSUtJQ0FnSUdGemMyVnlkQ0FpVUZKUFJrbE1SVDFzYjJOaGJGOW9lV0p5YVdRaUlHNXZkQ0JwYmlCeVpYTjFiSFF1YzNSa2IzVjBDZ29LWkdWbUlIUmxjM1JmWVhWMGIxOXRiMlJsWDJOaGJsOXpkR2xzYkY5MWMyVmZjbVZ3WVdseVpXUmZiRzlqWVd4ZlptRnNiR0poWTJzb0NpQWdJQ0J3Y205cVpXTjBYM0p2YjNRNklGQmhkR2dzQ2lBZ0lDQjBiWEJmY0dGMGFEb2dVR0YwYUN3S0tTQXRQaUJPYjI1bE9nb2dJQ0FnY21WemRXeDBJRDBnWDNKMWJsOXpaV3hsWTNSdmNpZ0tJQ0FnSUNBZ0lDQndjbTlxWldOMFgzSnZiM1FzQ2lBZ0lDQWdJQ0FnZEcxd1gzQmhkR2dzQ2lBZ0lDQWdJQ0FnY21WeGRXVnpkR1ZrUFNKaGRYUnZJaXdLSUNBZ0lDQWdJQ0J3Y205aVpWOWxlR2wwUFRFc0NpQWdJQ0FnSUNBZ2MzUnlhV04wUFNKbVlXeHpaU0lzQ2lBZ0lDQXBDaUFnSUNCaGMzTmxjblFnY21WemRXeDBMbkpsZEhWeWJtTnZaR1VnUFQwZ01Dd2djbVZ6ZFd4MExuTjBaR1Z5Y2dvZ0lDQWdZWE56WlhKMElDSlFVazlHU1V4RlBXeHZZMkZzWDJoNVluSnBaQ0lnYVc0Z2NtVnpkV3gwTG5OMFpHOTFkQW9nSUNBZ1lYTnpaWEowSUNKUVNWQkZURWxPUlQxc2IyTmhiRjlvZVdKeWFXUWlJR2x1SUhKbGMzVnNkQzV6ZEdSdmRYUUtJQ0FnSUdGemMyVnlkQ0FpVWtWUlZVVlRWRVZFUFdGMWRHOGlJR2x1SUhKbGMzVnNkQzV6ZEdSdmRYUUtJQ0FnSUdGemMyVnlkQ0FpWVhWMGJ5QnRiMlJsSWlCcGJpQnlaWE4xYkhRdWMzUmtaWEp5Q2dvS1pHVm1JSFJsYzNSZlpYaHdiR2xqYVhSZmJHOWpZV3hmYzNScGJHeGZjMlZzWldOMGMxOXNiMk5oYkNnS0lDQWdJSEJ5YjJwbFkzUmZjbTl2ZERvZ1VHRjBhQ3dLSUNBZ0lIUnRjRjl3WVhSb09pQlFZWFJvTEFvcElDMCtJRTV2Ym1VNkNpQWdJQ0J5WlhOMWJIUWdQU0JmY25WdVgzTmxiR1ZqZEc5eUtBb2dJQ0FnSUNBZ0lIQnliMnBsWTNSZmNtOXZkQ3dLSUNBZ0lDQWdJQ0IwYlhCZmNHRjBhQ3dLSUNBZ0lDQWdJQ0J5WlhGMVpYTjBaV1E5SW14dlkyRnNYMmg1WW5KcFpDSXNDaUFnSUNBZ0lDQWdhVzVqYkhWa1pWOXJaWGx6UFVaaGJITmxMQW9nSUNBZ0tRb2dJQ0FnWVhOelpYSjBJSEpsYzNWc2RDNXlaWFIxY201amIyUmxJRDA5SURBc0lISmxjM1ZzZEM1emRHUmxjbklLSUNBZ0lHRnpjMlZ5ZENBaVVGSlBSa2xNUlQxc2IyTmhiRjlvZVdKeWFXUWlJR2x1SUhKbGMzVnNkQzV6ZEdSdmRYUUtJQ0FnSUdGemMyVnlkQ0FpVWtWUlZVVlRWRVZFUFd4dlkyRnNYMmg1WW5KcFpDSWdhVzRnY21WemRXeDBMbk4wWkc5MWRBb0tDbVJsWmlCMFpYTjBYMlZ1ZEhKNWNHOXBiblJmYzJWc1pXTjBjMTl3Y205bWFXeGxYMkpsWm05eVpWOXlaVzVrWlhKcGJtZGZZWE4wWlhKcGMyc29DaUFnSUNCd2NtOXFaV04wWDNKdmIzUTZJRkJoZEdnc0Npa2dMVDRnVG05dVpUb0tJQ0FnSUhOdmRYSmpaU0E5SUNnS0lDQWdJQ0FnSUNCd2NtOXFaV04wWDNKdmIzUWdMeUFpYzJOeWFYQjBjeTlsYm5SeWVYQnZhVzUwTG5Ob0lnb2dJQ0FnS1M1eVpXRmtYM1JsZUhRb1pXNWpiMlJwYm1jOUluVjBaaTA0SWlrS0lDQWdJSE5sYkdWamRHOXlJRDBnYzI5MWNtTmxMbWx1WkdWNEtBb2dJQ0FnSUNBZ0lDSnpiM1Z5WTJVZ0wyOXdkQzltYkc5dlpHMWhiaTl6WTNKcGNIUnpMM05sYkdWamRGOWhhVjl3Y205bWFXeGxMbk5vSWdvZ0lDQWdLUW9nSUNBZ2NtVnVaR1Z5WlhJZ1BTQnpiM1Z5WTJVdWFXNWtaWGdvQ2lBZ0lDQWdJQ0FnSWk5dmNIUXZkbVZ1ZGk5aWFXNHZjSGwwYUc5dUlDOXZjSFF2Wm14dmIyUnRZVzR2YzJOeWFYQjBjeTl5Wlc1a1pYSmZZWE4wWlhKcGMyc3VjSGtpQ2lBZ0lDQXBDaUFnSUNCaGMzTmxjblFnYzJWc1pXTjBiM0lnUENCeVpXNWtaWEpsY2dvPSIsCikKCm5hbWVzcGFjZTogZGljdFtzdHIsIG9iamVjdF0gPSB7Il9fbmFtZV9fIjogImluc3RhbGxlciJ9CnBhdGNoZXJfcGF0aCA9IFJPT1QgLyAic2NyaXB0cy9wYXRjaF9wcm9kdWN0aW9uX3Byb2ZpbGVfbG9jay5weSIKZXhlYygKICAgIGNvbXBpbGUoCiAgICAgICAgcGF0Y2hlcl9wYXRoLnJlYWRfdGV4dChlbmNvZGluZz0idXRmLTgiKSwKICAgICAgICBzdHIocGF0Y2hlcl9wYXRoKSwKICAgICAgICAiZXhlYyIsCiAgICApLAogICAgbmFtZXNwYWNlLAopCnNlbGVjdG9yX3BhdGggPSBST09UIC8gInNjcmlwdHMvc2VsZWN0X2FpX3Byb2ZpbGUuc2giCmNoYW5nZWQgPSBuYW1lc3BhY2VbInBhdGNoX3NlbGVjdG9yIl0oc2VsZWN0b3JfcGF0aCkKcHJpbnQoCiAgICBmInsncGF0Y2hlZCcgaWYgY2hhbmdlZCBlbHNlICdhbHJlYWR5IHBhdGNoZWQnfSAiCiAgICBmIntzZWxlY3Rvcl9wYXRofSIKKQo=' | base64 -d > /tmp/install_production_profile_lock.py
+          python /tmp/install_production_profile_lock.py
+          rm -f /tmp/install_production_profile_lock.py
+
+      - name: Verify generated source
+        shell: bash
+        run: |
+          python -m py_compile \
+            scripts/patch_production_profile_lock.py \
+            tests/test_production_profile_lock.py
+          bash -n scripts/select_ai_profile.sh
+          grep -q \
+            "explicit production will not fall back to local_hybrid" \
+            scripts/select_ai_profile.sh
+          grep -q \
+            'FLOODMAN_AI_PROFILE_REQUESTED' \
+            scripts/select_ai_profile.sh
+          git diff --check
+
+      - name: Install project test dependencies
+        run: pip install -e '.[dev]'
+
+      - name: Run focused profile-selection tests
+        run: |
+          python -m pytest \
+            tests/test_production_profile_lock.py \
+            tests/test_ai_profile_fallback_recovery.py \
+            tests/test_profile_pipeline_pruning.py \
+            tests/test_production_hybrid_ai.py \
+            tests/test_runtime_engine_startup.py \
+            -q
+
+      - name: Run complete repository tests
+        run: python -m pytest tests/ -q
+
+      - name: Compile and validate repository
+        shell: bash
+        run: |
+          python -m compileall app scripts tests
+          bash -n scripts/*.sh
+          python scripts/validate_configs.py
+          git diff --check
+
+      - name: Commit tested production lock
+        id: commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add \
+            scripts/select_ai_profile.sh \
+            scripts/patch_production_profile_lock.py \
+            tests/test_production_profile_lock.py
+
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m \
+              "fix: keep explicit production from falling back to local Ava"
+            git push origin HEAD:main
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for main to expose the exact source SHA
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          for attempt in $(seq 1 40); do
+            REMOTE_SHA="$(
+              git ls-remote origin refs/heads/main |
+              awk '{print $1}'
+            )"
+            if [[ "${REMOTE_SHA}" == "${EXPECTED_SHA}" ]]; then
+              echo "GitHub main is at ${EXPECTED_SHA}"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "GitHub main did not expose ${EXPECTED_SHA} in time."
+          exit 1
+
+      - name: Resolve or dispatch exact-SHA container build
+        id: dispatch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          SUCCESS_RUN_ID="$(
+            gh run list \
+              --workflow ci-container.yml \
+              --branch main \
+              --event workflow_dispatch \
+              --limit 50 \
+              --json databaseId,headSha,status,conclusion |
+            jq -r --arg sha "${EXPECTED_SHA}" '
+              [
+                .[]
+                | select(
+                    .headSha == $sha
+                    and .status == "completed"
+                    and .conclusion == "success"
+                  )
+              ]
+              | sort_by(.databaseId)
+              | last
+              | .databaseId // empty
+            '
+          )"
+
+          if [[ -n "${SUCCESS_RUN_ID}" ]]; then
+            echo "run_id=${SUCCESS_RUN_ID}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          DISPATCHED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh workflow run ci-container.yml --ref main
+
+          for attempt in $(seq 1 40); do
+            RUN_ID="$(
+              gh run list \
+                --workflow ci-container.yml \
+                --branch main \
+                --event workflow_dispatch \
+                --limit 50 \
+                --json databaseId,headSha,createdAt |
+              jq -r \
+                --arg sha "${EXPECTED_SHA}" \
+                --arg dispatched "${DISPATCHED_AT}" '
+                  [
+                    .[]
+                    | select(
+                        .headSha == $sha
+                        and .createdAt >= $dispatched
+                      )
+                  ]
+                  | sort_by(.databaseId)
+                  | last
+                  | .databaseId // empty
+                '
+            )"
+            if [[ -n "${RUN_ID}" ]]; then
+              echo "run_id=${RUN_ID}" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep 3
+          done
+
+          echo "No newly dispatched container build targeted ${EXPECTED_SHA}."
+          exit 1
+
+      - name: Wait for full and lite images
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.dispatch.outputs.run_id }}
+          EXPECTED_SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          RUN_SHA="$(gh run view "${RUN_ID}" --json headSha --jq '.headSha')"
+          if [[ "${RUN_SHA}" != "${EXPECTED_SHA}" ]]; then
+            echo "Run ${RUN_ID} targets ${RUN_SHA}; expected ${EXPECTED_SHA}."
+            exit 1
+          fi
+
+          STATUS="$(gh run view "${RUN_ID}" --json status --jq '.status')"
+          if [[ "${STATUS}" == "completed" ]]; then
+            CONCLUSION="$(
+              gh run view "${RUN_ID}" --json conclusion --jq '.conclusion'
+            )"
+            if [[ "${CONCLUSION}" != "success" ]]; then
+              echo "Container run ${RUN_ID} completed with ${CONCLUSION}."
+              exit 1
+            fi
+            exit 0
+          fi
+
+          gh run watch "${RUN_ID}" --exit-status --interval 10
+
+      - name: Summary
+        run: |
+          echo "### Floodman production profile lock" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Explicit production can no longer silently become local_hybrid" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Auto mode keeps the repaired local fallback" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Startup logs print the originally requested profile" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Production probe failures remain visible" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Full and lite images publish from the exact tested SHA" >> "$GITHUB_STEP_SUMMARY"
