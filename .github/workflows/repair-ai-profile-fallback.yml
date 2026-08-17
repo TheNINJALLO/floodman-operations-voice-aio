@@ -1,4 +1,4 @@
-name: Repair Floodman AI Profile Fallback
+name: Repair Floodman AI Profile Fallback v2
 
 "on":
   push:
@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   repair:
-    name: Restore local_hybrid after a cloud-to-local transition
+    name: Restore local_hybrid after a cloud-to-local transition v2
     runs-on: ubuntu-latest
     timeout-minutes: 120
 
@@ -32,6 +32,15 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Install workflow dependencies
+        shell: bash
+        run: |
+          python -m pip install --disable-pip-version-check             "PyYAML>=6.0,<7"
+          python - <<'PY_DEPENDENCY'
+          import yaml
+          print(f"PyYAML ready: {yaml.__version__}")
+          PY_DEPENDENCY
 
       - name: Apply AI profile fallback repair
         shell: bash
@@ -290,6 +299,7 @@ jobs:
         run: |
           echo "### Floodman AI profile fallback repaired" >> "$GITHUB_STEP_SUMMARY"
           echo "- Recreates local_hybrid after production previously deleted it" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Installs PyYAML before importing the profile renderer" >> "$GITHUB_STEP_SUMMARY"
           echo "- Restores the local_llm provider contract" >> "$GITHUB_STEP_SUMMARY"
           echo "- Validates the selected pipeline before writing runtime YAML" >> "$GITHUB_STEP_SUMMARY"
           echo "- Tests production-to-local transitions and stale persistent configs" >> "$GITHUB_STEP_SUMMARY"
