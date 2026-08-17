@@ -8,7 +8,9 @@ truthy() {
   esac
 }
 
-requested="${FLOODMAN_AI_PROFILE:-auto}"
+requested_input="${FLOODMAN_AI_PROFILE:-auto}"
+requested="${requested_input}"
+request_mode="auto"
 marker="${DATA_DIR:-/home/container/data}/runtime/production-ai-validated.json"
 mkdir -p "$(dirname "${marker}")"
 rm -f "${marker}"
@@ -24,16 +26,18 @@ require_cloud_values() {
 
 fallback_or_fail() {
   local reason="$1"
-  if truthy "${FLOODMAN_PRODUCTION_STRICT:-false}"; then
-    echo "Production AI strict mode blocked startup: ${reason}" >&2
+  if [[ "${request_mode}" == "explicit-production" ]] || \
+     truthy "${FLOODMAN_PRODUCTION_STRICT:-false}"; then
+    echo "Production AI startup blocked; explicit production will not fall back to local_hybrid: ${reason}" >&2
     return 1 2>/dev/null || exit 1
   fi
-  echo "Production AI unavailable; switching to local_hybrid: ${reason}" >&2
+  echo "Production AI unavailable in auto mode; switching to local_hybrid: ${reason}" >&2
   requested="local_hybrid"
 }
 
 case "${requested,,}" in
   auto)
+    request_mode="auto"
     require_cloud_values
     if [[ "${#missing[@]}" -eq 0 ]]; then
       requested="production_hybrid"
@@ -43,9 +47,11 @@ case "${requested,,}" in
     fi
     ;;
   production|production_hybrid|floodman_production)
+    request_mode="explicit-production"
     requested="production_hybrid"
     ;;
   local|local_hybrid)
+    request_mode="explicit-local"
     requested="local_hybrid"
     ;;
   *)
@@ -63,15 +69,19 @@ if [[ "${requested}" == "production_hybrid" ]]; then
     if ! truthy "${FLOODMAN_CLOUD_AUDIO_PROBE:-true}"; then
       probe_args+=(--no-audio-probe)
     fi
-    if ! /opt/venv/bin/python \
-      /opt/floodman/scripts/validate_production_ai.py \
+    validator_python="${FLOODMAN_VALIDATOR_PYTHON:-/opt/venv/bin/python}"
+    validator_script="${FLOODMAN_PRODUCTION_VALIDATOR:-/opt/floodman/scripts/validate_production_ai.py}"
+    if ! "${validator_python}" "${validator_script}" \
       "${probe_args[@]}"; then
       fallback_or_fail "one or more provider checks failed"
     fi
   fi
 fi
 
+export FLOODMAN_AI_PROFILE_REQUESTED="${requested_input}"
 export FLOODMAN_AI_PROFILE="${requested}"
+
+echo "Floodman AI profile requested: ${requested_input}"
 
 if [[ "${requested}" == "production_hybrid" ]]; then
   export AVA_PIPELINE="floodman_production"
