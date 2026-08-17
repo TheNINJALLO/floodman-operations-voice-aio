@@ -1,0 +1,296 @@
+name: Repair Floodman AI Profile Fallback
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/repair-ai-profile-fallback.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: floodman-ai-profile-fallback
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    name: Restore local_hybrid after a cloud-to-local transition
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Apply AI profile fallback repair
+        shell: bash
+        run: |
+          printf '%s' 'ZnJvbSBfX2Z1dHVyZV9fIGltcG9ydCBhbm5vdGF0aW9ucwoKaW1wb3J0IGFzdAppbXBvcnQgYmFzZTY0CmltcG9ydCB0ZXh0d3JhcApmcm9tIHBhdGhsaWIgaW1wb3J0IFBhdGgKCgpST09UID0gUGF0aCgiLiIpLnJlc29sdmUoKQoKCmRlZiByZWFkKHBhdGg6IHN0cikgLT4gc3RyOgogICAgcmV0dXJuIChST09UIC8gcGF0aCkucmVhZF90ZXh0KGVuY29kaW5nPSJ1dGYtOCIpCgoKZGVmIHdyaXRlKHBhdGg6IHN0ciwgdGV4dDogc3RyKSAtPiBOb25lOgogICAgdGFyZ2V0ID0gUk9PVCAvIHBhdGgKICAgIHRhcmdldC5wYXJlbnQubWtkaXIocGFyZW50cz1UcnVlLCBleGlzdF9vaz1UcnVlKQogICAgdGFyZ2V0LndyaXRlX3RleHQodGV4dCwgZW5jb2Rpbmc9InV0Zi04IiwgbmV3bGluZT0iXG4iKQoKCmRlZiB3cml0ZV9iNjQocGF0aDogc3RyLCBwYXlsb2FkOiBzdHIpIC0+IE5vbmU6CiAgICB0YXJnZXQgPSBST09UIC8gcGF0aAogICAgdGFyZ2V0LnBhcmVudC5ta2RpcihwYXJlbnRzPVRydWUsIGV4aXN0X29rPVRydWUpCiAgICB0YXJnZXQud3JpdGVfYnl0ZXMoYmFzZTY0LmI2NGRlY29kZShwYXlsb2FkKSkKCgpkZWYgcmVwbGFjZV90b3BfbGV2ZWxfZnVuY3Rpb24oCiAgICBzb3VyY2U6IHN0ciwKICAgIG5hbWU6IHN0ciwKICAgIHJlcGxhY2VtZW50OiBzdHIsCikgLT4gc3RyOgogICAgdHJlZSA9IGFzdC5wYXJzZShzb3VyY2UpCiAgICBub2RlID0gbmV4dCgKICAgICAgICAoCiAgICAgICAgICAgIGl0ZW0KICAgICAgICAgICAgZm9yIGl0ZW0gaW4gdHJlZS5ib2R5CiAgICAgICAgICAgIGlmIGlzaW5zdGFuY2UoCiAgICAgICAgICAgICAgICBpdGVtLAogICAgICAgICAgICAgICAgKGFzdC5GdW5jdGlvbkRlZiwgYXN0LkFzeW5jRnVuY3Rpb25EZWYpLAogICAgICAgICAgICApCiAgICAgICAgICAgIGFuZCBpdGVtLm5hbWUgPT0gbmFtZQogICAgICAgICksCiAgICAgICAgTm9uZSwKICAgICkKICAgIGlmIG5vZGUgaXMgTm9uZSBvciBub2RlLmVuZF9saW5lbm8gaXMgTm9uZToKICAgICAgICByYWlzZSBTeXN0ZW1FeGl0KGYiZnVuY3Rpb24ge25hbWUhcn0gd2FzIG5vdCBmb3VuZCIpCgogICAgcmVuZGVyZWQgPSB0ZXh0d3JhcC5kZWRlbnQocmVwbGFjZW1lbnQpLnN0cmlwKCJcbiIpICsgIlxuIgogICAgbGluZXMgPSBzb3VyY2Uuc3BsaXRsaW5lcyhrZWVwZW5kcz1UcnVlKQogICAgbGluZXNbbm9kZS5saW5lbm8gLSAxIDogbm9kZS5lbmRfbGluZW5vXSA9ICgKICAgICAgICByZW5kZXJlZC5zcGxpdGxpbmVzKGtlZXBlbmRzPVRydWUpCiAgICApCiAgICByZXN1bHQgPSAiIi5qb2luKGxpbmVzKQogICAgYXN0LnBhcnNlKHJlc3VsdCkKICAgIHJldHVybiByZXN1bHQKCgpwcm9maWxlX3BhdGggPSAic2NyaXB0cy9hcHBseV9wcm9kdWN0aW9uX2h5YnJpZF9haS5weSIKcHJvZmlsZSA9IHJlYWQocHJvZmlsZV9wYXRoKQoKcHJvZmlsZSA9IHJlcGxhY2VfdG9wX2xldmVsX2Z1bmN0aW9uKAogICAgcHJvZmlsZSwKICAgICJsb2NhbF9wYXRjaCIsCiAgICBiYXNlNjQuYjY0ZGVjb2RlKCJDbVJsWmlCc2IyTmhiRjl3WVhSamFDZ3BJQzArSUdScFkzUmJjM1J5TENCQmJubGRPZ29nSUNBZ2NtVjBkWEp1SUhzS0lDQWdJQ0FnSUNBaVpHVm1ZWFZzZEY5d2NtOTJhV1JsY2lJNklDSWtlMEZXUVY5UVVrOVdTVVJGVWpvdGJHOWpZV3hmYUhsaWNtbGtmU0lzQ2lBZ0lDQWdJQ0FnSW1GamRHbDJaVjl3YVhCbGJHbHVaU0k2SUNJa2UwRldRVjlRU1ZCRlRFbE9SVG90Ykc5allXeGZhSGxpY21sa2ZTSXNDaUFnSUNBZ0lDQWdJeUJRY21WelpYSjJaU0IwYUdVZ1pYaHBjM1JwYm1jZ2JHOWpZV3dnY21WamIzWmxjbmtnYzNSaFkyc2diMjRnUVhWa2FXOVRiMk5yWlhRdUNpQWdJQ0FnSUNBZ0ltRjFaR2x2WDNSeVlXNXpjRzl5ZENJNklDSmhkV1JwYjNOdlkydGxkQ0lzQ2lBZ0lDQWdJQ0FnSW1GMVpHbHZjMjlqYTJWMElqb2dld29nSUNBZ0lDQWdJQ0FnSUNBaWFHOXpkQ0k2SUNJeE1qY3VNQzR3TGpFaUxBb2dJQ0FnSUNBZ0lDQWdJQ0FpWVdSMlpYSjBhWE5sWDJodmMzUWlPaUFpTVRJM0xqQXVNQzR4SWl3S0lDQWdJQ0FnSUNBZ0lDQWdJbkJ2Y25RaU9pQTRNRGt3TEFvZ0lDQWdJQ0FnSUNBZ0lDQWlabTl5YldGMElqb2dJbk5zYVc0aUxBb2dJQ0FnSUNBZ0lIMHNDaUFnSUNBZ0lDQWdJbVJ2ZDI1emRISmxZVzFmYlc5a1pTSTZJQ0p6ZEhKbFlXMGlMQW9nSUNBZ0lDQWdJQ0p3YVhCbGJHbHVaWE1pT2lCN0NpQWdJQ0FnSUNBZ0lDQWdJQ01nVUhKdlpIVmpkR2x2YmlCa1pXeHBZbVZ5WVhSbGJIa2dkM0pwZEdWeklHeHZZMkZzWDJoNVluSnBaRG9nYm5Wc2JDQjNhR2xzWlNCamJHOTFaQW9nSUNBZ0lDQWdJQ0FnSUNBaklIQnliM1pwWkdWeWN5QmhjbVVnWVdOMGFYWmxMaUJTWldOeVpXRjBaU0JwZENCbGVIQnNhV05wZEd4NUlHOXVJR1poYkd4aVlXTnJMZ29nSUNBZ0lDQWdJQ0FnSUNBaWJHOWpZV3hmYUhsaWNtbGtJam9nZXdvZ0lDQWdJQ0FnSUNBZ0lDQWdJQ0FnSW14c2JTSTZJQ0pzYjJOaGJGOXNiRzBpTEFvZ0lDQWdJQ0FnSUNBZ0lDQjlMQW9nSUNBZ0lDQWdJQ0FnSUNBaVpteHZiMlJ0WVc1ZmNISnZaSFZqZEdsdmJpSTZJRTV2Ym1Vc0NpQWdJQ0FnSUNBZ0lDQWdJQ0pzYjJOaGJGOW9lV0p5YVdSZlozSnZjU0k2SUU1dmJtVXNDaUFnSUNBZ0lDQWdJQ0FnSUNKb2VXSnlhV1JmWld4bGRtVnViR0ZpY3lJNklFNXZibVVzQ2lBZ0lDQWdJQ0FnZlN3S0lDQWdJQ0FnSUNBaWNISnZkbWxrWlhKeklqb2dld29nSUNBZ0lDQWdJQ0FnSUNBaWJHOWpZV3hmYkd4dElqb2dld29nSUNBZ0lDQWdJQ0FnSUNBZ0lDQWdJbVZ1WVdKc1pXUWlPaUJVY25WbExBb2dJQ0FnSUNBZ0lDQWdJQ0FnSUNBZ0luZHpYM1Z5YkNJNklDSWtlMHhQUTBGTVgxZFRYMVZTVERvdGQzTTZMeTh4TWpjdU1DNHdMakU2T0RjMk5YMGlMQW9nSUNBZ0lDQWdJQ0FnSUNBZ0lDQWdJbUYxZEdoZmRHOXJaVzRpT2lBaUpIdE1UME5CVEY5WFUxOUJWVlJJWDFSUFMwVk9PaTE5SWl3S0lDQWdJQ0FnSUNBZ0lDQWdmU3dLSUNBZ0lDQWdJQ0I5TEFvZ0lDQWdmUW89IikuZGVjb2RlKCJ1dGYtOCIpLAopCgp2YWxpZGF0b3IgPSBiYXNlNjQuYjY0ZGVjb2RlKCJDbVJsWmlCMllXeHBaR0YwWlY5elpXeGxZM1JsWkY5d2NtOW1hV3hsS0FvZ0lDQWdZMjl1Wm1sbk9pQmthV04wVzNOMGNpd2dRVzU1WFN3S0lDQWdJSEJ5YjJacGJHVTZJSE4wY2l3S0lDQWdJQ29zQ2lBZ0lDQndZWFJvT2lCUVlYUm9MQW9wSUMwK0lFNXZibVU2Q2lBZ0lDQnpaV3hsWTNSbFpDQTlJQ2dLSUNBZ0lDQWdJQ0FpWm14dmIyUnRZVzVmY0hKdlpIVmpkR2x2YmlJS0lDQWdJQ0FnSUNCcFppQndjbTltYVd4bElEMDlJQ0p3Y205a2RXTjBhVzl1WDJoNVluSnBaQ0lLSUNBZ0lDQWdJQ0JsYkhObElDSnNiMk5oYkY5b2VXSnlhV1FpQ2lBZ0lDQXBDaUFnSUNCd2FYQmxiR2x1WlhNZ1BTQmpiMjVtYVdjdVoyVjBLQ0p3YVhCbGJHbHVaWE1pS1FvZ0lDQWdhV1lnYm05MElHbHphVzV6ZEdGdVkyVW9jR2x3Wld4cGJtVnpMQ0JrYVdOMEtUb0tJQ0FnSUNBZ0lDQnlZV2x6WlNCU2RXNTBhVzFsUlhKeWIzSW9aaUo3Y0dGMGFIMDZJSEJwY0dWc2FXNWxjeUJ0ZFhOMElHSmxJR0VnYldGd2NHbHVaeUlwQ2dvZ0lDQWdjMlZzWldOMFpXUmZZMjl1Wm1sbklEMGdjR2x3Wld4cGJtVnpMbWRsZENoelpXeGxZM1JsWkNrS0lDQWdJR2xtSUc1dmRDQnBjMmx1YzNSaGJtTmxLSE5sYkdWamRHVmtYMk52Ym1acFp5d2daR2xqZENrNkNpQWdJQ0FnSUNBZ2NtRnBjMlVnVW5WdWRHbHRaVVZ5Y205eUtBb2dJQ0FnSUNBZ0lDQWdJQ0JtSW50d1lYUm9mVG9nYzJWc1pXTjBaV1FnY0dsd1pXeHBibVVnZTNObGJHVmpkR1ZrSVhKOUlHbHpJRzFwYzNOcGJtY2dJZ29nSUNBZ0lDQWdJQ0FnSUNBaWIzSWdkMkZ6SUdSbGJHVjBaV1FpQ2lBZ0lDQWdJQ0FnS1FvS0lDQWdJR2xtSUhCeWIyWnBiR1VnUFQwZ0lteHZZMkZzWDJoNVluSnBaQ0k2Q2lBZ0lDQWdJQ0FnY0hKdmRtbGtaWEp6SUQwZ1kyOXVabWxuTG1kbGRDZ2ljSEp2ZG1sa1pYSnpJaWtLSUNBZ0lDQWdJQ0JzYjJOaGJGOXdjbTkyYVdSbGNpQTlJQ2dLSUNBZ0lDQWdJQ0FnSUNBZ2NISnZkbWxrWlhKekxtZGxkQ2dpYkc5allXeGZiR3h0SWlrS0lDQWdJQ0FnSUNBZ0lDQWdhV1lnYVhOcGJuTjBZVzVqWlNod2NtOTJhV1JsY25Nc0lHUnBZM1FwQ2lBZ0lDQWdJQ0FnSUNBZ0lHVnNjMlVnVG05dVpRb2dJQ0FnSUNBZ0lDa0tJQ0FnSUNBZ0lDQnBaaUJ1YjNRZ2FYTnBibk4wWVc1alpTaHNiMk5oYkY5d2NtOTJhV1JsY2l3Z1pHbGpkQ2s2Q2lBZ0lDQWdJQ0FnSUNBZ0lISmhhWE5sSUZKMWJuUnBiV1ZGY25KdmNpZ0tJQ0FnSUNBZ0lDQWdJQ0FnSUNBZ0lHWWllM0JoZEdoOU9pQnNiMk5oYkY5b2VXSnlhV1FnY21WeGRXbHlaWE1nY0hKdmRtbGtaWElnSjJ4dlkyRnNYMnhzYlNjaUNpQWdJQ0FnSUNBZ0lDQWdJQ2tLSUNBZ0lDQWdJQ0JwWmlCdWIzUWdiRzlqWVd4ZmNISnZkbWxrWlhJdVoyVjBLQ0psYm1GaWJHVmtJaWs2Q2lBZ0lDQWdJQ0FnSUNBZ0lISmhhWE5sSUZKMWJuUnBiV1ZGY25KdmNpZ0tJQ0FnSUNBZ0lDQWdJQ0FnSUNBZ0lHWWllM0JoZEdoOU9pQnNiMk5oYkY5c2JHMGdjSEp2ZG1sa1pYSWdiWFZ6ZENCaVpTQmxibUZpYkdWa0lnb2dJQ0FnSUNBZ0lDQWdJQ0FwQ2c9PSIpLmRlY29kZSgidXRmLTgiKQppZiAiZGVmIHZhbGlkYXRlX3NlbGVjdGVkX3Byb2ZpbGUoIiBub3QgaW4gcHJvZmlsZToKICAgIGFuY2hvciA9ICJcbmRlZiB1cGRhdGUocGF0aDogUGF0aCwgcHJvZmlsZTogc3RyKSAtPiBOb25lOlxuIgogICAgY291bnQgPSBwcm9maWxlLmNvdW50KGFuY2hvcikKICAgIGlmIGNvdW50ICE9IDE6CiAgICAgICAgcmFpc2UgU3lzdGVtRXhpdCgKICAgICAgICAgICAgInByb2ZpbGUgdmFsaWRhdG9yIGluc2VydGlvbjogZXhwZWN0ZWQgb25lIHVwZGF0ZSgpIGFuY2hvciwgIgogICAgICAgICAgICBmImZvdW5kIHtjb3VudH0iCiAgICAgICAgKQogICAgcHJvZmlsZSA9IHByb2ZpbGUucmVwbGFjZSgKICAgICAgICBhbmNob3IsCiAgICAgICAgIlxuIgogICAgICAgICsgdGV4dHdyYXAuZGVkZW50KHZhbGlkYXRvcikuc3RyaXAoIlxuIikKICAgICAgICArICJcblxuXG5kZWYgdXBkYXRlKHBhdGg6IFBhdGgsIHByb2ZpbGU6IHN0cikgLT4gTm9uZTpcbiIsCiAgICAgICAgMSwKICAgICkKCm9sZF93cml0ZV9ibG9jayA9ICcnJyAgICBtZXJnZWQgPSBkZWVwX21lcmdlKGN1cnJlbnQsIHBhdGNoKQogICAgcGF0aC53cml0ZV90ZXh0KAonJycKbmV3X3dyaXRlX2Jsb2NrID0gJycnICAgIG1lcmdlZCA9IGRlZXBfbWVyZ2UoY3VycmVudCwgcGF0Y2gpCiAgICB2YWxpZGF0ZV9zZWxlY3RlZF9wcm9maWxlKAogICAgICAgIG1lcmdlZCwKICAgICAgICBwcm9maWxlLAogICAgICAgIHBhdGg9cGF0aCwKICAgICkKICAgIHBhdGgud3JpdGVfdGV4dCgKJycnCmlmIG5ld193cml0ZV9ibG9jayBub3QgaW4gcHJvZmlsZToKICAgIGNvdW50ID0gcHJvZmlsZS5jb3VudChvbGRfd3JpdGVfYmxvY2spCiAgICBpZiBjb3VudCAhPSAxOgogICAgICAgIHJhaXNlIFN5c3RlbUV4aXQoCiAgICAgICAgICAgICJwcm9maWxlIHZhbGlkYXRpb24gY2FsbDogZXhwZWN0ZWQgb25lIG1lcmdlL3dyaXRlIGFuY2hvciwgIgogICAgICAgICAgICBmImZvdW5kIHtjb3VudH0iCiAgICAgICAgKQogICAgcHJvZmlsZSA9IHByb2ZpbGUucmVwbGFjZSgKICAgICAgICBvbGRfd3JpdGVfYmxvY2ssCiAgICAgICAgbmV3X3dyaXRlX2Jsb2NrLAogICAgICAgIDEsCiAgICApCgphc3QucGFyc2UocHJvZmlsZSkKd3JpdGUocHJvZmlsZV9wYXRoLCBwcm9maWxlKQoKdGVzdF9wYXRoID0gInRlc3RzL3Rlc3RfcHJvZmlsZV9waXBlbGluZV9wcnVuaW5nLnB5Igp0ZXN0X3NvdXJjZSA9IHJlYWQodGVzdF9wYXRoKQoKb2xkX2Fzc2VydGlvbnMgPSAnJycgICAgYXNzZXJ0IHBpcGVsaW5lX3BhdGNoWyJmbG9vZG1hbl9wcm9kdWN0aW9uIl0gaXMgTm9uZQogICAgYXNzZXJ0IHBpcGVsaW5lX3BhdGNoWyJsb2NhbF9oeWJyaWRfZ3JvcSJdIGlzIE5vbmUKICAgIGFzc2VydCBwaXBlbGluZV9wYXRjaFsiaHlicmlkX2VsZXZlbmxhYnMiXSBpcyBOb25lCicnJwpuZXdfYXNzZXJ0aW9ucyA9ICcnJyAgICBhc3NlcnQgcGlwZWxpbmVfcGF0Y2hbImxvY2FsX2h5YnJpZCJdID09IHsKICAgICAgICAibGxtIjogImxvY2FsX2xsbSIsCiAgICB9CiAgICBhc3NlcnQgcGlwZWxpbmVfcGF0Y2hbImZsb29kbWFuX3Byb2R1Y3Rpb24iXSBpcyBOb25lCiAgICBhc3NlcnQgcGlwZWxpbmVfcGF0Y2hbImxvY2FsX2h5YnJpZF9ncm9xIl0gaXMgTm9uZQogICAgYXNzZXJ0IHBpcGVsaW5lX3BhdGNoWyJoeWJyaWRfZWxldmVubGFicyJdIGlzIE5vbmUKJycnCmlmIG5ld19hc3NlcnRpb25zIG5vdCBpbiB0ZXN0X3NvdXJjZToKICAgIGNvdW50ID0gdGVzdF9zb3VyY2UuY291bnQob2xkX2Fzc2VydGlvbnMpCiAgICBpZiBjb3VudCAhPSAxOgogICAgICAgIHJhaXNlIFN5c3RlbUV4aXQoCiAgICAgICAgICAgICJwcm9maWxlIHBydW5pbmcgcmVncmVzc2lvbjogZXhwZWN0ZWQgb25lIGxvY2FsIGFzc2VydGlvbiAiCiAgICAgICAgICAgIGYiYmxvY2ssIGZvdW5kIHtjb3VudH0iCiAgICAgICAgKQogICAgdGVzdF9zb3VyY2UgPSB0ZXN0X3NvdXJjZS5yZXBsYWNlKAogICAgICAgIG9sZF9hc3NlcnRpb25zLAogICAgICAgIG5ld19hc3NlcnRpb25zLAogICAgICAgIDEsCiAgICApCgphc3QucGFyc2UodGVzdF9zb3VyY2UpCndyaXRlKHRlc3RfcGF0aCwgdGVzdF9zb3VyY2UpCgp3cml0ZV9iNjQoCiAgICAidGVzdHMvdGVzdF9haV9wcm9maWxlX2ZhbGxiYWNrX3JlY292ZXJ5LnB5IiwKICAgICJabkp2YlNCZlgyWjFkSFZ5WlY5ZklHbHRjRzl5ZENCaGJtNXZkR0YwYVc5dWN3b0thVzF3YjNKMElHbHRjRzl5ZEd4cFlpNTFkR2xzQ21sdGNHOXlkQ0J6ZVhNS1puSnZiU0J3WVhSb2JHbGlJR2x0Y0c5eWRDQlFZWFJvQ2dwcGJYQnZjblFnZVdGdGJBb0tDbVJsWmlCc2IyRmtYMjF2WkhWc1pTaHdjbTlxWldOMFgzSnZiM1E2SUZCaGRHZ3BPZ29nSUNBZ2NHRjBhQ0E5SUhCeWIycGxZM1JmY205dmRDQXZJQ0p6WTNKcGNIUnpMMkZ3Y0d4NVgzQnliMlIxWTNScGIyNWZhSGxpY21sa1gyRnBMbkI1SWdvZ0lDQWdjM0JsWXlBOUlHbHRjRzl5ZEd4cFlpNTFkR2xzTG5Od1pXTmZabkp2YlY5bWFXeGxYMnh2WTJGMGFXOXVLQW9nSUNBZ0lDQWdJQ0ptYkc5dlpHMWhibDl3Y205bWFXeGxYMlpoYkd4aVlXTnJYM0psWTI5MlpYSjVJaXdLSUNBZ0lDQWdJQ0J3WVhSb0xBb2dJQ0FnS1FvZ0lDQWdZWE56WlhKMElITndaV01nWVc1a0lITndaV011Ykc5aFpHVnlDaUFnSUNCdGIyUjFiR1VnUFNCcGJYQnZjblJzYVdJdWRYUnBiQzV0YjJSMWJHVmZabkp2YlY5emNHVmpLSE53WldNcENpQWdJQ0J6ZVhNdWJXOWtkV3hsYzF0emNHVmpMbTVoYldWZElEMGdiVzlrZFd4bENpQWdJQ0J6Y0dWakxteHZZV1JsY2k1bGVHVmpYMjF2WkhWc1pTaHRiMlIxYkdVcENpQWdJQ0J5WlhSMWNtNGdiVzlrZFd4bENnb0taR1ZtSUdOaGJtOXVhV05oYkY5amIyNW1hV2NvS1NBdFBpQmthV04wT2dvZ0lDQWdjbVYwZFhKdUlIc0tJQ0FnSUNBZ0lDQWlaR1ZtWVhWc2RGOXdjbTkyYVdSbGNpSTZJQ0lrZTBGV1FWOVFVazlXU1VSRlVqb3RiRzlqWVd4ZmFIbGljbWxrZlNJc0NpQWdJQ0FnSUNBZ0ltRmpkR2wyWlY5d2FYQmxiR2x1WlNJNklDSWtlMEZXUVY5UVNWQkZURWxPUlRvdGJHOWpZV3hmYUhsaWNtbGtmU0lzQ2lBZ0lDQWdJQ0FnSW5CcGNHVnNhVzVsY3lJNklIc0tJQ0FnSUNBZ0lDQWdJQ0FnSW14dlkyRnNYMmg1WW5KcFpDSTZJSHNLSUNBZ0lDQWdJQ0FnSUNBZ0lDQWdJQ0pzYkcwaU9pQWliRzlqWVd4ZmJHeHRJaXdLSUNBZ0lDQWdJQ0FnSUNBZ2ZTd0tJQ0FnSUNBZ0lDQjlMQW9nSUNBZ0lDQWdJQ0p3Y205MmFXUmxjbk1pT2lCN0NpQWdJQ0FnSUNBZ0lDQWdJQ0pzYjJOaGJGOXNiRzBpT2lCN0NpQWdJQ0FnSUNBZ0lDQWdJQ0FnSUNBaVpXNWhZbXhsWkNJNklGUnlkV1VzQ2lBZ0lDQWdJQ0FnSUNBZ0lDQWdJQ0FpZDNOZmRYSnNJam9nSWlSN1RFOURRVXhmVjFOZlZWSk1PaTEzY3pvdkx6RXlOeTR3TGpBdU1UbzROelkxZlNJc0NpQWdJQ0FnSUNBZ0lDQWdJQ0FnSUNBaVlYVjBhRjkwYjJ0bGJpSTZJQ0lrZTB4UFEwRk1YMWRUWDBGVlZFaGZWRTlMUlU0NkxYMGlMQW9nSUNBZ0lDQWdJQ0FnSUNCOUxBb2dJQ0FnSUNBZ0lIMHNDaUFnSUNCOUNnb0taR1ZtSUhSbGMzUmZiRzlqWVd4ZmNHRjBZMmhmWlhod2JHbGphWFJzZVY5eVpXTnlaV0YwWlhOZmNHbHdaV3hwYm1Vb0NpQWdJQ0J3Y205cVpXTjBYM0p2YjNRNklGQmhkR2dzQ2lrZ0xUNGdUbTl1WlRvS0lDQWdJRzF2WkhWc1pTQTlJR3h2WVdSZmJXOWtkV3hsS0hCeWIycGxZM1JmY205dmRDa0tJQ0FnSUhCaGRHTm9JRDBnYlc5a2RXeGxMbXh2WTJGc1gzQmhkR05vS0NrS0NpQWdJQ0JoYzNObGNuUWdjR0YwWTJoYkltUmxabUYxYkhSZmNISnZkbWxrWlhJaVhTQTlQU0FvQ2lBZ0lDQWdJQ0FnSWlSN1FWWkJYMUJTVDFaSlJFVlNPaTFzYjJOaGJGOW9lV0p5YVdSOUlnb2dJQ0FnS1FvZ0lDQWdZWE56WlhKMElIQmhkR05vV3lKaFkzUnBkbVZmY0dsd1pXeHBibVVpWFNBOVBTQW9DaUFnSUNBZ0lDQWdJaVI3UVZaQlgxQkpVRVZNU1U1Rk9pMXNiMk5oYkY5b2VXSnlhV1I5SWdvZ0lDQWdLUW9nSUNBZ1lYTnpaWEowSUhCaGRHTm9XeUp3YVhCbGJHbHVaWE1pWFZzaWJHOWpZV3hmYUhsaWNtbGtJbDBnUFQwZ2V3b2dJQ0FnSUNBZ0lDSnNiRzBpT2lBaWJHOWpZV3hmYkd4dElpd0tJQ0FnSUgwS0lDQWdJR0Z6YzJWeWRDQndZWFJqYUZzaWNHbHdaV3hwYm1WeklsMWJJbVpzYjI5a2JXRnVYM0J5YjJSMVkzUnBiMjRpWFNCcGN5Qk9iMjVsQ2lBZ0lDQmhjM05sY25RZ2NHRjBZMmhiSW5CeWIzWnBaR1Z5Y3lKZFd5SnNiMk5oYkY5c2JHMGlYVnNpWlc1aFlteGxaQ0pkSUdseklGUnlkV1VLQ2dwa1pXWWdkR1Z6ZEY5d2NtOWtkV04wYVc5dVgzUnZYMnh2WTJGc1gzUnlZVzV6YVhScGIyNWZjbVZ6ZEc5eVpYTmZaR1ZzWlhSbFpGOXdhWEJsYkdsdVpTZ0tJQ0FnSUhCeWIycGxZM1JmY205dmREb2dVR0YwYUN3S0lDQWdJSFJ0Y0Y5d1lYUm9PaUJRWVhSb0xBb3BJQzArSUU1dmJtVTZDaUFnSUNCdGIyUjFiR1VnUFNCc2IyRmtYMjF2WkhWc1pTaHdjbTlxWldOMFgzSnZiM1FwQ2lBZ0lDQjBZWEpuWlhRZ1BTQjBiWEJmY0dGMGFDQXZJQ0poYVMxaFoyVnVkQzVzYjJOaGJDNTVZVzFzSWdvZ0lDQWdkR0Z5WjJWMExuZHlhWFJsWDNSbGVIUW9DaUFnSUNBZ0lDQWdlV0Z0YkM1ellXWmxYMlIxYlhBb1kyRnViMjVwWTJGc1gyTnZibVpwWnlncExDQnpiM0owWDJ0bGVYTTlSbUZzYzJVcExBb2dJQ0FnSUNBZ0lHVnVZMjlrYVc1blBTSjFkR1l0T0NJc0NpQWdJQ0FwQ2dvZ0lDQWdiVzlrZFd4bExuVndaR0YwWlNoMFlYSm5aWFFzSUNKd2NtOWtkV04wYVc5dVgyaDVZbkpwWkNJcENpQWdJQ0J3Y205a2RXTjBhVzl1SUQwZ2VXRnRiQzV6WVdabFgyeHZZV1FvQ2lBZ0lDQWdJQ0FnZEdGeVoyVjBMbkpsWVdSZmRHVjRkQ2hsYm1OdlpHbHVaejBpZFhSbUxUZ2lLUW9nSUNBZ0tRb2dJQ0FnWVhOelpYSjBJSEJ5YjJSMVkzUnBiMjViSW5CcGNHVnNhVzVsY3lKZFd5SnNiMk5oYkY5b2VXSnlhV1FpWFNCcGN5Qk9iMjVsQ2lBZ0lDQmhjM05sY25RZ2FYTnBibk4wWVc1alpTZ0tJQ0FnSUNBZ0lDQndjbTlrZFdOMGFXOXVXeUp3YVhCbGJHbHVaWE1pWFZzaVpteHZiMlJ0WVc1ZmNISnZaSFZqZEdsdmJpSmRMQW9nSUNBZ0lDQWdJR1JwWTNRc0NpQWdJQ0FwQ2dvZ0lDQWdiVzlrZFd4bExuVndaR0YwWlNoMFlYSm5aWFFzSUNKc2IyTmhiRjlvZVdKeWFXUWlLUW9nSUNBZ2NtVmpiM1psY21Wa0lEMGdlV0Z0YkM1ellXWmxYMnh2WVdRb0NpQWdJQ0FnSUNBZ2RHRnlaMlYwTG5KbFlXUmZkR1Y0ZENobGJtTnZaR2x1WnowaWRYUm1MVGdpS1FvZ0lDQWdLUW9nSUNBZ1lYTnpaWEowSUhKbFkyOTJaWEpsWkZzaWNHbHdaV3hwYm1WeklsMWJJbXh2WTJGc1gyaDVZbkpwWkNKZElEMDlJSHNLSUNBZ0lDQWdJQ0FpYkd4dElqb2dJbXh2WTJGc1gyeHNiU0lzQ2lBZ0lDQjlDaUFnSUNCaGMzTmxjblFnY21WamIzWmxjbVZrV3lKd2FYQmxiR2x1WlhNaVhWc2labXh2YjJSdFlXNWZjSEp2WkhWamRHbHZiaUpkSUdseklFNXZibVVLSUNBZ0lHRnpjMlZ5ZENCeVpXTnZkbVZ5WldSYkluQnliM1pwWkdWeWN5SmRXeUpzYjJOaGJGOXNiRzBpWFZzaVpXNWhZbXhsWkNKZElHbHpJRlJ5ZFdVS0lDQWdJRzF2WkhWc1pTNTJZV3hwWkdGMFpWOXpaV3hsWTNSbFpGOXdjbTltYVd4bEtBb2dJQ0FnSUNBZ0lISmxZMjkyWlhKbFpDd0tJQ0FnSUNBZ0lDQWliRzlqWVd4ZmFIbGljbWxrSWl3S0lDQWdJQ0FnSUNCd1lYUm9QWFJoY21kbGRDd0tJQ0FnSUNrS0NncGtaV1lnZEdWemRGOXpkR0ZzWlY5d1pYSnphWE4wWlc1MFgyNTFiR3hmY0dsd1pXeHBibVZmYzJWc1psOW9aV0ZzY3lnS0lDQWdJSEJ5YjJwbFkzUmZjbTl2ZERvZ1VHRjBhQ3dLSUNBZ0lIUnRjRjl3WVhSb09pQlFZWFJvTEFvcElDMCtJRTV2Ym1VNkNpQWdJQ0J0YjJSMWJHVWdQU0JzYjJGa1gyMXZaSFZzWlNod2NtOXFaV04wWDNKdmIzUXBDaUFnSUNCMFlYSm5aWFFnUFNCMGJYQmZjR0YwYUNBdklDSnpkR0ZzWlMxaGFTMWhaMlZ1ZEM1c2IyTmhiQzU1WVcxc0lnb2dJQ0FnYzNSaGJHVWdQU0JqWVc1dmJtbGpZV3hmWTI5dVptbG5LQ2tLSUNBZ0lITjBZV3hsV3lKd2FYQmxiR2x1WlhNaVhWc2liRzlqWVd4ZmFIbGljbWxrSWwwZ1BTQk9iMjVsQ2lBZ0lDQnpkR0ZzWlZzaWNHbHdaV3hwYm1WeklsMWJJbVpzYjI5a2JXRnVYM0J5YjJSMVkzUnBiMjRpWFNBOUlIc0tJQ0FnSUNBZ0lDQWljM1IwSWpvZ0ltUmxaWEJuY21GdFgyWnNkWGhmYzNSMElpd0tJQ0FnSUNBZ0lDQWliR3h0SWpvZ0ltZHliM0ZmYkd4dElpd0tJQ0FnSUNBZ0lDQWlkSFJ6SWpvZ0ltVnNaWFpsYm14aFluTmZkSFJ6SWl3S0lDQWdJSDBLSUNBZ0lIUmhjbWRsZEM1M2NtbDBaVjkwWlhoMEtBb2dJQ0FnSUNBZ0lIbGhiV3d1YzJGbVpWOWtkVzF3S0hOMFlXeGxMQ0J6YjNKMFgydGxlWE05Um1Gc2MyVXBMQW9nSUNBZ0lDQWdJR1Z1WTI5a2FXNW5QU0oxZEdZdE9DSXNDaUFnSUNBcENnb2dJQ0FnYlc5a2RXeGxMblZ3WkdGMFpTaDBZWEpuWlhRc0lDSnNiMk5oYkY5b2VXSnlhV1FpS1FvZ0lDQWdhR1ZoYkdWa0lEMGdlV0Z0YkM1ellXWmxYMnh2WVdRb0NpQWdJQ0FnSUNBZ2RHRnlaMlYwTG5KbFlXUmZkR1Y0ZENobGJtTnZaR2x1WnowaWRYUm1MVGdpS1FvZ0lDQWdLUW9nSUNBZ1lYTnpaWEowSUdobFlXeGxaRnNpY0dsd1pXeHBibVZ6SWwxYklteHZZMkZzWDJoNVluSnBaQ0pkSUQwOUlIc0tJQ0FnSUNBZ0lDQWliR3h0SWpvZ0lteHZZMkZzWDJ4c2JTSXNDaUFnSUNCOUNpQWdJQ0JoYzNObGNuUWdhR1ZoYkdWa1d5SndhWEJsYkdsdVpYTWlYVnNpWm14dmIyUnRZVzVmY0hKdlpIVmpkR2x2YmlKZElHbHpJRTV2Ym1VS0NncGtaV1lnZEdWemRGOXlaWEJsWVhSbFpGOXNiMk5oYkY5aGNIQnNhV05oZEdsdmJsOXBjMTl6ZEdGaWJHVW9DaUFnSUNCd2NtOXFaV04wWDNKdmIzUTZJRkJoZEdnc0NpQWdJQ0IwYlhCZmNHRjBhRG9nVUdGMGFDd0tLU0F0UGlCT2IyNWxPZ29nSUNBZ2JXOWtkV3hsSUQwZ2JHOWhaRjl0YjJSMWJHVW9jSEp2YW1WamRGOXliMjkwS1FvZ0lDQWdkR0Z5WjJWMElEMGdkRzF3WDNCaGRHZ2dMeUFpY21Wd1pXRjBMV0ZwTFdGblpXNTBMbXh2WTJGc0xubGhiV3dpQ2lBZ0lDQjBZWEpuWlhRdWQzSnBkR1ZmZEdWNGRDZ0tJQ0FnSUNBZ0lDQjVZVzFzTG5OaFptVmZaSFZ0Y0NoallXNXZibWxqWVd4ZlkyOXVabWxuS0Nrc0lITnZjblJmYTJWNWN6MUdZV3h6WlNrc0NpQWdJQ0FnSUNBZ1pXNWpiMlJwYm1jOUluVjBaaTA0SWl3S0lDQWdJQ2tLQ2lBZ0lDQnRiMlIxYkdVdWRYQmtZWFJsS0hSaGNtZGxkQ3dnSW14dlkyRnNYMmg1WW5KcFpDSXBDaUFnSUNCbWFYSnpkQ0E5SUhSaGNtZGxkQzV5WldGa1gzUmxlSFFvWlc1amIyUnBibWM5SW5WMFppMDRJaWtLSUNBZ0lHMXZaSFZzWlM1MWNHUmhkR1VvZEdGeVoyVjBMQ0FpYkc5allXeGZhSGxpY21sa0lpa0tJQ0FnSUhObFkyOXVaQ0E5SUhSaGNtZGxkQzV5WldGa1gzUmxlSFFvWlc1amIyUnBibWM5SW5WMFppMDRJaWtLSUNBZ0lHRnpjMlZ5ZENCelpXTnZibVFnUFQwZ1ptbHljM1FLQ2dwa1pXWWdkR1Z6ZEY5MllXeHBaR0YwYjNKZmNtVnFaV04wYzE5MGFHVmZjblZ1ZEdsdFpWOW1ZV2xzZFhKbFgzTm9ZWEJsS0FvZ0lDQWdjSEp2YW1WamRGOXliMjkwT2lCUVlYUm9MQW9nSUNBZ2RHMXdYM0JoZEdnNklGQmhkR2dzQ2lrZ0xUNGdUbTl1WlRvS0lDQWdJRzF2WkhWc1pTQTlJR3h2WVdSZmJXOWtkV3hsS0hCeWIycGxZM1JmY205dmRDa0tJQ0FnSUdKeWIydGxiaUE5SUdOaGJtOXVhV05oYkY5amIyNW1hV2NvS1FvZ0lDQWdZbkp2YTJWdVd5SndhWEJsYkdsdVpYTWlYVnNpYkc5allXeGZhSGxpY21sa0lsMGdQU0JPYjI1bENnb2dJQ0FnZEhKNU9nb2dJQ0FnSUNBZ0lHMXZaSFZzWlM1MllXeHBaR0YwWlY5elpXeGxZM1JsWkY5d2NtOW1hV3hsS0FvZ0lDQWdJQ0FnSUNBZ0lDQmljbTlyWlc0c0NpQWdJQ0FnSUNBZ0lDQWdJQ0pzYjJOaGJGOW9lV0p5YVdRaUxBb2dJQ0FnSUNBZ0lDQWdJQ0J3WVhSb1BYUnRjRjl3WVhSb0lDOGdJbUp5YjJ0bGJpNTVZVzFzSWl3S0lDQWdJQ0FnSUNBcENpQWdJQ0JsZUdObGNIUWdVblZ1ZEdsdFpVVnljbTl5SUdGeklHVjRZem9LSUNBZ0lDQWdJQ0JoYzNObGNuUWdJbXh2WTJGc1gyaDVZbkpwWkNJZ2FXNGdjM1J5S0dWNFl5a0tJQ0FnSUNBZ0lDQmhjM05sY25RZ0ltMXBjM05wYm1jZ2IzSWdkMkZ6SUdSbGJHVjBaV1FpSUdsdUlITjBjaWhsZUdNcENpQWdJQ0JsYkhObE9nb2dJQ0FnSUNBZ0lISmhhWE5sSUVGemMyVnlkR2x2YmtWeWNtOXlLQ0ppY205clpXNGdiRzlqWVd3Z1ptRnNiR0poWTJzZ2QyRnpJR0ZqWTJWd2RHVmtJaWtLIiwKKQo=' | base64 -d > /tmp/install_ai_profile_fallback.py
+          python /tmp/install_ai_profile_fallback.py
+          rm -f /tmp/install_ai_profile_fallback.py
+
+      - name: Verify generated source
+        shell: bash
+        run: |
+          python -m py_compile \
+            scripts/apply_production_hybrid_ai.py \
+            tests/test_ai_profile_fallback_recovery.py \
+            tests/test_profile_pipeline_pruning.py
+
+          python - <<'PY_VERIFY'
+          import importlib.util
+          import sys
+          from pathlib import Path
+
+          path = Path("scripts/apply_production_hybrid_ai.py")
+          spec = importlib.util.spec_from_file_location(
+              "profile_fallback_preflight",
+              path,
+          )
+          assert spec and spec.loader
+          module = importlib.util.module_from_spec(spec)
+          sys.modules[spec.name] = module
+          spec.loader.exec_module(module)
+
+          patch = module.local_patch()
+          assert patch["pipelines"]["local_hybrid"] == {
+              "llm": "local_llm",
+          }
+          assert patch["providers"]["local_llm"]["enabled"] is True
+          assert patch["pipelines"]["floodman_production"] is None
+          assert hasattr(module, "validate_selected_profile")
+          PY_VERIFY
+
+          git diff --check
+
+      - name: Simulate persistent production-to-local recovery
+        shell: bash
+        run: |
+          TMP_DIR="$(mktemp -d)"
+          cp config/ava/ai-agent.local.yaml \
+            "${TMP_DIR}/ai-agent.local.yaml"
+
+          python scripts/apply_production_hybrid_ai.py \
+            --profile production_hybrid \
+            --config "${TMP_DIR}/ai-agent.local.yaml"
+
+          python - "${TMP_DIR}/ai-agent.local.yaml" <<'PY_PRODUCTION'
+          from pathlib import Path
+          import sys
+          import yaml
+
+          path = Path(sys.argv[1])
+          config = yaml.safe_load(path.read_text(encoding="utf-8"))
+          assert config["pipelines"]["local_hybrid"] is None
+          assert isinstance(
+              config["pipelines"]["floodman_production"],
+              dict,
+          )
+          PY_PRODUCTION
+
+          python scripts/apply_production_hybrid_ai.py \
+            --profile local_hybrid \
+            --config "${TMP_DIR}/ai-agent.local.yaml"
+
+          python - "${TMP_DIR}/ai-agent.local.yaml" <<'PY_LOCAL'
+          from pathlib import Path
+          import sys
+          import yaml
+
+          path = Path(sys.argv[1])
+          config = yaml.safe_load(path.read_text(encoding="utf-8"))
+          assert config["default_provider"] == (
+              "${AVA_PROVIDER:-local_hybrid}"
+          )
+          assert config["active_pipeline"] == (
+              "${AVA_PIPELINE:-local_hybrid}"
+          )
+          assert config["pipelines"]["local_hybrid"] == {
+              "llm": "local_llm",
+          }
+          assert config["pipelines"]["floodman_production"] is None
+          assert config["providers"]["local_llm"]["enabled"] is True
+          PY_LOCAL
+
+          rm -rf "${TMP_DIR}"
+
+      - name: Install project test dependencies
+        run: pip install -e '.[dev]'
+
+      - name: Run focused profile-transition tests
+        run: |
+          python -m pytest \
+            tests/test_ai_profile_fallback_recovery.py \
+            tests/test_profile_pipeline_pruning.py \
+            tests/test_production_hybrid_ai.py \
+            tests/test_runtime_engine_startup.py \
+            -q
+
+      - name: Run complete repository tests
+        run: python -m pytest tests/ -q
+
+      - name: Compile and validate repository
+        shell: bash
+        run: |
+          python -m compileall app scripts tests
+          bash -n scripts/*.sh
+          python scripts/validate_configs.py
+          git diff --check
+
+      - name: Commit tested fallback repair
+        id: commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add \
+            scripts/apply_production_hybrid_ai.py \
+            tests/test_ai_profile_fallback_recovery.py \
+            tests/test_profile_pipeline_pruning.py
+
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "fix: restore local AI pipeline after cloud fallback"
+            git push origin HEAD:main
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for main to expose the exact source SHA
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          for attempt in $(seq 1 40); do
+            REMOTE_SHA="$(
+              git ls-remote origin refs/heads/main |
+              awk '{print $1}'
+            )"
+            if [[ "${REMOTE_SHA}" == "${EXPECTED_SHA}" ]]; then
+              echo "GitHub main is at ${EXPECTED_SHA}"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "GitHub main did not expose ${EXPECTED_SHA} in time."
+          exit 1
+
+      - name: Resolve or dispatch exact-SHA container build
+        id: dispatch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          SUCCESS_RUN_ID="$(
+            gh run list \
+              --workflow ci-container.yml \
+              --branch main \
+              --event workflow_dispatch \
+              --limit 50 \
+              --json databaseId,headSha,status,conclusion |
+            jq -r --arg sha "${EXPECTED_SHA}" '
+              [
+                .[]
+                | select(
+                    .headSha == $sha
+                    and .status == "completed"
+                    and .conclusion == "success"
+                  )
+              ]
+              | sort_by(.databaseId)
+              | last
+              | .databaseId // empty
+            '
+          )"
+
+          if [[ -n "${SUCCESS_RUN_ID}" ]]; then
+            echo "run_id=${SUCCESS_RUN_ID}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          DISPATCHED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh workflow run ci-container.yml --ref main
+
+          for attempt in $(seq 1 40); do
+            RUN_ID="$(
+              gh run list \
+                --workflow ci-container.yml \
+                --branch main \
+                --event workflow_dispatch \
+                --limit 50 \
+                --json databaseId,headSha,createdAt |
+              jq -r \
+                --arg sha "${EXPECTED_SHA}" \
+                --arg dispatched "${DISPATCHED_AT}" '
+                  [
+                    .[]
+                    | select(
+                        .headSha == $sha
+                        and .createdAt >= $dispatched
+                      )
+                  ]
+                  | sort_by(.databaseId)
+                  | last
+                  | .databaseId // empty
+                '
+            )"
+            if [[ -n "${RUN_ID}" ]]; then
+              echo "run_id=${RUN_ID}" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep 3
+          done
+
+          echo "No newly dispatched container build targeted ${EXPECTED_SHA}."
+          exit 1
+
+      - name: Wait for full and lite images
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.dispatch.outputs.run_id }}
+          EXPECTED_SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          RUN_SHA="$(gh run view "${RUN_ID}" --json headSha --jq '.headSha')"
+          if [[ "${RUN_SHA}" != "${EXPECTED_SHA}" ]]; then
+            echo "Run ${RUN_ID} targets ${RUN_SHA}; expected ${EXPECTED_SHA}."
+            exit 1
+          fi
+
+          STATUS="$(gh run view "${RUN_ID}" --json status --jq '.status')"
+          if [[ "${STATUS}" == "completed" ]]; then
+            CONCLUSION="$(
+              gh run view "${RUN_ID}" --json conclusion --jq '.conclusion'
+            )"
+            if [[ "${CONCLUSION}" != "success" ]]; then
+              echo "Container run ${RUN_ID} completed with ${CONCLUSION}."
+              exit 1
+            fi
+            exit 0
+          fi
+
+          gh run watch "${RUN_ID}" --exit-status --interval 10
+
+      - name: Summary
+        run: |
+          echo "### Floodman AI profile fallback repaired" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Recreates local_hybrid after production previously deleted it" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Restores the local_llm provider contract" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Validates the selected pipeline before writing runtime YAML" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Tests production-to-local transitions and stale persistent configs" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Publishes full and lite images from the exact tested SHA" >> "$GITHUB_STEP_SUMMARY"
