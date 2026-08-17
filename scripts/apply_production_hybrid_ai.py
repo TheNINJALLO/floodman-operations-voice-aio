@@ -184,12 +184,62 @@ def local_patch() -> dict[str, Any]:
         },
         "downstream_mode": "stream",
         "pipelines": {
-            # Remove stale cloud and upstream demo pipelines on fallback.
+            # Production deliberately writes local_hybrid: null while cloud
+            # providers are active. Recreate it explicitly on fallback.
+            "local_hybrid": {
+                "llm": "local_llm",
+            },
             "floodman_production": None,
             "local_hybrid_groq": None,
             "hybrid_elevenlabs": None,
         },
+        "providers": {
+            "local_llm": {
+                "enabled": True,
+                "ws_url": "${LOCAL_WS_URL:-ws://127.0.0.1:8765}",
+                "auth_token": "${LOCAL_WS_AUTH_TOKEN:-}",
+            },
+        },
     }
+
+
+def validate_selected_profile(
+    config: dict[str, Any],
+    profile: str,
+    *,
+    path: Path,
+) -> None:
+    selected = (
+        "floodman_production"
+        if profile == "production_hybrid"
+        else "local_hybrid"
+    )
+    pipelines = config.get("pipelines")
+    if not isinstance(pipelines, dict):
+        raise RuntimeError(f"{path}: pipelines must be a mapping")
+
+    selected_config = pipelines.get(selected)
+    if not isinstance(selected_config, dict):
+        raise RuntimeError(
+            f"{path}: selected pipeline {selected!r} is missing "
+            "or was deleted"
+        )
+
+    if profile == "local_hybrid":
+        providers = config.get("providers")
+        local_provider = (
+            providers.get("local_llm")
+            if isinstance(providers, dict)
+            else None
+        )
+        if not isinstance(local_provider, dict):
+            raise RuntimeError(
+                f"{path}: local_hybrid requires provider 'local_llm'"
+            )
+        if not local_provider.get("enabled"):
+            raise RuntimeError(
+                f"{path}: local_llm provider must be enabled"
+            )
 
 
 def update(path: Path, profile: str) -> None:
@@ -200,6 +250,11 @@ def update(path: Path, profile: str) -> None:
         raise TypeError(f"{path} must contain a YAML mapping")
     patch = production_patch() if profile == "production_hybrid" else local_patch()
     merged = deep_merge(current, patch)
+    validate_selected_profile(
+        merged,
+        profile,
+        path=path,
+    )
     path.write_text(
         yaml.safe_dump(merged, sort_keys=False, allow_unicode=True),
         encoding="utf-8",

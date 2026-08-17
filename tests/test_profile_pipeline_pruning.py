@@ -67,6 +67,9 @@ def test_local_profile_removes_stale_cloud_and_demo_pipelines(
     module = load_profile_module(project_root)
     patch = module.local_patch()
     pipeline_patch = patch["pipelines"]
+    assert pipeline_patch["local_hybrid"] == {
+        "llm": "local_llm",
+    }
     assert pipeline_patch["floodman_production"] is None
     assert pipeline_patch["local_hybrid_groq"] is None
     assert pipeline_patch["hybrid_elevenlabs"] is None
