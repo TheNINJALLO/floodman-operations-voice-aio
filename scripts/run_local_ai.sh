@@ -8,6 +8,14 @@ truthy() {
   esac
 }
 
+# Floodman production profile local-model guard.
+case "${FLOODMAN_AI_PROFILE:-auto}" in
+  production|production_hybrid|floodman_production)
+    echo "Floodman local AI disabled because production_hybrid is selected"
+    exec sleep infinity
+    ;;
+esac
+
 if ! truthy "${ENABLE_LOCAL_AI_SERVER:-true}"; then
   echo "Floodman local AI disabled by ENABLE_LOCAL_AI_SERVER=${ENABLE_LOCAL_AI_SERVER:-false}"
   exec sleep infinity
