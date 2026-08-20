@@ -1,4 +1,4 @@
-name: Install GPU Appliance Into Current Floodman AIO v2
+name: Install GPU Appliance Into Current Floodman AIO v3
 
 "on":
   push:
@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   install:
-    name: Add, test, and publish the RTX A1000 appliance track
+    name: Isolate, test, and publish the RTX A1000 appliance track
     runs-on: ubuntu-latest
     timeout-minutes: 240
 
@@ -118,10 +118,44 @@ jobs:
           git diff --check
 
       - name: Install appliance test dependencies
-        run: pip install -e './appliance[dev]'
+        working-directory: appliance
+        run: pip install -e '.[dev]'
+
+      - name: Verify appliance Python namespace isolation
+        working-directory: appliance
+        shell: bash
+        env:
+          PYTHONPATH: ${{ github.workspace }}/appliance
+        run: |
+          python - <<'PY_NAMESPACE'
+          from pathlib import Path
+
+          import app
+          from app.business import BusinessDirectory
+          from app.intake import classify_service
+          from app.intake_flow import collection_question
+          from app.models import IntakeState
+
+          appliance_root = Path.cwd().resolve()
+          imported_app = Path(app.__file__).resolve()
+          assert imported_app.is_relative_to(
+              appliance_root / "app"
+          ), (
+              f"Imported {imported_app}, expected the isolated "
+              f"appliance package under {appliance_root / 'app'}"
+          )
+          assert BusinessDirectory is not None
+          assert IntakeState is not None
+          assert callable(collection_question)
+          assert callable(classify_service)
+          print(f"Appliance package selected: {imported_app}")
+          PY_NAMESPACE
 
       - name: Run appliance test suite
-        run: python -m pytest appliance/tests -q
+        working-directory: appliance
+        env:
+          PYTHONPATH: ${{ github.workspace }}/appliance
+        run: python -m pytest tests -q
 
       - name: Commit the isolated appliance track
         id: commit
@@ -275,6 +309,8 @@ jobs:
           echo "- Branch: self-hosted-gpu-appliance" \
             >> "$GITHUB_STEP_SUMMARY"
           echo "- Source: appliance/" \
+            >> "$GITHUB_STEP_SUMMARY"
+          echo "- Python namespace: isolated from the legacy root app/" \
             >> "$GITHUB_STEP_SUMMARY"
           echo "- Image: ghcr.io/theninjallo/floodman-operations-voice-aio:gpu-appliance" \
             >> "$GITHUB_STEP_SUMMARY"
