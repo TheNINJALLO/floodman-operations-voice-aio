@@ -1,0 +1,35 @@
+Floodman Voice Appliance v0.1.0 Validation
+==========================================
+
+Automated application tests: PASS
+Result: 26 passed
+Python source compilation: PASS
+Shell syntax validation: PASS
+TOML metadata parse: PASS
+Pterodactyl egg JSON parse and unique variables: PASS
+GitHub Actions YAML parse: PASS
+Structured service-area YAML parse: PASS (148 communities)
+FastAPI application import with isolated data directory: PASS
+Web-only preflight: PASS
+Asterisk renderer and AudioSocket dialplan assertions: PASS
+Known-secret scan against previously exposed credentials: PASS
+Application source paid-AI-key contract: PASS
+Pinned RTX A1000 CUDA architecture contract: PASS (covered by tests)
+Deterministic full-intake, one-field confirmations, unsupported-service,
+emergency-transfer, partial-notification, endpointing, TTS cache, database,
+knowledge, service-area, and runtime.env regression tests: PASS
+
+Container build execution in this workspace: NOT RUN
+Reason: Docker, Podman, and Buildah are not installed in the artifact workspace.
+The included GitHub Actions workflow performs the real linux/amd64 CUDA image
+build after the source is pushed. The Dockerfile was structurally reviewed and
+is covered by repository contract tests, but this report does not claim a local
+container build or live RTX A1000 phone call occurred.
+
+Expected production validation still required on the target node:
+1. NVIDIA runtime exposes the RTX A1000 inside the container.
+2. llama.cpp downloads and loads Qwen3-4B Q4_K_M within 8 GB VRAM.
+3. Faster-Whisper and Kokoro download and warm successfully.
+4. Twilio/PJSIP inbound and outbound RTP passes through AudioSocket.
+5. One complete intake, partial hangup, team SMS, human transfer, and emergency
+   transfer pass on a live phone call.

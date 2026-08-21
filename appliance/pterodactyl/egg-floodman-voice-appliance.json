@@ -1,0 +1,482 @@
+{
+    "_comment": "DO NOT EDIT: generated Floodman Voice Appliance egg",
+    "meta": {
+        "version": "PTDL_v2",
+        "update_url": null
+    },
+    "exported_at": "2026-08-19T00:00:00+00:00",
+    "name": "Floodman Voice Appliance (RTX A1000)",
+    "author": "TheN1NJ4LL0",
+    "description": "Self-hosted Floodman voice appliance for an NVIDIA RTX A1000. Built from the appliance/ directory of TheNINJALLO/floodman-operations-voice-aio and published as the gpu-appliance image tag.",
+    "features": null,
+    "docker_images": {
+        "Floodman Voice Appliance (current AIO repo)": "ghcr.io/theninjallo/floodman-operations-voice-aio:gpu-appliance"
+    },
+    "file_denylist": [],
+    "startup": "/opt/floodman/scripts/entrypoint.sh",
+    "config": {
+        "files": "{}",
+        "startup": "{\"done\":\"supervisord started with pid\"}",
+        "logs": "{}",
+        "stop": "^C"
+    },
+    "scripts": {
+        "installation": {
+            "script": "#!/bin/bash\necho \"The appliance is delivered by its Docker image.\"",
+            "container": "debian:bookworm-slim",
+            "entrypoint": "bash"
+        }
+    },
+    "variables": [
+        {
+            "name": "Public Base URL",
+            "description": "Panel URL such as https://voice.example.com",
+            "env_variable": "PUBLIC_BASE_URL",
+            "default_value": "http://127.0.0.1:8003",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:255",
+            "field_type": "text"
+        },
+        {
+            "name": "Trusted Hosts",
+            "description": "Comma-separated web hostnames",
+            "env_variable": "TRUSTED_HOSTS",
+            "default_value": "localhost,127.0.0.1",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:1024",
+            "field_type": "text"
+        },
+        {
+            "name": "Admin Token",
+            "description": "Web-panel login token. Leave blank on first boot to generate.",
+            "env_variable": "ADMIN_TOKEN",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|min:24|max:256",
+            "field_type": "text"
+        },
+        {
+            "name": "Internal Token",
+            "description": "Internal API token. Leave blank to generate.",
+            "env_variable": "INTERNAL_TOKEN",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|min:24|max:256",
+            "field_type": "text"
+        },
+        {
+            "name": "SIP Mode",
+            "description": "twilio, generic, or disabled",
+            "env_variable": "SIP_MODE",
+            "default_value": "twilio",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|in:twilio,generic,disabled",
+            "field_type": "text"
+        },
+        {
+            "name": "SIP Server",
+            "description": "Carrier SIP hostname",
+            "env_variable": "SIP_SERVER",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:255",
+            "field_type": "text"
+        },
+        {
+            "name": "SIP Port",
+            "description": "Carrier/local SIP port",
+            "env_variable": "SIP_PORT",
+            "default_value": "5060",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|integer|min:1|max:65535",
+            "field_type": "text"
+        },
+        {
+            "name": "SIP Transport",
+            "description": "udp, tcp, or tls",
+            "env_variable": "SIP_TRANSPORT",
+            "default_value": "udp",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|in:udp,tcp,tls",
+            "field_type": "text"
+        },
+        {
+            "name": "SIP Username",
+            "description": "Registration username when required",
+            "env_variable": "SIP_USERNAME",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:255",
+            "field_type": "text"
+        },
+        {
+            "name": "SIP Password",
+            "description": "Registration password",
+            "env_variable": "SIP_PASSWORD",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:512",
+            "field_type": "text"
+        },
+        {
+            "name": "SIP From User",
+            "description": "Outbound DID/account identifier",
+            "env_variable": "SIP_FROM_USER",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:64",
+            "field_type": "text"
+        },
+        {
+            "name": "SIP From Domain",
+            "description": "Carrier From domain",
+            "env_variable": "SIP_FROM_DOMAIN",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:255",
+            "field_type": "text"
+        },
+        {
+            "name": "SIP Match Addresses",
+            "description": "Carrier signaling IPs/CIDRs",
+            "env_variable": "SIP_MATCH_ADDRESSES",
+            "default_value": "54.172.60.0/23,54.244.51.0/24,177.71.206.192/26",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:2048",
+            "field_type": "text"
+        },
+        {
+            "name": "SIP Outbound Proxy",
+            "description": "Optional carrier outbound proxy",
+            "env_variable": "SIP_OUTBOUND_PROXY",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:255",
+            "field_type": "text"
+        },
+        {
+            "name": "Local Network",
+            "description": "Container/node private network",
+            "env_variable": "SIP_LOCAL_NET",
+            "default_value": "172.16.0.0/12",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:64",
+            "field_type": "text"
+        },
+        {
+            "name": "Public IP",
+            "description": "Public SIP/RTP IP",
+            "env_variable": "PUBLIC_IP",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|ip",
+            "field_type": "text"
+        },
+        {
+            "name": "Twilio Phone Number",
+            "description": "Owned E.164 DID",
+            "env_variable": "TWILIO_PHONE_NUMBER",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:32",
+            "field_type": "text"
+        },
+        {
+            "name": "Outbound Caller ID",
+            "description": "Approved E.164 caller ID",
+            "env_variable": "OUTBOUND_CALLER_ID_NUMBER",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:32",
+            "field_type": "text"
+        },
+        {
+            "name": "Live Transfer Number",
+            "description": "Human transfer number",
+            "env_variable": "FLOODMAN_LIVE_NUMBER",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:32",
+            "field_type": "text"
+        },
+        {
+            "name": "Emergency Transfer Number",
+            "description": "Urgent safety transfer number",
+            "env_variable": "FLOODMAN_EMERGENCY_NUMBER",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:32",
+            "field_type": "text"
+        },
+        {
+            "name": "Billing Transfer Number",
+            "description": "Billing transfer number",
+            "env_variable": "FLOODMAN_BILLING_NUMBER",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:32",
+            "field_type": "text"
+        },
+        {
+            "name": "Estimating Transfer Number",
+            "description": "Estimating transfer number",
+            "env_variable": "FLOODMAN_ESTIMATING_NUMBER",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:32",
+            "field_type": "text"
+        },
+        {
+            "name": "Team SMS Enabled",
+            "description": "Send intake notifications through Twilio",
+            "env_variable": "FLOODMAN_TEAM_SMS_ENABLED",
+            "default_value": "true",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "All-Team Alert Numbers",
+            "description": "Comma-separated E.164 numbers",
+            "env_variable": "FLOODMAN_TEAM_ALERT_NUMBERS",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:2048",
+            "field_type": "text"
+        },
+        {
+            "name": "Estimating Alert Numbers",
+            "description": "Comma-separated E.164 numbers",
+            "env_variable": "FLOODMAN_ESTIMATING_ALERT_NUMBERS",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:2048",
+            "field_type": "text"
+        },
+        {
+            "name": "Emergency Alert Numbers",
+            "description": "Comma-separated E.164 numbers",
+            "env_variable": "FLOODMAN_EMERGENCY_ALERT_NUMBERS",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:2048",
+            "field_type": "text"
+        },
+        {
+            "name": "Billing Alert Numbers",
+            "description": "Comma-separated E.164 numbers",
+            "env_variable": "FLOODMAN_BILLING_ALERT_NUMBERS",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:2048",
+            "field_type": "text"
+        },
+        {
+            "name": "Support Alert Numbers",
+            "description": "Comma-separated E.164 numbers",
+            "env_variable": "FLOODMAN_SUPPORT_ALERT_NUMBERS",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:2048",
+            "field_type": "text"
+        },
+        {
+            "name": "Callback SLA Hours",
+            "description": "Customer callback promise",
+            "env_variable": "FLOODMAN_CALLBACK_SLA_HOURS",
+            "default_value": "24",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|integer|min:1|max:168",
+            "field_type": "text"
+        },
+        {
+            "name": "Twilio Account SID",
+            "description": "Twilio account SID for SMS",
+            "env_variable": "TWILIO_ACCOUNT_SID",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:128",
+            "field_type": "text"
+        },
+        {
+            "name": "Twilio Auth Token",
+            "description": "Twilio auth token",
+            "env_variable": "TWILIO_AUTH_TOKEN",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:256",
+            "field_type": "text"
+        },
+        {
+            "name": "Twilio API Key",
+            "description": "Optional Twilio API key",
+            "env_variable": "TWILIO_API_KEY",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:128",
+            "field_type": "text"
+        },
+        {
+            "name": "Twilio API Key Secret",
+            "description": "Optional Twilio API key secret",
+            "env_variable": "TWILIO_API_KEY_SECRET",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:256",
+            "field_type": "text"
+        },
+        {
+            "name": "Messaging Service SID",
+            "description": "Optional Twilio messaging service",
+            "env_variable": "TWILIO_MESSAGING_SERVICE_SID",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:128",
+            "field_type": "text"
+        },
+        {
+            "name": "SMS From Number",
+            "description": "Fallback SMS sender",
+            "env_variable": "TWILIO_SMS_FROM_NUMBER",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:32",
+            "field_type": "text"
+        },
+        {
+            "name": "Hugging Face Token",
+            "description": "Optional token for model download",
+            "env_variable": "HF_TOKEN",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:256",
+            "field_type": "text"
+        },
+        {
+            "name": "LLM Model Repository",
+            "description": "Hugging Face GGUF repository",
+            "env_variable": "LLAMA_MODEL_REPO",
+            "default_value": "Qwen/Qwen3-4B-GGUF",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:255",
+            "field_type": "text"
+        },
+        {
+            "name": "LLM Model File",
+            "description": "Q4 GGUF filename",
+            "env_variable": "LLAMA_MODEL_FILENAME",
+            "default_value": "Qwen3-4B-Q4_K_M.gguf",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:255",
+            "field_type": "text"
+        },
+        {
+            "name": "LLM Context Size",
+            "description": "Context window reserved on the A1000",
+            "env_variable": "LLAMA_CONTEXT_SIZE",
+            "default_value": "4096",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|integer|min:2048|max:8192",
+            "field_type": "text"
+        },
+        {
+            "name": "Whisper Model",
+            "description": "Faster-Whisper model",
+            "env_variable": "FASTER_WHISPER_MODEL",
+            "default_value": "small.en",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:64",
+            "field_type": "text"
+        },
+        {
+            "name": "Kokoro Voice",
+            "description": "Local Kokoro speaker",
+            "env_variable": "KOKORO_VOICE",
+            "default_value": "af_heart",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:64",
+            "field_type": "text"
+        },
+        {
+            "name": "Normal Endpoint Silence",
+            "description": "Milliseconds before ending normal answers",
+            "env_variable": "ENDPOINT_SILENCE_MS",
+            "default_value": "550",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|integer|min:250|max:3000",
+            "field_type": "text"
+        },
+        {
+            "name": "Contact Endpoint Silence",
+            "description": "Milliseconds for names/emails/addresses",
+            "env_variable": "CONTACT_ENDPOINT_SILENCE_MS",
+            "default_value": "1200",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|integer|min:500|max:4000",
+            "field_type": "text"
+        },
+        {
+            "name": "Post TTS Guard",
+            "description": "Echo guard after Ava stops speaking",
+            "env_variable": "POST_TTS_GUARD_MS",
+            "default_value": "120",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|integer|min:0|max:1000",
+            "field_type": "text"
+        },
+        {
+            "name": "Log Level",
+            "description": "Application log level",
+            "env_variable": "LOG_LEVEL",
+            "default_value": "INFO",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|in:DEBUG,INFO,WARNING,ERROR",
+            "field_type": "text"
+        }
+    ]
+}

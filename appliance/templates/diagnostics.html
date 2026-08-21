@@ -1,0 +1,1 @@
+{% extends "base.html" %}{% block content %}<h1>Diagnostics</h1><p>Ready: <strong>{{ ready }}</strong>. Logs are bounded to the newest 160 lines so the panel stays readable.</p>{% for name, text in logs.items() %}<section class="card"><h2>{{ name }}</h2><pre>{{ text }}</pre></section>{% else %}<div class="card">No logs have been written yet.</div>{% endfor %}{% endblock %}
