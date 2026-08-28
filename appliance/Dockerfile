@@ -36,7 +36,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
     NVIDIA_VISIBLE_DEVICES=all \
     NVIDIA_DRIVER_CAPABILITIES=compute,utility \
-    LD_LIBRARY_PATH=/opt/llama/lib:/usr/local/cuda/lib64:${LD_LIBRARY_PATH}
+    LD_LIBRARY_PATH=/opt/llama:/usr/local/cuda/lib64:${LD_LIBRARY_PATH}
 RUN apt-get update && apt-get install -y --no-install-recommends \
     asterisk supervisor python3 python3-pip python3-venv \
     curl ca-certificates ffmpeg espeak-ng libsndfile1 libgomp1 git && \
@@ -45,7 +45,7 @@ RUN groupadd --gid "${CONTAINER_GID}" container && \
     useradd --uid "${CONTAINER_UID}" --gid "${CONTAINER_GID}" \
       --create-home --home-dir /home/container --shell /bin/bash container
 COPY --from=llama-build /out/bin/llama-server /opt/llama/llama-server
-COPY --from=llama-build /out/lib/ /opt/llama/lib/
+COPY --from=llama-build /out/lib/ /opt/llama/
 WORKDIR /opt/floodman
 COPY pyproject.toml ./
 COPY app ./app

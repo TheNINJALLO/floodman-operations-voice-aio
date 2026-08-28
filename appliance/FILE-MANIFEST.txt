@@ -1,18 +1,14 @@
       71  .dockerignore
     1506  .env.example
       94  .gitignore
-      37  .pytest_cache/.gitignore
-     191  .pytest_cache/CACHEDIR.TAG
-     302  .pytest_cache/README.md
-    1630  .pytest_cache/v/cache/nodeids
     2517  ARCHITECTURE.md
     1930  CURRENT-AIO-INTEGRATION.md
-    2791  Dockerfile
-    2701  FILE-MANIFEST.txt
+    3074  Dockerfile
+    2774  FILE-MANIFEST.txt
     1068  LICENSE
      680  QUICK-START.md
     5728  README.md
-     693  RELEASE_NOTES.md
+     920  RELEASE_NOTES.md
      725  THIRD_PARTY_LICENSES.md
     1782  VALIDATION.txt
       55  app/__init__.py
@@ -53,10 +49,10 @@
     1001  scripts/agi_finish.py
      864  scripts/agi_prepare.py
     2504  scripts/download_models.py
-    1151  scripts/entrypoint.sh
+    1605  scripts/entrypoint.sh
     3504  scripts/envfile.py
      374  scripts/gpu-preflight.sh
-     648  scripts/llama-server.sh
+     734  scripts/llama-server.sh
     1122  scripts/migrate_from_voice_aio.py
     2178  scripts/preflight.py
     6759  scripts/render_asterisk.py
@@ -80,6 +76,8 @@
      885  tests/test_envfile.py
      543  tests/test_flow.py
      697  tests/test_intake.py
+    1107  tests/test_llama_backend_runtime_contract.py
      212  tests/test_llm.py
+     808  tests/test_python_runtime_contract.py
      987  tests/test_render_asterisk.py
     3270  tests/test_voice_core.py

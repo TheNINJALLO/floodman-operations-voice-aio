@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
-exec /opt/llama/llama-server \
+
+LLAMA_RUNTIME_DIR="${LLAMA_RUNTIME_DIR:-/opt/llama}"
+cd "${LLAMA_RUNTIME_DIR}"
+exec "${LLAMA_RUNTIME_DIR}/llama-server" \
   --model "${LLAMA_MODEL_PATH:-/home/container/data/models/llm/Qwen3-4B-Q4_K_M.gguf}" \
-  --model-alias "${LLAMA_MODEL_ALIAS:-floodman-qwen3-4b}" \
+  --alias "${LLAMA_MODEL_ALIAS:-floodman-qwen3-4b}" \
   --host 127.0.0.1 \
   --port 8081 \
   --ctx-size "${LLAMA_CONTEXT_SIZE:-4096}" \
