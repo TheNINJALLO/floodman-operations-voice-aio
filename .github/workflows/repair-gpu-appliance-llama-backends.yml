@@ -1,4 +1,4 @@
-name: Repair Floodman GPU Appliance Llama Backends
+name: Repair Floodman GPU Appliance Llama Backends and Port 8002
 
 "on":
   push:
@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   repair:
-    name: Package CPU and CUDA backends beside llama-server
+    name: Package llama backends and bind Floodman to port 8002
     runs-on: ubuntu-latest
     timeout-minutes: 240
 
@@ -42,6 +42,14 @@ jobs:
           python /tmp/patch_llama_backends.py
           rm -f /tmp/patch_llama_backends.py
 
+      - name: Configure Floodman web port 8002
+        shell: bash
+        run: |
+          printf '%s' 'ZnJvbSBfX2Z1dHVyZV9fIGltcG9ydCBhbm5vdGF0aW9ucwoKZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCmltcG9ydCBiYXNlNjQKaW1wb3J0IGpzb24KClJPT1QgPSBQYXRoKCJhcHBsaWFuY2UiKQpURVNUX1NPVVJDRSA9IGJhc2U2NC5iNjRkZWNvZGUoIlpuSnZiU0JmWDJaMWRIVnlaVjlmSUdsdGNHOXlkQ0JoYm01dmRHRjBhVzl1Y3dvS1puSnZiU0J3WVhSb2JHbGlJR2x0Y0c5eWRDQlFZWFJvQ21sdGNHOXlkQ0JxYzI5dUNnb0taR1ZtSUhSbGMzUmZjblZ1ZEdsdFpWOWlhVzVrYzE5MGIxOXdiM0owWHpnd01ESW9DaUFnSUNCd2NtOXFaV04wWDNKdmIzUTZJRkJoZEdnc0Npa2dMVDRnVG05dVpUb0tJQ0FnSUdSdlkydGxjbVpwYkdVZ1BTQW9DaUFnSUNBZ0lDQWdjSEp2YW1WamRGOXliMjkwSUM4Z0lrUnZZMnRsY21acGJHVWlDaUFnSUNBcExuSmxZV1JmZEdWNGRDaGxibU52WkdsdVp6MGlkWFJtTFRnaUtRb2dJQ0FnYzNWd1pYSjJhWE52Y2lBOUlDZ0tJQ0FnSUNBZ0lDQndjbTlxWldOMFgzSnZiM1FnTHlBaWMzVndaWEoyYVhOdmNpOXpkWEJsY25acGMyOXlaQzVqYjI1bUlnb2dJQ0FnS1M1eVpXRmtYM1JsZUhRb1pXNWpiMlJwYm1jOUluVjBaaTA0SWlrS0lDQWdJR052Ym1acFp5QTlJQ2dLSUNBZ0lDQWdJQ0J3Y205cVpXTjBYM0p2YjNRZ0x5QWlZWEJ3TDJOdmJtWnBaeTV3ZVNJS0lDQWdJQ2t1Y21WaFpGOTBaWGgwS0dWdVkyOWthVzVuUFNKMWRHWXRPQ0lwQ2dvZ0lDQWdZWE56WlhKMElDSlhSVUpmVUU5U1ZEMDRNREF5SWlCcGJpQmtiMk5yWlhKbWFXeGxDaUFnSUNCaGMzTmxjblFnSWtWWVVFOVRSU0E0TURBeUwzUmpjQ0lnYVc0Z1pHOWphMlZ5Wm1sc1pRb2dJQ0FnWVhOelpYSjBJQ2dLSUNBZ0lDQWdJQ0FpYUhSMGNEb3ZMekV5Tnk0d0xqQXVNVG9rZTFkRlFsOVFUMUpVZlM5eVpXRmtlU0lLSUNBZ0lDQWdJQ0JwYmlCa2IyTnJaWEptYVd4bENpQWdJQ0FwQ2lBZ0lDQmhjM05sY25RZ0lpMHRjRzl5ZENBbEtFVk9WbDlYUlVKZlVFOVNWQ2x6SWlCcGJpQnpkWEJsY25acGMyOXlDaUFnSUNCaGMzTmxjblFnS0FvZ0lDQWdJQ0FnSUNKb2RIUndPaTh2TVRJM0xqQXVNQzR4T2lVb1JVNVdYMWRGUWw5UVQxSlVLWE12Y21WaFpIa2lDaUFnSUNBZ0lDQWdhVzRnYzNWd1pYSjJhWE52Y2dvZ0lDQWdLUW9nSUNBZ1lYTnpaWEowSUNkZmFXNTBLQ0pYUlVKZlVFOVNWQ0lzSURnd01ESXBKeUJwYmlCamIyNW1hV2NLQ2lBZ0lDQm1iM0lnZEdWNGRDQnBiaUFvWkc5amEyVnlabWxzWlN3Z2MzVndaWEoyYVhOdmNpd2dZMjl1Wm1sbktUb0tJQ0FnSUNBZ0lDQmhjM05sY25RZ0lqZ3dNRE1pSUc1dmRDQnBiaUIwWlhoMENnb0taR1ZtSUhSbGMzUmZaV2RuWDJSbFkyeGhjbVZ6WDNkbFlsOXdiM0owWHpnd01ESW9DaUFnSUNCd2NtOXFaV04wWDNKdmIzUTZJRkJoZEdnc0Npa2dMVDRnVG05dVpUb0tJQ0FnSUdWblp5QTlJR3B6YjI0dWJHOWhaSE1vQ2lBZ0lDQWdJQ0FnS0FvZ0lDQWdJQ0FnSUNBZ0lDQndjbTlxWldOMFgzSnZiM1FLSUNBZ0lDQWdJQ0FnSUNBZ0x5QWljSFJsY205a1lXTjBlV3d2SWdvZ0lDQWdJQ0FnSUNBZ0lDQWlaV2RuTFdac2IyOWtiV0Z1TFhadmFXTmxMV0Z3Y0d4cFlXNWpaUzVxYzI5dUlnb2dJQ0FnSUNBZ0lDa3VjbVZoWkY5MFpYaDBLR1Z1WTI5a2FXNW5QU0oxZEdZdE9DSXBDaUFnSUNBcENpQWdJQ0IyWVhKcFlXSnNaWE1nUFNCN0NpQWdJQ0FnSUNBZ2FYUmxiVnNpWlc1MlgzWmhjbWxoWW14bElsMDZJR2wwWlcwS0lDQWdJQ0FnSUNCbWIzSWdhWFJsYlNCcGJpQmxaMmRiSW5aaGNtbGhZbXhsY3lKZENpQWdJQ0I5Q2dvZ0lDQWdZWE56WlhKMElIWmhjbWxoWW14bGMxc2lWMFZDWDFCUFVsUWlYVnNpWkdWbVlYVnNkRjkyWVd4MVpTSmRJRDA5SUNJNE1EQXlJZ29nSUNBZ1lYTnpaWEowSUNnS0lDQWdJQ0FnSUNCMllYSnBZV0pzWlhOYklsQlZRa3hKUTE5Q1FWTkZYMVZTVENKZFd5SmtaV1poZFd4MFgzWmhiSFZsSWwwS0lDQWdJQ0FnSUNBOVBTQWlhSFIwY0Rvdkx6RXlOeTR3TGpBdU1UbzRNREF5SWdvZ0lDQWdLUW89IikuZGVjb2RlKCJ1dGYtOCIpCgoKZGVmIHJlcGxhY2VfcmVxdWlyZWQoCiAgICB0ZXh0OiBzdHIsCiAgICBvbGQ6IHN0ciwKICAgIG5ldzogc3RyLAogICAgbGFiZWw6IHN0ciwKKSAtPiBzdHI6CiAgICBpZiBuZXcgaW4gdGV4dCBhbmQgb2xkIG5vdCBpbiB0ZXh0OgogICAgICAgIHJldHVybiB0ZXh0CiAgICBjb3VudCA9IHRleHQuY291bnQob2xkKQogICAgaWYgY291bnQgIT0gMToKICAgICAgICByYWlzZSBTeXN0ZW1FeGl0KAogICAgICAgICAgICBmIntsYWJlbH06IGV4cGVjdGVkIG9uZSBzb3VyY2UgbWF0Y2gsIGZvdW5kIHtjb3VudH0iCiAgICAgICAgKQogICAgcmV0dXJuIHRleHQucmVwbGFjZShvbGQsIG5ldywgMSkKCgpkb2NrZXJfcGF0aCA9IFJPT1QgLyAiRG9ja2VyZmlsZSIKZG9ja2VyID0gZG9ja2VyX3BhdGgucmVhZF90ZXh0KGVuY29kaW5nPSJ1dGYtOCIpCgppZiAiICAgIFdFQl9QT1JUPTgwMDIgXFxcbiIgbm90IGluIGRvY2tlcjoKICAgIGRvY2tlciA9IHJlcGxhY2VfcmVxdWlyZWQoCiAgICAgICAgZG9ja2VyLAogICAgICAgICgKICAgICAgICAgICAgIiAgICBQQVRIPS9vcHQvdmVudi9iaW46L3Vzci9sb2NhbC9zYmluOiIKICAgICAgICAgICAgIi91c3IvbG9jYWwvYmluOi91c3Ivc2JpbjovdXNyL2Jpbjovc2JpbjovYmluIFxcXG4iCiAgICAgICAgKSwKICAgICAgICAoCiAgICAgICAgICAgICIgICAgUEFUSD0vb3B0L3ZlbnYvYmluOi91c3IvbG9jYWwvc2JpbjoiCiAgICAgICAgICAgICIvdXNyL2xvY2FsL2JpbjovdXNyL3NiaW46L3Vzci9iaW46L3NiaW46L2JpbiBcXFxuIgogICAgICAgICAgICAiICAgIFdFQl9QT1JUPTgwMDIgXFxcbiIKICAgICAgICApLAogICAgICAgICJEb2NrZXIgV0VCX1BPUlQiLAogICAgKQoKZG9ja2VyID0gcmVwbGFjZV9yZXF1aXJlZCgKICAgIGRvY2tlciwKICAgICJFWFBPU0UgODAwMy90Y3AgNTA2MC91ZHAgNTA2MC90Y3AgMTAwMDAtMTAxMDAvdWRwIiwKICAgICJFWFBPU0UgODAwMi90Y3AgNTA2MC91ZHAgNTA2MC90Y3AgMTAwMDAtMTAxMDAvdWRwIiwKICAgICJEb2NrZXIgZXhwb3NlZCB3ZWIgcG9ydCIsCikKZG9ja2VyID0gcmVwbGFjZV9yZXF1aXJlZCgKICAgIGRvY2tlciwKICAgICJDTUQgY3VybCAtZnNTIGh0dHA6Ly8xMjcuMC4wLjE6ODAwMy9yZWFkeSB8fCBleGl0IDEiLAogICAgKAogICAgICAgICdDTUQgY3VybCAtZnNTICcKICAgICAgICAnImh0dHA6Ly8xMjcuMC4wLjE6JHtXRUJfUE9SVH0vcmVhZHkiIHx8IGV4aXQgMScKICAgICksCiAgICAiRG9ja2VyIGhlYWx0aGNoZWNrIHdlYiBwb3J0IiwKKQpkb2NrZXJfcGF0aC53cml0ZV90ZXh0KAogICAgZG9ja2VyLAogICAgZW5jb2Rpbmc9InV0Zi04IiwKICAgIG5ld2xpbmU9IlxuIiwKKQoKc3VwZXJ2aXNvcl9wYXRoID0gUk9PVCAvICJzdXBlcnZpc29yL3N1cGVydmlzb3JkLmNvbmYiCnN1cGVydmlzb3IgPSBzdXBlcnZpc29yX3BhdGgucmVhZF90ZXh0KGVuY29kaW5nPSJ1dGYtOCIpCnN1cGVydmlzb3IgPSBzdXBlcnZpc29yLnJlcGxhY2UoCiAgICAiLS1wb3J0IDgwMDMiLAogICAgIi0tcG9ydCAlKEVOVl9XRUJfUE9SVClzIiwKKQpzdXBlcnZpc29yID0gc3VwZXJ2aXNvci5yZXBsYWNlKAogICAgImh0dHA6Ly8xMjcuMC4wLjE6ODAwMy9yZWFkeSIsCiAgICAiaHR0cDovLzEyNy4wLjAuMTolKEVOVl9XRUJfUE9SVClzL3JlYWR5IiwKKQppZiAiODAwMyIgaW4gc3VwZXJ2aXNvcjoKICAgIHJhaXNlIFN5c3RlbUV4aXQoCiAgICAgICAgInN1cGVydmlzb3Igc3RpbGwgY29udGFpbnMgaGFyZGNvZGVkIHBvcnQgODAwMyIKICAgICkKc3VwZXJ2aXNvcl9wYXRoLndyaXRlX3RleHQoCiAgICBzdXBlcnZpc29yLAogICAgZW5jb2Rpbmc9InV0Zi04IiwKICAgIG5ld2xpbmU9IlxuIiwKKQoKY29uZmlnX3BhdGggPSBST09UIC8gImFwcC9jb25maWcucHkiCmNvbmZpZyA9IGNvbmZpZ19wYXRoLnJlYWRfdGV4dChlbmNvZGluZz0idXRmLTgiKQpjb25maWcgPSBjb25maWcucmVwbGFjZSgKICAgICciaHR0cDovLzEyNy4wLjAuMTo4MDAzIicsCiAgICAnImh0dHA6Ly8xMjcuMC4wLjE6ODAwMiInLAopCmNvbmZpZyA9IGNvbmZpZy5yZXBsYWNlKAogICAgJ19pbnQoIldFQl9QT1JUIiwgODAwMyknLAogICAgJ19pbnQoIldFQl9QT1JUIiwgODAwMiknLAopCmlmICI4MDAzIiBpbiBjb25maWc6CiAgICByYWlzZSBTeXN0ZW1FeGl0KAogICAgICAgICJhcHBsaWNhdGlvbiBjb25maWcgc3RpbGwgY29udGFpbnMgcG9ydCA4MDAzIgogICAgKQpjb25maWdfcGF0aC53cml0ZV90ZXh0KAogICAgY29uZmlnLAogICAgZW5jb2Rpbmc9InV0Zi04IiwKICAgIG5ld2xpbmU9IlxuIiwKKQoKZWdnX3BhdGggPSAoCiAgICBST09UCiAgICAvICJwdGVyb2RhY3R5bC8iCiAgICAiZWdnLWZsb29kbWFuLXZvaWNlLWFwcGxpYW5jZS5qc29uIgopCmVnZyA9IGpzb24ubG9hZHMoZWdnX3BhdGgucmVhZF90ZXh0KGVuY29kaW5nPSJ1dGYtOCIpKQp2YXJpYWJsZXMgPSBlZ2dbInZhcmlhYmxlcyJdCmJ5X2VudiA9IHsKICAgIGl0ZW1bImVudl92YXJpYWJsZSJdOiBpdGVtCiAgICBmb3IgaXRlbSBpbiB2YXJpYWJsZXMKfQoKcHVibGljX3VybCA9IGJ5X2VudlsiUFVCTElDX0JBU0VfVVJMIl0KaWYgcHVibGljX3VybC5nZXQoImRlZmF1bHRfdmFsdWUiKSBpbiB7CiAgICAiIiwKICAgICJodHRwOi8vMTI3LjAuMC4xOjgwMDMiLAp9OgogICAgcHVibGljX3VybFsiZGVmYXVsdF92YWx1ZSJdID0gImh0dHA6Ly8xMjcuMC4wLjE6ODAwMiIKCndlYl9wb3J0ID0gewogICAgIm5hbWUiOiAiV2ViIFBvcnQiLAogICAgImRlc2NyaXB0aW9uIjogIkludGVybmFsIEZsb29kbWFuIHdlYiBhbmQgcmVhZGluZXNzIHBvcnQuIiwKICAgICJlbnZfdmFyaWFibGUiOiAiV0VCX1BPUlQiLAogICAgImRlZmF1bHRfdmFsdWUiOiAiODAwMiIsCiAgICAidXNlcl92aWV3YWJsZSI6IFRydWUsCiAgICAidXNlcl9lZGl0YWJsZSI6IFRydWUsCiAgICAicnVsZXMiOiAicmVxdWlyZWR8aW50ZWdlcnxtaW46MXxtYXg6NjU1MzUiLAogICAgImZpZWxkX3R5cGUiOiAidGV4dCIsCn0KZXhpc3RpbmcgPSBieV9lbnYuZ2V0KCJXRUJfUE9SVCIpCmlmIGV4aXN0aW5nIGlzIE5vbmU6CiAgICBwdWJsaWNfaW5kZXggPSBuZXh0KAogICAgICAgIGluZGV4CiAgICAgICAgZm9yIGluZGV4LCBpdGVtIGluIGVudW1lcmF0ZSh2YXJpYWJsZXMpCiAgICAgICAgaWYgaXRlbVsiZW52X3ZhcmlhYmxlIl0gPT0gIlBVQkxJQ19CQVNFX1VSTCIKICAgICkKICAgIHZhcmlhYmxlcy5pbnNlcnQocHVibGljX2luZGV4ICsgMSwgd2ViX3BvcnQpCmVsc2U6CiAgICBleGlzdGluZy51cGRhdGUod2ViX3BvcnQpCgplZ2dfcGF0aC53cml0ZV90ZXh0KAogICAganNvbi5kdW1wcyhlZ2csIGluZGVudD00KSArICJcbiIsCiAgICBlbmNvZGluZz0idXRmLTgiLAogICAgbmV3bGluZT0iXG4iLAopCgooCiAgICBST09UIC8gInRlc3RzL3Rlc3Rfd2ViX3BvcnRfODAwMl9jb250cmFjdC5weSIKKS53cml0ZV90ZXh0KAogICAgVEVTVF9TT1VSQ0UsCiAgICBlbmNvZGluZz0idXRmLTgiLAogICAgbmV3bGluZT0iXG4iLAopCgptYW5pZmVzdF9saW5lczogbGlzdFtzdHJdID0gW10KZm9yIHBhdGggaW4gc29ydGVkKFJPT1Qucmdsb2IoIioiKSk6CiAgICBpZiAoCiAgICAgICAgbm90IHBhdGguaXNfZmlsZSgpCiAgICAgICAgb3IgIl9fcHljYWNoZV9fIiBpbiBwYXRoLnBhcnRzCiAgICAgICAgb3IgcGF0aC5zdWZmaXggPT0gIi5weWMiCiAgICApOgogICAgICAgIGNvbnRpbnVlCiAgICByZWxhdGl2ZSA9IHBhdGgucmVsYXRpdmVfdG8oUk9PVCkuYXNfcG9zaXgoKQogICAgbWFuaWZlc3RfbGluZXMuYXBwZW5kKAogICAgICAgIGYie3BhdGguc3RhdCgpLnN0X3NpemU6OGR9ICB7cmVsYXRpdmV9IgogICAgKQooUk9PVCAvICJGSUxFLU1BTklGRVNULnR4dCIpLndyaXRlX3RleHQoCiAgICAiXG4iLmpvaW4obWFuaWZlc3RfbGluZXMpICsgIlxuIiwKICAgIGVuY29kaW5nPSJ1dGYtOCIsCiAgICBuZXdsaW5lPSJcbiIsCikK' \
+            | base64 -d > /tmp/patch_port_8002.py
+          python /tmp/patch_port_8002.py
+          rm -f /tmp/patch_port_8002.py
+
       - name: Verify patched source
         working-directory: appliance
         shell: bash
@@ -63,6 +71,23 @@ jobs:
           grep -q \
             'cd "${LLAMA_RUNTIME_DIR}"' \
             scripts/llama-server.sh
+
+          grep -q 'WEB_PORT=8002' Dockerfile
+          grep -q 'EXPOSE 8002/tcp' Dockerfile
+          grep -q -- '--port %(ENV_WEB_PORT)s' \
+            supervisor/supervisord.conf
+          grep -q \
+            '127.0.0.1:%(ENV_WEB_PORT)s/ready' \
+            supervisor/supervisord.conf
+          grep -q '_int("WEB_PORT", 8002)' app/config.py
+
+          if grep -RIn --exclude='*.pyc' '8003' \
+            Dockerfile \
+            app/config.py \
+            supervisor/supervisord.conf; then
+            echo "A hardcoded legacy web port remains."
+            exit 1
+          fi
 
           git diff --check
 
@@ -88,14 +113,18 @@ jobs:
             appliance/Dockerfile \
             appliance/pyproject.toml \
             appliance/scripts/llama-server.sh \
+            appliance/app/config.py \
+            appliance/supervisor/supervisord.conf \
+            appliance/pterodactyl/egg-floodman-voice-appliance.json \
             appliance/tests/test_llama_backend_runtime_contract.py \
+            appliance/tests/test_web_port_8002_contract.py \
             appliance/FILE-MANIFEST.txt
 
           if git diff --cached --quiet; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             git commit -m \
-              "fix: package llama CPU and CUDA backends beside the server"
+              "fix: package llama backends and bind web service to 8002"
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
@@ -184,7 +213,22 @@ jobs:
               /opt/llama/llama-server --help \
                 > /tmp/llama-help.log 2>&1
               grep -q -- "--alias" /tmp/llama-help.log
+
+              test "${WEB_PORT}" = "8002"
+              grep -q -- "--port %(ENV_WEB_PORT)s" \
+                /opt/floodman/supervisor/supervisord.conf
+              grep -q \
+                "127.0.0.1:%(ENV_WEB_PORT)s/ready" \
+                /opt/floodman/supervisor/supervisord.conf
             '
+
+          docker image inspect "${CANDIDATE}" \
+            --format '{{json .Config.ExposedPorts}}' \
+            | grep -q '"8002/tcp"'
+
+          docker image inspect "${CANDIDATE}" \
+            --format '{{json .Config.Healthcheck.Test}}' \
+            | grep -q 'WEB_PORT'
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -228,6 +272,8 @@ jobs:
           echo "- CPU and CUDA backend plugins are beside llama-server" \
             >> "$GITHUB_STEP_SUMMARY"
           echo "- Launcher uses --alias" \
+            >> "$GITHUB_STEP_SUMMARY"
+          echo "- Floodman web service binds to port 8002" \
             >> "$GITHUB_STEP_SUMMARY"
           echo "- Source SHA: ${SOURCE_SHA}" \
             >> "$GITHUB_STEP_SUMMARY"
