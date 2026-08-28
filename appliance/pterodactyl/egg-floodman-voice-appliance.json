@@ -32,10 +32,20 @@
             "name": "Public Base URL",
             "description": "Panel URL such as https://voice.example.com",
             "env_variable": "PUBLIC_BASE_URL",
-            "default_value": "http://127.0.0.1:8003",
+            "default_value": "http://127.0.0.1:8002",
             "user_viewable": true,
             "user_editable": true,
             "rules": "required|string|max:255",
+            "field_type": "text"
+        },
+        {
+            "name": "Web Port",
+            "description": "Internal Floodman web and readiness port.",
+            "env_variable": "WEB_PORT",
+            "default_value": "8002",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|integer|min:1|max:65535",
             "field_type": "text"
         },
         {

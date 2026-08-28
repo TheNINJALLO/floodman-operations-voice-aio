@@ -3,8 +3,8 @@
       94  .gitignore
     2517  ARCHITECTURE.md
     1930  CURRENT-AIO-INTEGRATION.md
-    3074  Dockerfile
-    2774  FILE-MANIFEST.txt
+    3103  Dockerfile
+    2731  FILE-MANIFEST.txt
     1068  LICENSE
      680  QUICK-START.md
     5728  README.md
@@ -44,7 +44,7 @@
      687  knowledge/80-inspections-pricing-warranty-insurance.md
      653  knowledge/90-safe-faq.md
      477  knowledge/99-review-needed.md
-   17401  pterodactyl/egg-floodman-voice-appliance.json
+   17763  pterodactyl/egg-floodman-voice-appliance.json
      800  pyproject.toml
     1001  scripts/agi_finish.py
      864  scripts/agi_prepare.py
@@ -60,7 +60,7 @@
      296  scripts/wait-for-ready.sh
     2008  static/app.css
      889  static/simulator.js
-    1477  supervisor/supervisord.conf
+    1501  supervisor/supervisord.conf
      578  templates/base.html
      514  templates/call.html
      799  templates/dashboard.html
@@ -81,3 +81,4 @@
      808  tests/test_python_runtime_contract.py
      987  tests/test_render_asterisk.py
     3270  tests/test_voice_core.py
+    1391  tests/test_web_port_8002_contract.py

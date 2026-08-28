@@ -130,7 +130,7 @@ class Settings:
 
         admin = os.getenv("ADMIN_TOKEN", "").strip() or secrets.token_urlsafe(32)
         internal = os.getenv("INTERNAL_TOKEN", "").strip() or secrets.token_urlsafe(32)
-        public_base_url = os.getenv("PUBLIC_BASE_URL", "http://127.0.0.1:8003").rstrip("/")
+        public_base_url = os.getenv("PUBLIC_BASE_URL", "http://127.0.0.1:8002").rstrip("/")
         public_host = urlparse(public_base_url).hostname or ""
         trusted_default = ",".join(value for value in ("localhost", "127.0.0.1", public_host) if value)
         return cls(
@@ -142,7 +142,7 @@ class Settings:
             runtime_dir=runtime,
             log_dir=logs,
             web_host=os.getenv("WEB_HOST", "0.0.0.0"),
-            web_port=_int("WEB_PORT", 8003),
+            web_port=_int("WEB_PORT", 8002),
             admin_token=admin,
             internal_token=internal,
             public_base_url=public_base_url,

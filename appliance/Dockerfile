@@ -31,6 +31,7 @@ ARG CONTAINER_GID=988
 ENV DEBIAN_FRONTEND=noninteractive \
     VIRTUAL_ENV=/opt/venv \
     PATH=/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    WEB_PORT=8002 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -67,6 +68,6 @@ RUN python3 -m venv /opt/venv && \
     chmod +x /opt/floodman/scripts/*.sh /opt/floodman/scripts/*.py
 USER container
 WORKDIR /home/container
-EXPOSE 8003/tcp 5060/udp 5060/tcp 10000-10100/udp
-HEALTHCHECK --interval=30s --timeout=5s --start-period=180s --retries=3 CMD curl -fsS http://127.0.0.1:8003/ready || exit 1
+EXPOSE 8002/tcp 5060/udp 5060/tcp 10000-10100/udp
+HEALTHCHECK --interval=30s --timeout=5s --start-period=180s --retries=3 CMD curl -fsS "http://127.0.0.1:${WEB_PORT}/ready" || exit 1
 ENTRYPOINT ["/opt/floodman/scripts/entrypoint.sh"]
