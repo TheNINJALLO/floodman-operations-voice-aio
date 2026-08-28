@@ -1,0 +1,237 @@
+name: Repair Floodman GPU Appliance Llama Backends
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/repair-gpu-appliance-llama-backends.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+  actions: read
+
+concurrency:
+  group: repair-floodman-gpu-llama-backends
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    name: Package CPU and CUDA backends beside llama-server
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+
+    steps:
+      - name: Check out the appliance branch
+        uses: actions/checkout@v4
+        with:
+          ref: self-hosted-gpu-appliance
+          fetch-depth: 0
+
+      - name: Set up test Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Patch llama backend discovery
+        shell: bash
+        run: |
+          printf '%s' 'ZnJvbSBfX2Z1dHVyZV9fIGltcG9ydCBhbm5vdGF0aW9ucwoKZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCmltcG9ydCBiYXNlNjQKCgpST09UID0gUGF0aCgiYXBwbGlhbmNlIikKVEVTVF9TT1VSQ0UgPSBiYXNlNjQuYjY0ZGVjb2RlKCJabkp2YlNCZlgyWjFkSFZ5WlY5ZklHbHRjRzl5ZENCaGJtNXZkR0YwYVc5dWN3b0tabkp2YlNCd1lYUm9iR2xpSUdsdGNHOXlkQ0JRWVhSb0Nnb0taR1ZtSUhSbGMzUmZaSGx1WVcxcFkxOWlZV05yWlc1a2MxOWhjbVZmYm1WNGRGOTBiMTlzYkdGdFlWOXpaWEoyWlhJb0NpQWdJQ0J3Y205cVpXTjBYM0p2YjNRNklGQmhkR2dzQ2lrZ0xUNGdUbTl1WlRvS0lDQWdJR1J2WTJ0bGNtWnBiR1VnUFNBb0NpQWdJQ0FnSUNBZ2NISnZhbVZqZEY5eWIyOTBJQzhnSWtSdlkydGxjbVpwYkdVaUNpQWdJQ0FwTG5KbFlXUmZkR1Y0ZENobGJtTnZaR2x1WnowaWRYUm1MVGdpS1FvS0lDQWdJR0Z6YzJWeWRDQWlMVVJIUjAxTVgwTlZSRUU5VDA0aUlHbHVJR1J2WTJ0bGNtWnBiR1VLSUNBZ0lHRnpjMlZ5ZENBaUxVUkhSMDFNWDBKQlEwdEZUa1JmUkV3OVQwNGlJR2x1SUdSdlkydGxjbVpwYkdVS0lDQWdJR0Z6YzJWeWRDQW9DaUFnSUNBZ0lDQWdJa05QVUZrZ0xTMW1jbTl0UFd4c1lXMWhMV0oxYVd4a0lDOXZkWFF2YkdsaUx5QXZiM0IwTDJ4c1lXMWhMeUlLSUNBZ0lDQWdJQ0JwYmlCa2IyTnJaWEptYVd4bENpQWdJQ0FwQ2lBZ0lDQmhjM05sY25RZ0tBb2dJQ0FnSUNBZ0lDSkRUMUJaSUMwdFpuSnZiVDFzYkdGdFlTMWlkV2xzWkNBdmIzVjBMMnhwWWk4Z0wyOXdkQzlzYkdGdFlTOXNhV0l2SWdvZ0lDQWdJQ0FnSUc1dmRDQnBiaUJrYjJOclpYSm1hV3hsQ2lBZ0lDQXBDaUFnSUNCaGMzTmxjblFnS0FvZ0lDQWdJQ0FnSUNKTVJGOU1TVUpTUVZKWlgxQkJWRWc5TDI5d2RDOXNiR0Z0WVRvdmRYTnlMMnh2WTJGc0wyTjFaR0V2YkdsaU5qUTZJZ29nSUNBZ0lDQWdJR2x1SUdSdlkydGxjbVpwYkdVS0lDQWdJQ2tLQ2dwa1pXWWdkR1Z6ZEY5c2JHRnRZVjlzWVhWdVkyaGxjbDkxYzJWelgyTjFjbkpsYm5SZlkyeHBYMkZ1WkY5aVlXTnJaVzVrWDJScGNtVmpkRzl5ZVNnS0lDQWdJSEJ5YjJwbFkzUmZjbTl2ZERvZ1VHRjBhQ3dLS1NBdFBpQk9iMjVsT2dvZ0lDQWdiR0YxYm1Ob1pYSWdQU0FvQ2lBZ0lDQWdJQ0FnY0hKdmFtVmpkRjl5YjI5MElDOGdJbk5qY21sd2RITXZiR3hoYldFdGMyVnlkbVZ5TG5Ob0lnb2dJQ0FnS1M1eVpXRmtYM1JsZUhRb1pXNWpiMlJwYm1jOUluVjBaaTA0SWlrS0NpQWdJQ0JoYzNObGNuUWdKMHhNUVUxQlgxSlZUbFJKVFVWZlJFbFNQU0lrZTB4TVFVMUJYMUpWVGxSSlRVVmZSRWxTT2kwdmIzQjBMMnhzWVcxaGZTSW5JR2x1SUd4aGRXNWphR1Z5Q2lBZ0lDQmhjM05sY25RZ0oyTmtJQ0lrZTB4TVFVMUJYMUpWVGxSSlRVVmZSRWxTZlNJbklHbHVJR3hoZFc1amFHVnlDaUFnSUNCaGMzTmxjblFnSjJWNFpXTWdJaVI3VEV4QlRVRmZVbFZPVkVsTlJWOUVTVko5TDJ4c1lXMWhMWE5sY25abGNpSW5JR2x1SUd4aGRXNWphR1Z5Q2lBZ0lDQmhjM05sY25RZ0lpMHRZV3hwWVhNZ0lpQnBiaUJzWVhWdVkyaGxjZ29nSUNBZ1lYTnpaWEowSUNJdExXMXZaR1ZzTFdGc2FXRnpJaUJ1YjNRZ2FXNGdiR0YxYm1Ob1pYSUsiKS5kZWNvZGUoCiAgICAidXRmLTgiCikKCgpkZWYgcmVwbGFjZV9vbmNlKAogICAgdGV4dDogc3RyLAogICAgb2xkOiBzdHIsCiAgICBuZXc6IHN0ciwKICAgIGxhYmVsOiBzdHIsCikgLT4gc3RyOgogICAgaWYgbmV3IGluIHRleHQgYW5kIG9sZCBub3QgaW4gdGV4dDoKICAgICAgICByZXR1cm4gdGV4dAogICAgY291bnQgPSB0ZXh0LmNvdW50KG9sZCkKICAgIGlmIGNvdW50ICE9IDE6CiAgICAgICAgcmFpc2UgU3lzdGVtRXhpdCgKICAgICAgICAgICAgZiJ7bGFiZWx9OiBleHBlY3RlZCBvbmUgc291cmNlIG1hdGNoLCBmb3VuZCB7Y291bnR9IgogICAgICAgICkKICAgIHJldHVybiB0ZXh0LnJlcGxhY2Uob2xkLCBuZXcsIDEpCgoKZG9ja2VyX3BhdGggPSBST09UIC8gIkRvY2tlcmZpbGUiCmRvY2tlciA9IGRvY2tlcl9wYXRoLnJlYWRfdGV4dChlbmNvZGluZz0idXRmLTgiKQpkb2NrZXIgPSByZXBsYWNlX29uY2UoCiAgICBkb2NrZXIsCiAgICAoCiAgICAgICAgIiAgICBMRF9MSUJSQVJZX1BBVEg9L29wdC9sbGFtYS9saWI6IgogICAgICAgICIvdXNyL2xvY2FsL2N1ZGEvbGliNjQ6JHtMRF9MSUJSQVJZX1BBVEh9XG4iCiAgICApLAogICAgKAogICAgICAgICIgICAgTERfTElCUkFSWV9QQVRIPS9vcHQvbGxhbWE6IgogICAgICAgICIvdXNyL2xvY2FsL2N1ZGEvbGliNjQ6JHtMRF9MSUJSQVJZX1BBVEh9XG4iCiAgICApLAogICAgImxsYW1hIHJ1bnRpbWUgbGlicmFyeSBwYXRoIiwKKQpkb2NrZXIgPSByZXBsYWNlX29uY2UoCiAgICBkb2NrZXIsCiAgICAoCiAgICAgICAgIkNPUFkgLS1mcm9tPWxsYW1hLWJ1aWxkIC9vdXQvbGliLyAiCiAgICAgICAgIi9vcHQvbGxhbWEvbGliL1xuIgogICAgKSwKICAgICgKICAgICAgICAiQ09QWSAtLWZyb209bGxhbWEtYnVpbGQgL291dC9saWIvICIKICAgICAgICAiL29wdC9sbGFtYS9cbiIKICAgICksCiAgICAiZHluYW1pYyBiYWNrZW5kIHBsYWNlbWVudCIsCikKZG9ja2VyX3BhdGgud3JpdGVfdGV4dCgKICAgIGRvY2tlciwKICAgIGVuY29kaW5nPSJ1dGYtOCIsCiAgICBuZXdsaW5lPSJcbiIsCikKCmxhdW5jaGVyX3BhdGggPSBST09UIC8gInNjcmlwdHMvbGxhbWEtc2VydmVyLnNoIgpsYXVuY2hlciA9IGxhdW5jaGVyX3BhdGgucmVhZF90ZXh0KGVuY29kaW5nPSJ1dGYtOCIpCmxhdW5jaGVyID0gbGF1bmNoZXIucmVwbGFjZSgKICAgICItLW1vZGVsLWFsaWFzIiwKICAgICItLWFsaWFzIiwKKQppZiAiTExBTUFfUlVOVElNRV9ESVI9IiBub3QgaW4gbGF1bmNoZXI6CiAgICBsYXVuY2hlciA9IHJlcGxhY2Vfb25jZSgKICAgICAgICBsYXVuY2hlciwKICAgICAgICAic2V0IC1ldW8gcGlwZWZhaWxcbiIsCiAgICAgICAgKAogICAgICAgICAgICAic2V0IC1ldW8gcGlwZWZhaWxcbiIKICAgICAgICAgICAgIlxuIgogICAgICAgICAgICAnTExBTUFfUlVOVElNRV9ESVI9IiR7TExBTUFfUlVOVElNRV9ESVI6LS9vcHQvbGxhbWF9IlxuJwogICAgICAgICAgICAnY2QgIiR7TExBTUFfUlVOVElNRV9ESVJ9IlxuJwogICAgICAgICksCiAgICAgICAgImxsYW1hIGJhY2tlbmQgd29ya2luZyBkaXJlY3RvcnkiLAogICAgKQpsYXVuY2hlciA9IGxhdW5jaGVyLnJlcGxhY2UoCiAgICAiZXhlYyAvb3B0L2xsYW1hL2xsYW1hLXNlcnZlciIsCiAgICAnZXhlYyAiJHtMTEFNQV9SVU5USU1FX0RJUn0vbGxhbWEtc2VydmVyIicsCikKaWYgIi0tbW9kZWwtYWxpYXMiIGluIGxhdW5jaGVyOgogICAgcmFpc2UgU3lzdGVtRXhpdCgib2Jzb2xldGUgLS1tb2RlbC1hbGlhcyByZW1haW5zIikKbGF1bmNoZXJfcGF0aC53cml0ZV90ZXh0KAogICAgbGF1bmNoZXIsCiAgICBlbmNvZGluZz0idXRmLTgiLAogICAgbmV3bGluZT0iXG4iLAopCgp0ZXN0X3BhdGggPSAoCiAgICBST09UIC8gInRlc3RzL3Rlc3RfbGxhbWFfYmFja2VuZF9ydW50aW1lX2NvbnRyYWN0LnB5IgopCnRlc3RfcGF0aC53cml0ZV90ZXh0KAogICAgVEVTVF9TT1VSQ0UsCiAgICBlbmNvZGluZz0idXRmLTgiLAogICAgbmV3bGluZT0iXG4iLAopCgpwcm9qZWN0X3BhdGggPSBST09UIC8gInB5cHJvamVjdC50b21sIgpwcm9qZWN0ID0gcHJvamVjdF9wYXRoLnJlYWRfdGV4dChlbmNvZGluZz0idXRmLTgiKQppZiAndmVyc2lvbiA9ICIwLjEuMiInIG5vdCBpbiBwcm9qZWN0OgogICAgaWYgJ3ZlcnNpb24gPSAiMC4xLjEiJyBpbiBwcm9qZWN0OgogICAgICAgIHByb2plY3QgPSBwcm9qZWN0LnJlcGxhY2UoCiAgICAgICAgICAgICd2ZXJzaW9uID0gIjAuMS4xIicsCiAgICAgICAgICAgICd2ZXJzaW9uID0gIjAuMS4yIicsCiAgICAgICAgICAgIDEsCiAgICAgICAgKQogICAgZWxpZiAndmVyc2lvbiA9ICIwLjEuMCInIGluIHByb2plY3Q6CiAgICAgICAgcHJvamVjdCA9IHByb2plY3QucmVwbGFjZSgKICAgICAgICAgICAgJ3ZlcnNpb24gPSAiMC4xLjAiJywKICAgICAgICAgICAgJ3ZlcnNpb24gPSAiMC4xLjIiJywKICAgICAgICAgICAgMSwKICAgICAgICApCnByb2plY3RfcGF0aC53cml0ZV90ZXh0KAogICAgcHJvamVjdCwKICAgIGVuY29kaW5nPSJ1dGYtOCIsCiAgICBuZXdsaW5lPSJcbiIsCikKCm1hbmlmZXN0X2xpbmVzOiBsaXN0W3N0cl0gPSBbXQpmb3IgcGF0aCBpbiBzb3J0ZWQoUk9PVC5yZ2xvYigiKiIpKToKICAgIGlmICgKICAgICAgICBub3QgcGF0aC5pc19maWxlKCkKICAgICAgICBvciAiX19weWNhY2hlX18iIGluIHBhdGgucGFydHMKICAgICAgICBvciBwYXRoLnN1ZmZpeCA9PSAiLnB5YyIKICAgICk6CiAgICAgICAgY29udGludWUKICAgIHJlbGF0aXZlID0gcGF0aC5yZWxhdGl2ZV90byhST09UKS5hc19wb3NpeCgpCiAgICBtYW5pZmVzdF9saW5lcy5hcHBlbmQoCiAgICAgICAgZiJ7cGF0aC5zdGF0KCkuc3Rfc2l6ZTo4ZH0gIHtyZWxhdGl2ZX0iCiAgICApCihST09UIC8gIkZJTEUtTUFOSUZFU1QudHh0Iikud3JpdGVfdGV4dCgKICAgICJcbiIuam9pbihtYW5pZmVzdF9saW5lcykgKyAiXG4iLAogICAgZW5jb2Rpbmc9InV0Zi04IiwKICAgIG5ld2xpbmU9IlxuIiwKKQo=' \
+            | base64 -d > /tmp/patch_llama_backends.py
+          python /tmp/patch_llama_backends.py
+          rm -f /tmp/patch_llama_backends.py
+
+      - name: Verify patched source
+        working-directory: appliance
+        shell: bash
+        run: |
+          python -m py_compile app/*.py scripts/*.py tests/*.py
+          bash -n scripts/*.sh
+
+          grep -q \
+            'COPY --from=llama-build /out/lib/ /opt/llama/' \
+            Dockerfile
+          ! grep -q \
+            'COPY --from=llama-build /out/lib/ /opt/llama/lib/' \
+            Dockerfile
+          grep -q \
+            'LD_LIBRARY_PATH=/opt/llama:' \
+            Dockerfile
+          grep -q -- '--alias' scripts/llama-server.sh
+          ! grep -q -- '--model-alias' scripts/llama-server.sh
+          grep -q \
+            'cd "${LLAMA_RUNTIME_DIR}"' \
+            scripts/llama-server.sh
+
+          git diff --check
+
+      - name: Install appliance test dependencies
+        working-directory: appliance
+        run: pip install -e '.[dev]'
+
+      - name: Run complete appliance tests
+        working-directory: appliance
+        env:
+          PYTHONPATH: ${{ github.workspace }}/appliance
+        run: python -m pytest tests -q
+
+      - name: Commit tested backend repair
+        id: commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add \
+            appliance/Dockerfile \
+            appliance/pyproject.toml \
+            appliance/scripts/llama-server.sh \
+            appliance/tests/test_llama_backend_runtime_contract.py \
+            appliance/FILE-MANIFEST.txt
+
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m \
+              "fix: package llama CPU and CUDA backends beside the server"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Push repaired appliance source
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          git push origin HEAD:self-hosted-gpu-appliance
+
+          REMOTE_SHA="$(
+            git ls-remote origin \
+              refs/heads/self-hosted-gpu-appliance |
+            awk '{print $1}'
+          )"
+          test "${REMOTE_SHA}" = "${EXPECTED_SHA}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Resolve image names
+        id: image
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
+          CANDIDATE="${IMAGE}:gpu-appliance-candidate-${SOURCE_SHA}"
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "candidate=${CANDIDATE}" >> "$GITHUB_OUTPUT"
+
+      - name: Build exact tested image locally
+        uses: docker/build-push-action@v6
+        with:
+          context: ./appliance
+          file: ./appliance/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: ${{ steps.image.outputs.candidate }}
+          cache-from: type=gha,scope=gpu-appliance
+          cache-to: type=gha,mode=max,scope=gpu-appliance
+          provenance: false
+
+      - name: Smoke-test packaged llama backends
+        shell: bash
+        env:
+          CANDIDATE: ${{ steps.image.outputs.candidate }}
+        run: |
+          docker run --rm \
+            --entrypoint /bin/bash \
+            "${CANDIDATE}" \
+            -lc '
+              set -euo pipefail
+
+              test -x /opt/llama/llama-server
+              test -f /opt/llama/libggml-base.so
+              test -f /opt/llama/libggml-cuda.so
+              compgen -G "/opt/llama/libggml-cpu*.so" >/dev/null
+
+              ldd /opt/llama/llama-server \
+                | tee /tmp/llama-ldd.log
+              if grep -q "not found" /tmp/llama-ldd.log; then
+                echo "llama-server has unresolved shared libraries"
+                exit 1
+              fi
+
+              cd /opt/llama
+              /opt/llama/llama-server \
+                --list-devices \
+                > /tmp/llama-devices.log 2>&1
+              cat /tmp/llama-devices.log
+
+              if grep -q \
+                "no backends are loaded" \
+                /tmp/llama-devices.log; then
+                echo "No llama backend was discovered"
+                exit 1
+              fi
+
+              grep -Eqi \
+                "cpu|available devices" \
+                /tmp/llama-devices.log
+
+              /opt/llama/llama-server --help \
+                > /tmp/llama-help.log 2>&1
+              grep -q -- "--alias" /tmp/llama-help.log
+            '
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish repaired image
+        shell: bash
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+          CANDIDATE: ${{ steps.image.outputs.candidate }}
+          SOURCE_SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          docker tag \
+            "${CANDIDATE}" \
+            "${IMAGE}:gpu-appliance"
+          docker tag \
+            "${CANDIDATE}" \
+            "${IMAGE}:gpu-appliance-${SOURCE_SHA}"
+
+          docker push "${IMAGE}:gpu-appliance"
+          docker push \
+            "${IMAGE}:gpu-appliance-${SOURCE_SHA}"
+
+      - name: Upload Pterodactyl egg
+        uses: actions/upload-artifact@v4
+        with:
+          name: floodman-gpu-appliance-llama-backend-egg
+          path: appliance/pterodactyl/egg-floodman-voice-appliance.json
+          if-no-files-found: error
+
+      - name: Summary
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          echo "### Floodman llama backends repaired" \
+            >> "$GITHUB_STEP_SUMMARY"
+          echo "- CPU and CUDA backend plugins are beside llama-server" \
+            >> "$GITHUB_STEP_SUMMARY"
+          echo "- Launcher uses --alias" \
+            >> "$GITHUB_STEP_SUMMARY"
+          echo "- Source SHA: ${SOURCE_SHA}" \
+            >> "$GITHUB_STEP_SUMMARY"
+          echo "- Published: :gpu-appliance" \
+            >> "$GITHUB_STEP_SUMMARY"
+          echo "- Published: :gpu-appliance-${SOURCE_SHA}" \
+            >> "$GITHUB_STEP_SUMMARY"
