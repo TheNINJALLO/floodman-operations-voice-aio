@@ -1,3 +1,10 @@
+# v0.1.1
+
+- Expose `/opt/venv/bin/python` as the container runtime.
+- Use the virtualenv Python explicitly during startup.
+- Validate the final image before publishing.
+- Fix Pterodactyl exit 127: `python: command not found`.
+
 # v0.1.0
 
 Initial clean-room Floodman Voice Appliance release.

@@ -29,6 +29,8 @@ FROM nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu${UBUNTU_VERSION}
 ARG CONTAINER_UID=988
 ARG CONTAINER_GID=988
 ENV DEBIAN_FRONTEND=noninteractive \
+    VIRTUAL_ENV=/opt/venv \
+    PATH=/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -57,6 +59,9 @@ COPY THIRD_PARTY_LICENSES.md README.md ./
 RUN python3 -m venv /opt/venv && \
     /opt/venv/bin/pip install --upgrade pip setuptools wheel && \
     /opt/venv/bin/pip install . && \
+    /opt/venv/bin/python --version && \
+    /opt/venv/bin/python -c "import app, yaml; print('Floodman Python image contract: PASS')" && \
+    test -x /opt/venv/bin/python && \
     mkdir -p /home/container/data && \
     chown -R container:container /home/container /opt/floodman /opt/llama && \
     chmod +x /opt/floodman/scripts/*.sh /opt/floodman/scripts/*.py
