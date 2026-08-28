@@ -1,0 +1,162 @@
+name: Repair Floodman GPU Appliance Python Runtime
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/repair-gpu-appliance-python-runtime.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+  actions: read
+
+concurrency:
+  group: repair-floodman-gpu-python-runtime
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    name: Rebuild gpu-appliance with the venv Python runtime
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+
+    steps:
+      - name: Check out the appliance branch
+        uses: actions/checkout@v4
+        with:
+          ref: self-hosted-gpu-appliance
+          fetch-depth: 0
+
+      - name: Set up test Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Patch the container Python runtime
+        shell: bash
+        run: |
+          printf '%s' 'ZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCmltcG9ydCBiYXNlNjQKClJPT1QgPSBQYXRoKCIuIikucmVzb2x2ZSgpCmRlZiBkKHMpOiByZXR1cm4gYmFzZTY0LmI2NGRlY29kZShzKS5kZWNvZGUoKQpkZWYgb25jZSh0ZXh0LCBvbGQsIG5ldywgbGFiZWwpOgogICAgaWYgbmV3IGluIHRleHQgYW5kIG9sZCBub3QgaW4gdGV4dDoKICAgICAgICByZXR1cm4gdGV4dAogICAgbiA9IHRleHQuY291bnQob2xkKQogICAgaWYgbiAhPSAxOgogICAgICAgIHJhaXNlIFN5c3RlbUV4aXQoZiJ7bGFiZWx9OiBleHBlY3RlZCBvbmUgbWF0Y2gsIGZvdW5kIHtufSIpCiAgICByZXR1cm4gdGV4dC5yZXBsYWNlKG9sZCwgbmV3LCAxKQoKcCA9IFJPT1QgLyAiYXBwbGlhbmNlL0RvY2tlcmZpbGUiCnRleHQgPSBwLnJlYWRfdGV4dCgpCnRleHQgPSBvbmNlKHRleHQsIGQoIlJVNVdJRVJGUWtsQlRsOUdVazlPVkVWT1JEMXViMjVwYm5SbGNtRmpkR2wyWlNCY0NpQWdJQ0JRV1ZSSVQwNUVUMDVVVjFKSlZFVkNXVlJGUTA5RVJUMHhJRndLSUNBZ0lGQlpWRWhQVGxWT1FsVkdSa1ZTUlVROU1TQmNDaUFnSUNCUVNWQmZUazlmUTBGRFNFVmZSRWxTUFRFZ1hBb2dJQ0FnVGxaSlJFbEJYMVpKVTBsQ1RFVmZSRVZXU1VORlV6MWhiR3dnWEFvPSIpLCBkKCJSVTVXSUVSRlFrbEJUbDlHVWs5T1ZFVk9SRDF1YjI1cGJuUmxjbUZqZEdsMlpTQmNDaUFnSUNCV1NWSlVWVUZNWDBWT1ZqMHZiM0IwTDNabGJuWWdYQW9nSUNBZ1VFRlVTRDB2YjNCMEwzWmxibll2WW1sdU9pOTFjM0l2Ykc5allXd3ZjMkpwYmpvdmRYTnlMMnh2WTJGc0wySnBiam92ZFhOeUwzTmlhVzQ2TDNWemNpOWlhVzQ2TDNOaWFXNDZMMkpwYmlCY0NpQWdJQ0JRV1ZSSVQwNUVUMDVVVjFKSlZFVkNXVlJGUTA5RVJUMHhJRndLSUNBZ0lGQlpWRWhQVGxWT1FsVkdSa1ZTUlVROU1TQmNDaUFnSUNCUVNWQmZUazlmUTBGRFNFVmZSRWxTUFRFZ1hBb2dJQ0FnVGxaSlJFbEJYMVpKVTBsQ1RFVmZSRVZXU1VORlV6MWhiR3dnWEFvPSIpLCAiRG9ja2VyIEVOViIpCnRleHQgPSBvbmNlKHRleHQsIGQoIlVsVk9JSEI1ZEdodmJqTWdMVzBnZG1WdWRpQXZiM0IwTDNabGJuWWdKaVlnWEFvZ0lDQWdMMjl3ZEM5MlpXNTJMMkpwYmk5d2FYQWdhVzV6ZEdGc2JDQXRMWFZ3WjNKaFpHVWdjR2x3SUhObGRIVndkRzl2YkhNZ2QyaGxaV3dnSmlZZ1hBb2dJQ0FnTDI5d2RDOTJaVzUyTDJKcGJpOXdhWEFnYVc1emRHRnNiQ0F1SUNZbUlGd0tJQ0FnSUcxclpHbHlJQzF3SUM5b2IyMWxMMk52Ym5SaGFXNWxjaTlrWVhSaElDWW1JRndLIiksIGQoIlVsVk9JSEI1ZEdodmJqTWdMVzBnZG1WdWRpQXZiM0IwTDNabGJuWWdKaVlnWEFvZ0lDQWdMMjl3ZEM5MlpXNTJMMkpwYmk5d2FYQWdhVzV6ZEdGc2JDQXRMWFZ3WjNKaFpHVWdjR2x3SUhObGRIVndkRzl2YkhNZ2QyaGxaV3dnSmlZZ1hBb2dJQ0FnTDI5d2RDOTJaVzUyTDJKcGJpOXdhWEFnYVc1emRHRnNiQ0F1SUNZbUlGd0tJQ0FnSUM5dmNIUXZkbVZ1ZGk5aWFXNHZjSGwwYUc5dUlDMHRkbVZ5YzJsdmJpQW1KaUJjQ2lBZ0lDQXZiM0IwTDNabGJuWXZZbWx1TDNCNWRHaHZiaUF0WXlBaWFXMXdiM0owSUdGd2NDd2dlV0Z0YkRzZ2NISnBiblFvSjBac2IyOWtiV0Z1SUZCNWRHaHZiaUJwYldGblpTQmpiMjUwY21GamREb2dVRUZUVXljcElpQW1KaUJjQ2lBZ0lDQjBaWE4wSUMxNElDOXZjSFF2ZG1WdWRpOWlhVzR2Y0hsMGFHOXVJQ1ltSUZ3S0lDQWdJRzFyWkdseUlDMXdJQzlvYjIxbEwyTnZiblJoYVc1bGNpOWtZWFJoSUNZbUlGd0siKSwgIkRvY2tlciB2ZW52IikKcC53cml0ZV90ZXh0KHRleHQsIG5ld2xpbmU9IlxuIikKCihST09UIC8gImFwcGxpYW5jZS9zY3JpcHRzL2VudHJ5cG9pbnQuc2giKS53cml0ZV90ZXh0KGQoIkl5RXZkWE55TDJKcGJpOWxibllnWW1GemFBcHpaWFFnTFdWMWJ5QndhWEJsWm1GcGJBb0taWGh3YjNKMElGQlpWRWhQVGxCQlZFZzlJaVI3VUZsVVNFOU9VRUZVU0RvdEwyOXdkQzltYkc5dlpHMWhibjBpQ21WNGNHOXlkQ0JXU1ZKVVZVRk1YMFZPVmowaUpIdFdTVkpVVlVGTVgwVk9Wam90TDI5d2RDOTJaVzUyZlNJS1pYaHdiM0owSUZCQlZFZzlJaVI3VmtsU1ZGVkJURjlGVGxaOUwySnBiam92ZFhOeUwyeHZZMkZzTDNOaWFXNDZMM1Z6Y2k5c2IyTmhiQzlpYVc0NkwzVnpjaTl6WW1sdU9pOTFjM0l2WW1sdU9pOXpZbWx1T2k5aWFXNGlDbEJaVkVoUFRsOUNTVTQ5SWlSN1VGbFVTRTlPWDBKSlRqb3RKSHRXU1ZKVVZVRk1YMFZPVm4wdlltbHVMM0I1ZEdodmJuMGlDZ3BwWmlCYld5QWhJQzE0SUNJa2UxQlpWRWhQVGw5Q1NVNTlJaUJkWFRzZ2RHaGxiZ29nSUdWamFHOGdJa1pzYjI5a2JXRnVJSE4wWVhKMGRYQWdaWEp5YjNJNklHVjRjR1ZqZEdWa0lGQjVkR2h2YmlCaGRDQWtlMUJaVkVoUFRsOUNTVTU5TENCaWRYUWdhWFFnYVhNZ2RXNWhkbUZwYkdGaWJHVXVJaUErSmpJS0lDQmxZMmh2SUNKVWFHbHpJR052Ym5SaGFXNWxjaUJwYldGblpTQnBjeUJwYm1OdmJYQnNaWFJsSUdGdVpDQnRkWE4wSUdKbElISmxZblZwYkhRdUlpQStKaklLSUNCbGVHbDBJREV5TndwbWFRb0taV05vYnlBaVJteHZiMlJ0WVc0Z1VIbDBhRzl1SUhKMWJuUnBiV1U2SUNRb0lpUjdVRmxVU0U5T1gwSkpUbjBpSUMwdGRtVnljMmx2YmlBeVBpWXhLU0JoZENBa2UxQlpWRWhQVGw5Q1NVNTlJZ29LUkVGVVFWOUVTVkk5SWlSN1JFRlVRVjlFU1ZJNkxTOW9iMjFsTDJOdmJuUmhhVzVsY2k5a1lYUmhmU0lLVWxWT1ZFbE5SVjlGVGxZOUlpUjdVbFZPVkVsTlJWOUZUbFk2TFNSN1JFRlVRVjlFU1ZKOUwzSjFiblJwYldVdVpXNTJmU0lLYld0a2FYSWdMWEFnSWlSN1JFRlVRVjlFU1ZKOUlpQWlKSHRFUVZSQlgwUkpVbjB2Ykc5bmN5SWdJaVI3UkVGVVFWOUVTVko5TDNKMWJuUnBiV1VpSUNJa2UwUkJWRUZmUkVsU2ZTOXRiMlJsYkhNaUlDSWtlMFJCVkVGZlJFbFNmUzlqWVdOb1pTSUtkRzkxWTJnZ0lpUjdVbFZPVkVsTlJWOUZUbFo5SWdwamFHMXZaQ0EyTURBZ0lpUjdVbFZPVkVsTlJWOUZUbFo5SWdvS0lpUjdVRmxVU0U5T1gwSkpUbjBpSUM5dmNIUXZabXh2YjJSdFlXNHZjMk55YVhCMGN5OWxiblptYVd4bExuQjVJSFpoYkdsa1lYUmxJQ0lrZTFKVlRsUkpUVVZmUlU1V2ZTSUtJaVI3VUZsVVNFOU9YMEpKVG4waUlDOXZjSFF2Wm14dmIyUnRZVzR2YzJOeWFYQjBjeTlsYm5abWFXeGxMbkI1SUc1dmNtMWhiR2w2WlNBaUpIdFNWVTVVU1UxRlgwVk9WbjBpQ21WMllXd2dJaVFvSWlSN1VGbFVTRTlPWDBKSlRuMGlJQzl2Y0hRdlpteHZiMlJ0WVc0dmMyTnlhWEIwY3k5bGJuWm1hV3hsTG5CNUlITm9aV3hzTFdWNGNHOXlkSE1nSWlSN1VsVk9WRWxOUlY5RlRsWjlJaUF0TFcxcGMzTnBibWN0YjI1c2VTa2lDZ3BwWmlCYld5QWhJQzFrSUNJa2UwUkJWRUZmUkVsU2ZTOXJibTkzYkdWa1oyVWlJRjFkT3lCMGFHVnVDaUFnWTNBZ0xXRWdMMjl3ZEM5bWJHOXZaRzFoYmk5cmJtOTNiR1ZrWjJVZ0lpUjdSRUZVUVY5RVNWSjlMMnR1YjNkc1pXUm5aU0lLWm1rS2FXWWdXMXNnSVNBdFppQWlKSHRFUVZSQlgwUkpVbjB2YzJWeWRtbGpaVjloY21WaExubGhiV3dpSUYxZE95QjBhR1Z1Q2lBZ1kzQWdMMjl3ZEM5bWJHOXZaRzFoYmk5amIyNW1hV2N2YzJWeWRtbGpaVjloY21WaExubGhiV3dnSWlSN1JFRlVRVjlFU1ZKOUwzTmxjblpwWTJWZllYSmxZUzU1WVcxc0lncG1hUW9LTDI5d2RDOW1iRzl2WkcxaGJpOXpZM0pwY0hSekwyZHdkUzF3Y21WbWJHbG5hSFF1YzJnS0lpUjdVRmxVU0U5T1gwSkpUbjBpSUM5dmNIUXZabXh2YjJSdFlXNHZjMk55YVhCMGN5OWtiM2R1Ykc5aFpGOXRiMlJsYkhNdWNIa0tJaVI3VUZsVVNFOU9YMEpKVG4waUlDOXZjSFF2Wm14dmIyUnRZVzR2YzJOeWFYQjBjeTl3Y21WbWJHbG5hSFF1Y0hrS0lpUjdVRmxVU0U5T1gwSkpUbjBpSUM5dmNIUXZabXh2YjJSdFlXNHZjMk55YVhCMGN5OXlaVzVrWlhKZllYTjBaWEpwYzJzdWNIa0tDbVY0WldNZ0wzVnpjaTlpYVc0dmMzVndaWEoyYVhOdmNtUWdMV01nTDI5d2RDOW1iRzl2WkcxaGJpOXpkWEJsY25acGMyOXlMM04xY0dWeWRtbHpiM0prTG1OdmJtWUsiKSwgbmV3bGluZT0iXG4iKQooUk9PVCAvICJhcHBsaWFuY2UvdGVzdHMvdGVzdF9weXRob25fcnVudGltZV9jb250cmFjdC5weSIpLndyaXRlX3RleHQoZCgiWm5KdmJTQndZWFJvYkdsaUlHbHRjRzl5ZENCUVlYUm9DbWx0Y0c5eWRDQnlaUW9LWkdWbUlIUmxjM1JmWkc5amEyVnlYMlY0Y0c5eWRITmZkbVZ1ZGw5d2VYUm9iMjRvY0hKdmFtVmpkRjl5YjI5ME9pQlFZWFJvS1RvS0lDQWdJSFJsZUhRZ1BTQW9jSEp2YW1WamRGOXliMjkwSUM4Z0lrUnZZMnRsY21acGJHVWlLUzV5WldGa1gzUmxlSFFvS1FvZ0lDQWdZWE56WlhKMElDSldTVkpVVlVGTVgwVk9WajB2YjNCMEwzWmxibllpSUdsdUlIUmxlSFFLSUNBZ0lHRnpjMlZ5ZENBaVVFRlVTRDB2YjNCMEwzWmxibll2WW1sdU9pSWdhVzRnZEdWNGRBb2dJQ0FnWVhOelpYSjBJQ0l2YjNCMEwzWmxibll2WW1sdUwzQjVkR2h2YmlBdExYWmxjbk5wYjI0aUlHbHVJSFJsZUhRS0lDQWdJR0Z6YzJWeWRDQWlkR1Z6ZENBdGVDQXZiM0IwTDNabGJuWXZZbWx1TDNCNWRHaHZiaUlnYVc0Z2RHVjRkQW9LWkdWbUlIUmxjM1JmWlc1MGNubHdiMmx1ZEY5MWMyVnpYM1psYm5aZmNIbDBhRzl1S0hCeWIycGxZM1JmY205dmREb2dVR0YwYUNrNkNpQWdJQ0IwWlhoMElEMGdLSEJ5YjJwbFkzUmZjbTl2ZENBdklDSnpZM0pwY0hSekwyVnVkSEo1Y0c5cGJuUXVjMmdpS1M1eVpXRmtYM1JsZUhRb0tRb2dJQ0FnWVhOelpYSjBJQ2RRV1ZSSVQwNWZRa2xPUFNJa2UxQlpWRWhQVGw5Q1NVNDZMU1I3VmtsU1ZGVkJURjlGVGxaOUwySnBiaTl3ZVhSb2IyNTlJaWNnYVc0Z2RHVjRkQW9nSUNBZ1lYTnpaWEowSUNKR2JHOXZaRzFoYmlCUWVYUm9iMjRnY25WdWRHbHRaVG9pSUdsdUlIUmxlSFFLSUNBZ0lHRnpjMlZ5ZENCdWIzUWdjbVV1YzJWaGNtTm9LSElpS0Q5dEtWNWNjeXB3ZVhSb2IyNWNjeXN2YjNCMEwyWnNiMjlrYldGdUx5SXNJSFJsZUhRcENncGtaV1lnZEdWemRGOXpkWEJsY25acGMyOXlYM1Z6WlhOZmRtVnVkaWh3Y205cVpXTjBYM0p2YjNRNklGQmhkR2dwT2dvZ0lDQWdkR1Y0ZENBOUlDaHdjbTlxWldOMFgzSnZiM1FnTHlBaWMzVndaWEoyYVhOdmNpOXpkWEJsY25acGMyOXlaQzVqYjI1bUlpa3VjbVZoWkY5MFpYaDBLQ2tLSUNBZ0lHRnpjMlZ5ZENBaUwyOXdkQzkyWlc1MkwySnBiaTkxZG1samIzSnVJaUJwYmlCMFpYaDBDZz09IiksIG5ld2xpbmU9IlxuIikKCm5vdGVzID0gUk9PVCAvICJhcHBsaWFuY2UvUkVMRUFTRV9OT1RFUy5tZCIKY3VycmVudCA9IG5vdGVzLnJlYWRfdGV4dCgpCmlmIG5vdCBjdXJyZW50LnN0YXJ0c3dpdGgoIiMgdjAuMS4xIik6CiAgICBub3Rlcy53cml0ZV90ZXh0KGQoIkl5QjJNQzR4TGpFS0NpMGdSWGh3YjNObElHQXZiM0IwTDNabGJuWXZZbWx1TDNCNWRHaHZibUFnWVhNZ2RHaGxJR052Ym5SaGFXNWxjaUJ5ZFc1MGFXMWxMZ290SUZWelpTQjBhR1VnZG1seWRIVmhiR1Z1ZGlCUWVYUm9iMjRnWlhod2JHbGphWFJzZVNCa2RYSnBibWNnYzNSaGNuUjFjQzRLTFNCV1lXeHBaR0YwWlNCMGFHVWdabWx1WVd3Z2FXMWhaMlVnWW1WbWIzSmxJSEIxWW14cGMyaHBibWN1Q2kwZ1JtbDRJRkIwWlhKdlpHRmpkSGxzSUdWNGFYUWdNVEkzT2lCZ2NIbDBhRzl1T2lCamIyMXRZVzVrSUc1dmRDQm1iM1Z1WkdBdUNnbz0iKSArIGN1cnJlbnQsIG5ld2xpbmU9IlxuIikK' | base64 -d > /tmp/patch.py
+          python /tmp/patch.py
+
+      - name: Verify generated source
+        shell: bash
+        run: |
+          python -m py_compile appliance/app/*.py appliance/scripts/*.py appliance/tests/*.py
+          bash -n appliance/scripts/*.sh
+          grep -q 'VIRTUAL_ENV=/opt/venv' appliance/Dockerfile
+          grep -q 'PATH=/opt/venv/bin:' appliance/Dockerfile
+          grep -q 'PYTHON_BIN="${PYTHON_BIN:-${VIRTUAL_ENV}/bin/python}"' appliance/scripts/entrypoint.sh
+          ! grep -Eq '^[[:space:]]*python[[:space:]]+/opt/floodman/' appliance/scripts/entrypoint.sh
+          git diff --check
+
+      - name: Install appliance test dependencies
+        working-directory: appliance
+        run: pip install -e '.[dev]'
+
+      - name: Run complete appliance tests
+        working-directory: appliance
+        env:
+          PYTHONPATH: ${{ github.workspace }}/appliance
+        run: python -m pytest tests -q
+
+      - name: Commit the tested repair
+        id: commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add appliance/Dockerfile appliance/scripts/entrypoint.sh appliance/tests/test_python_runtime_contract.py appliance/RELEASE_NOTES.md
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "fix: expose the appliance virtualenv Python runtime"
+            git push origin HEAD:self-hosted-gpu-appliance
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve image names
+        id: image
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "candidate=${IMAGE}:gpu-appliance-candidate-${SOURCE_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Build the exact tested image locally
+        uses: docker/build-push-action@v6
+        with:
+          context: ./appliance
+          file: ./appliance/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: ${{ steps.image.outputs.candidate }}
+          cache-from: type=gha,scope=gpu-appliance
+          cache-to: type=gha,mode=max,scope=gpu-appliance
+          provenance: false
+
+      - name: Smoke-test Python inside the image
+        shell: bash
+        env:
+          CANDIDATE: ${{ steps.image.outputs.candidate }}
+        run: |
+          docker run --rm --entrypoint /bin/bash "${CANDIDATE}" -lc '
+            set -euo pipefail
+            test "$(command -v python)" = "/opt/venv/bin/python"
+            python --version
+            python -c "import app, yaml; print(\"Runtime imports: PASS\")"
+            tmp_env="$(mktemp)"
+            python /opt/floodman/scripts/envfile.py validate "${tmp_env}"
+            set +e
+            output="$(timeout 20 /opt/floodman/scripts/entrypoint.sh 2>&1)"
+            status=$?
+            set -e
+            printf "%s\n" "${output}"
+            grep -q "Floodman Python runtime:" <<< "${output}"
+            ! grep -q "python: command not found" <<< "${output}"
+            test "${status}" -ne 0
+          '
+
+      - name: Publish repaired image tags
+        shell: bash
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+          CANDIDATE: ${{ steps.image.outputs.candidate }}
+          SOURCE_SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          docker tag "${CANDIDATE}" "${IMAGE}:gpu-appliance"
+          docker tag "${CANDIDATE}" "${IMAGE}:gpu-appliance-${SOURCE_SHA}"
+          docker push "${IMAGE}:gpu-appliance"
+          docker push "${IMAGE}:gpu-appliance-${SOURCE_SHA}"
+
+      - name: Upload Pterodactyl egg
+        uses: actions/upload-artifact@v4
+        with:
+          name: floodman-gpu-appliance-pterodactyl-egg
+          path: appliance/pterodactyl/egg-floodman-voice-appliance.json
+          if-no-files-found: error
+
+      - name: Summary
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          echo "### Floodman GPU Python runtime repaired" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Source SHA: ${SOURCE_SHA}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Published :gpu-appliance" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Container smoke test confirmed /opt/venv/bin/python" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Restart the fresh Pterodactyl server after this job is green" >> "$GITHUB_STEP_SUMMARY"
