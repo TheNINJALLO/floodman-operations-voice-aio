@@ -8,6 +8,48 @@ from pathlib import Path
 from app.config import Settings
 
 
+def detect_asterisk_module_dir() -> Path:
+    configured = os.getenv("ASTERISK_MODULE_DIR", "").strip()
+    candidates: list[Path] = []
+
+    if configured:
+        candidates.append(Path(configured))
+
+    candidates.extend(
+        (
+            Path("/usr/lib/x86_64-linux-gnu/asterisk/modules"),
+            Path("/usr/lib64/asterisk/modules"),
+            Path("/usr/lib/asterisk/modules"),
+        )
+    )
+
+    for base in (Path("/usr/lib"), Path("/usr/lib64")):
+        if base.is_dir():
+            candidates.extend(
+                sorted(base.glob("*/asterisk/modules"))
+            )
+
+    checked: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        normalized = str(candidate)
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        checked.append(normalized)
+
+        if (
+            candidate.is_dir()
+            and (candidate / "app_audiosocket.so").is_file()
+        ):
+            return candidate
+
+    raise RuntimeError(
+        "Asterisk AudioSocket module directory was not found. "
+        "Checked: " + ", ".join(checked)
+    )
+
+
 def write(root: Path, name: str, content: str) -> None:
     path = root / name
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -16,6 +58,7 @@ def write(root: Path, name: str, content: str) -> None:
 
 def main() -> int:
     settings = Settings.from_env()
+    module_dir = detect_asterisk_module_dir()
     data = settings.data_dir / "asterisk"
     etc = data / "etc"
     for path in (etc, data / "logs", data / "run", data / "spool", data / "db", data / "keys"):
@@ -24,7 +67,7 @@ def main() -> int:
     write(etc, "asterisk.conf", f"""
     [directories]
     astetcdir => {etc}
-    astmoddir => /usr/lib/asterisk/modules
+    astmoddir => {module_dir}
     astvarlibdir => /usr/share/asterisk
     astdbdir => {data / 'db'}
     astkeydir => {data / 'keys'}
@@ -200,7 +243,10 @@ def main() -> int:
      same => n,Hangup()
     exten => _+X.,1,Goto(floodman-outbound,${{EXTEN:1}},1)
     """)
-    print(f"Rendered Asterisk configuration at {etc}")
+    print(
+        f"Rendered Asterisk configuration at {etc} "
+        f"(modules: {module_dir})"
+    )
     return 0
 
 
