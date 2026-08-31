@@ -1,0 +1,529 @@
+name: Repair Floodman GPU Appliance Asterisk Modules v2
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/repair-gpu-appliance-asterisk-modules.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+  actions: read
+
+concurrency:
+  group: repair-floodman-gpu-asterisk-modules
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    name: Isolate, test, and publish the Asterisk module path
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+
+    steps:
+      - name: Check out the GPU appliance branch
+        uses: actions/checkout@v4
+        with:
+          ref: self-hosted-gpu-appliance
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Patch Asterisk module discovery
+        shell: bash
+        run: |
+          python - <<'PY_PATCH'
+          from pathlib import Path
+
+          path = Path("appliance/scripts/render_asterisk.py")
+          text = path.read_text(encoding="utf-8")
+
+          helper = '''def detect_asterisk_module_dir() -> Path:
+              configured = os.getenv("ASTERISK_MODULE_DIR", "").strip()
+              candidates: list[Path] = []
+
+              if configured:
+                  candidates.append(Path(configured))
+
+              candidates.extend(
+                  (
+                      Path("/usr/lib/x86_64-linux-gnu/asterisk/modules"),
+                      Path("/usr/lib64/asterisk/modules"),
+                      Path("/usr/lib/asterisk/modules"),
+                  )
+              )
+
+              for base in (Path("/usr/lib"), Path("/usr/lib64")):
+                  if base.is_dir():
+                      candidates.extend(
+                          sorted(base.glob("*/asterisk/modules"))
+                      )
+
+              checked: list[str] = []
+              seen: set[str] = set()
+              for candidate in candidates:
+                  normalized = str(candidate)
+                  if normalized in seen:
+                      continue
+                  seen.add(normalized)
+                  checked.append(normalized)
+
+                  if (
+                      candidate.is_dir()
+                      and (candidate / "app_audiosocket.so").is_file()
+                  ):
+                      return candidate
+
+              raise RuntimeError(
+                  "Asterisk AudioSocket module directory was not found. "
+                  "Checked: " + ", ".join(checked)
+              )
+
+
+          '''
+
+          if "def detect_asterisk_module_dir()" not in text:
+              anchor = "from app.config import Settings\n\n\n"
+              if text.count(anchor) != 1:
+                  raise SystemExit(
+                      "Could not locate the render helper insertion point."
+                  )
+              text = text.replace(
+                  anchor,
+                  anchor + helper,
+                  1,
+              )
+
+          main_anchor = "    settings = Settings.from_env()\n"
+          main_replacement = (
+              "    settings = Settings.from_env()\n"
+              "    module_dir = detect_asterisk_module_dir()\n"
+          )
+          if main_replacement not in text:
+              if text.count(main_anchor) != 1:
+                  raise SystemExit(
+                      "Could not locate Settings initialization."
+                  )
+              text = text.replace(
+                  main_anchor,
+                  main_replacement,
+                  1,
+              )
+
+          legacy = "    astmoddir => /usr/lib/asterisk/modules\n"
+          dynamic = "    astmoddir => {module_dir}\n"
+          if dynamic not in text:
+              if text.count(legacy) != 1:
+                  raise SystemExit(
+                      "Could not locate the legacy Asterisk module path."
+                  )
+              text = text.replace(
+                  legacy,
+                  dynamic,
+                  1,
+              )
+
+          old_print = (
+              '    print(f"Rendered Asterisk configuration at {etc}")\n'
+          )
+          new_print = (
+              '    print(\n'
+              '        f"Rendered Asterisk configuration at {etc} "\n'
+              '        f"(modules: {module_dir})"\n'
+              '    )\n'
+          )
+          if new_print not in text:
+              if text.count(old_print) != 1:
+                  raise SystemExit(
+                      "Could not locate the renderer status message."
+                  )
+              text = text.replace(
+                  old_print,
+                  new_print,
+                  1,
+              )
+
+          path.write_text(
+              text,
+              encoding="utf-8",
+              newline="\n",
+          )
+
+          test_lines = [
+              "from pathlib import Path",
+              "",
+              "",
+              "def test_renderer_detects_packaged_asterisk_modules(",
+              "    project_root: Path,",
+              ") -> None:",
+              "    source = (",
+              "        project_root",
+              '        / "scripts/render_asterisk.py"',
+              '    ).read_text(encoding="utf-8")',
+              "",
+              '    assert "def detect_asterisk_module_dir()" in source',
+              "    assert (",
+              '        "/usr/lib/x86_64-linux-gnu/asterisk/modules"',
+              "        in source",
+              "    )",
+              '    assert "app_audiosocket.so" in source',
+              '    assert "astmoddir => {module_dir}" in source',
+              "    assert (",
+              '        "astmoddir => /usr/lib/asterisk/modules"',
+              "        not in source",
+              "    )",
+              "",
+          ]
+
+          test_path = Path(
+              "appliance/tests/"
+              "test_asterisk_module_directory.py"
+          )
+          test_path.write_text(
+              "\n".join(test_lines),
+              encoding="utf-8",
+              newline="\n",
+          )
+
+          # GitHub-hosted unit tests run outside the appliance image.
+          # Give the renderer a realistic temporary AudioSocket module
+          # fixture without weakening runtime module validation.
+          renderer_test_lines = [
+              "import importlib.util",
+              "from pathlib import Path",
+              "",
+              "",
+              "def test_asterisk_renderer(",
+              "    project_root: Path,",
+              "    tmp_path: Path,",
+              "    monkeypatch,",
+              ") -> None:",
+              '    module_dir = tmp_path / "asterisk-modules"',
+              "    module_dir.mkdir()",
+              '    (module_dir / "app_audiosocket.so").touch()',
+              "",
+              '    monkeypatch.setenv("DATA_DIR", str(tmp_path))',
+              '    monkeypatch.setenv("SIP_MODE", "generic")',
+              '    monkeypatch.setenv(',
+              '        "SIP_SERVER",',
+              '        "carrier.example.com",',
+              "    )",
+              '    monkeypatch.setenv(',
+              '        "SIP_MATCH_ADDRESSES",',
+              '        "192.0.2.10/32",',
+              "    )",
+              '    monkeypatch.setenv(',
+              '        "ASTERISK_MODULE_DIR",',
+              "        str(module_dir),",
+              "    )",
+              "",
+              '    path = project_root / "scripts/render_asterisk.py"',
+              "    spec = importlib.util.spec_from_file_location(",
+              '        "render_test",',
+              "        path,",
+              "    )",
+              "    assert spec is not None",
+              "    assert spec.loader is not None",
+              "    module = importlib.util.module_from_spec(spec)",
+              "    spec.loader.exec_module(module)",
+              "",
+              "    assert module.main() == 0",
+              "",
+              '    etc = tmp_path / "asterisk/etc"',
+              '    asterisk = (etc / "asterisk.conf").read_text()',
+              '    extensions = (etc / "extensions.conf").read_text()',
+              '    modules = (etc / "modules.conf").read_text()',
+              "",
+              '    assert f"astmoddir => {module_dir}" in asterisk',
+              '    assert "AudioSocket" in extensions',
+              '    assert "agi_prepare.py" in extensions',
+              '    assert "agi_finish.py" in extensions',
+              '    assert "FLOODMAN_DID=${EXTEN}" in extensions',
+              '    assert "noload => res_odbc.so" in modules',
+              "    assert (",
+              '        (etc / "manager.conf")',
+              "        .read_text()",
+              "        .strip()",
+              '        .endswith("enabled=no")',
+              "    )",
+              "",
+          ]
+
+          renderer_test_path = Path(
+              "appliance/tests/test_render_asterisk.py"
+          )
+          renderer_test_path.write_text(
+              "\n".join(renderer_test_lines),
+              encoding="utf-8",
+              newline="\n",
+          )
+          PY_PATCH
+
+      - name: Verify generated source
+        working-directory: appliance
+        shell: bash
+        run: |
+          python -m py_compile \
+            app/*.py \
+            scripts/*.py \
+            tests/*.py
+          bash -n scripts/*.sh
+
+          grep -q \
+            'def detect_asterisk_module_dir()' \
+            scripts/render_asterisk.py
+          grep -q \
+            'astmoddir => {module_dir}' \
+            scripts/render_asterisk.py
+          grep -q \
+            'app_audiosocket.so' \
+            scripts/render_asterisk.py
+          grep -q \
+            'ASTERISK_MODULE_DIR' \
+            tests/test_render_asterisk.py
+          grep -q \
+            'app_audiosocket.so' \
+            tests/test_render_asterisk.py
+
+          if grep -q \
+            'astmoddir => /usr/lib/asterisk/modules' \
+            scripts/render_asterisk.py; then
+            echo "The legacy hardcoded module path remains."
+            exit 1
+          fi
+
+          git diff --check
+
+      - name: Install appliance test dependencies
+        working-directory: appliance
+        run: pip install -e '.[dev]'
+
+      - name: Run focused Asterisk renderer tests
+        working-directory: appliance
+        env:
+          PYTHONPATH: ${{ github.workspace }}/appliance
+        run: |
+          python -m pytest \
+            tests/test_render_asterisk.py \
+            tests/test_asterisk_module_directory.py \
+            -q
+
+      - name: Run complete appliance tests
+        working-directory: appliance
+        env:
+          PYTHONPATH: ${{ github.workspace }}/appliance
+        run: python -m pytest tests -q
+
+      - name: Commit the tested source repair
+        id: commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add \
+            appliance/scripts/render_asterisk.py \
+            appliance/tests/test_asterisk_module_directory.py \
+            appliance/tests/test_render_asterisk.py
+
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m \
+              "fix: detect the packaged Asterisk module directory"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Push the repaired appliance branch
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          git push origin HEAD:self-hosted-gpu-appliance
+
+          REMOTE_SHA="$(
+            git ls-remote origin \
+              refs/heads/self-hosted-gpu-appliance |
+            awk '{print $1}'
+          )"
+
+          if [[ "${REMOTE_SHA}" != "${EXPECTED_SHA}" ]]; then
+            echo "Remote branch is ${REMOTE_SHA}; expected ${EXPECTED_SHA}."
+            exit 1
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve image names
+        id: image
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
+          CANDIDATE="${IMAGE}:gpu-appliance-candidate-${SOURCE_SHA}"
+
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "candidate=${CANDIDATE}" >> "$GITHUB_OUTPUT"
+
+      - name: Build the exact tested image locally
+        uses: docker/build-push-action@v6
+        with:
+          context: ./appliance
+          file: ./appliance/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: ${{ steps.image.outputs.candidate }}
+          cache-from: type=gha,scope=gpu-appliance
+          cache-to: type=gha,mode=max,scope=gpu-appliance
+          provenance: false
+
+      - name: Smoke-test Asterisk inside the image
+        shell: bash
+        env:
+          CANDIDATE: ${{ steps.image.outputs.candidate }}
+        run: |
+          docker run --rm \
+            --entrypoint /bin/bash \
+            "${CANDIDATE}" \
+            -lc '
+              set -euo pipefail
+
+              export DATA_DIR=/tmp/floodman-smoke
+              export SIP_SERVER=127.0.0.1
+              export SIP_MATCH_ADDRESSES=127.0.0.1
+              export PUBLIC_IP=127.0.0.1
+              export TWILIO_PHONE_NUMBER=+12345678901
+              export OUTBOUND_CALLER_ID_NUMBER=+12345678901
+
+              MODULE_FILE="$(
+                find /usr/lib /usr/lib64 \
+                  -type f \
+                  -name app_audiosocket.so \
+                  -print 2>/dev/null \
+                  | head -n 1
+              )"
+
+              test -n "${MODULE_FILE}"
+              MODULE_DIR="$(dirname "${MODULE_FILE}")"
+
+              /opt/venv/bin/python \
+                /opt/floodman/scripts/render_asterisk.py
+
+              CONFIG="${DATA_DIR}/asterisk/etc/asterisk.conf"
+
+              grep -F \
+                "astmoddir => ${MODULE_DIR}" \
+                "${CONFIG}"
+
+              /usr/sbin/asterisk \
+                -f \
+                -C "${CONFIG}" \
+                > /tmp/asterisk-smoke.log 2>&1 &
+              ASTERISK_PID=$!
+
+              READY=0
+              for attempt in $(seq 1 20); do
+                if ! kill -0 "${ASTERISK_PID}" 2>/dev/null; then
+                  cat /tmp/asterisk-smoke.log
+                  echo "Asterisk exited before becoming ready."
+                  exit 1
+                fi
+
+                if grep -q "Asterisk Ready" \
+                  /tmp/asterisk-smoke.log; then
+                  READY=1
+                  break
+                fi
+
+                sleep 1
+              done
+
+              if [[ "${READY}" -ne 1 ]]; then
+                cat /tmp/asterisk-smoke.log
+                echo "Asterisk did not become ready in time."
+                kill -TERM "${ASTERISK_PID}" 2>/dev/null || true
+                exit 1
+              fi
+
+              /usr/sbin/asterisk \
+                -C "${CONFIG}" \
+                -rx "module show like audiosocket" \
+                | tee /tmp/audiosocket-modules.log
+
+              grep -q "app_audiosocket.so" \
+                /tmp/audiosocket-modules.log
+
+              if grep -Eq \
+                "Unable to open modules directory|Module initialization failed" \
+                /tmp/asterisk-smoke.log; then
+                cat /tmp/asterisk-smoke.log
+                echo "Asterisk reported a module-directory failure."
+                exit 1
+              fi
+
+              kill -TERM "${ASTERISK_PID}"
+              wait "${ASTERISK_PID}" || true
+
+              cat /tmp/asterisk-smoke.log
+            '
+
+      - name: Publish repaired image tags
+        shell: bash
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+          CANDIDATE: ${{ steps.image.outputs.candidate }}
+          SOURCE_SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          docker tag \
+            "${CANDIDATE}" \
+            "${IMAGE}:gpu-appliance"
+          docker tag \
+            "${CANDIDATE}" \
+            "${IMAGE}:gpu-appliance-${SOURCE_SHA}"
+
+          docker push "${IMAGE}:gpu-appliance"
+          docker push "${IMAGE}:gpu-appliance-${SOURCE_SHA}"
+
+      - name: Upload the Pterodactyl egg
+        uses: actions/upload-artifact@v4
+        with:
+          name: floodman-gpu-appliance-asterisk-module-fix
+          path: appliance/pterodactyl/egg-floodman-voice-appliance.json
+          if-no-files-found: error
+
+      - name: Summary
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          echo "### Floodman Asterisk module repair" \
+            >> "$GITHUB_STEP_SUMMARY"
+          echo "- Branch: self-hosted-gpu-appliance" \
+            >> "$GITHUB_STEP_SUMMARY"
+          echo "- Source SHA: ${SOURCE_SHA}" \
+            >> "$GITHUB_STEP_SUMMARY"
+          echo "- Host unit test used an isolated AudioSocket fixture" \
+            >> "$GITHUB_STEP_SUMMARY"
+          echo "- Container AudioSocket module smoke test: passed" \
+            >> "$GITHUB_STEP_SUMMARY"
+          echo "- Published: :gpu-appliance" \
+            >> "$GITHUB_STEP_SUMMARY"
+          echo "- Published: :gpu-appliance-${SOURCE_SHA}" \
+            >> "$GITHUB_STEP_SUMMARY"
