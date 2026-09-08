@@ -79,12 +79,15 @@ The startup environment parser validates the whole file before changing it. Brok
 - Username/password accounts with administrator, manager, and viewer roles
 - Call list, editable intake details, full transcripts, and controlled deletion
 - Editable approved knowledge documents and service-area cities
+- Live selection and preview of installed American and British English voices, with persisted speaking speed
 - Per-user notification preferences, in-app notifications, and Web Push alerts
 - Local conversation simulator, model readiness, audit history, and bounded log tails
 
 The original `ADMIN_TOKEN` remains a short-lived recovery path and is not a day-to-day account. Passwords are salted and one-way hashed; changing a password revokes that user's sessions. Administrative changes are written to the audit log.
 
 Browser push requires the public panel to use HTTPS. Each team member signs in on their own device, opens **Notifications**, and chooses **Enable alerts**. Permission is controlled by the browser and can be revoked there at any time. Push previews intentionally contain no caller name, phone number, address, or project details; those remain behind authenticated access.
+
+Administrators can open **Voice**, choose any English voice installed in the Kokoro bundle, adjust the speed, and generate a local preview before saving. The selection is stored in `DATA_DIR/voice-settings.json` and takes precedence over the environment default after restart. The portal refuses to start voice previews or changes while it detects a live phone call.
 
 Health endpoints:
 

@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% set page_title = "Voice settings" %}
+{% set page_eyebrow = "Choose how the AI receptionist sounds" %}
+{% block content %}
+<section class="page-heading"><div><span class="eyebrow">Call experience</span><h1>AI receptionist voice</h1><p>Preview any installed English voice, adjust its pace, and apply it to future speech.</p></div></section>
+<div class="voice-layout">
+  <section class="panel voice-editor">
+    <div class="panel-heading"><div><h2>Voice and delivery</h2><p>The current setting remains active until you save.</p></div></div>
+    <form method="post" action="/voice" class="form-stack" data-voice-form>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Installed voice
+        <select name="voice" data-voice-select required>
+          {% for voice in voices %}<option value="{{ voice.id }}" data-accent="{{ voice.accent }}" data-gender="{{ voice.gender }}" {{ 'selected' if voice.id == current_voice }}>{{ voice.name }} — {{ voice.accent }}, {{ voice.gender }}</option>{% endfor %}
+        </select>
+        <small>Only voices found in this appliance's Kokoro voice bundle are shown.</small>
+      </label>
+      <label>Speaking speed <span class="range-value"><output data-speed-output>{{ '%.2f' | format(current_speed) }}</output>×</span>
+        <input type="range" name="speed" min="0.75" max="1.25" step="0.05" value="{{ current_speed }}" data-speed-range>
+        <span class="range-labels"><small>Slower</small><small>Natural</small><small>Faster</small></span>
+      </label>
+      <div class="voice-summary"><span class="voice-orb">◖</span><div><small>Selected voice</small><strong data-voice-name></strong><p data-voice-meta></p></div></div>
+      <button class="button primary" type="submit">Save voice settings</button>
+    </form>
+  </section>
+  <aside class="panel preview-panel">
+    <div class="panel-heading"><div><h2>Listen before saving</h2><p>Preview uses the selected voice and speed without changing live settings.</p></div></div>
+    <div class="preview-content">
+      <label>Preview phrase<textarea rows="5" maxlength="240" data-preview-text>Thanks for calling Floodman. I'm Ava, the virtual receptionist. How can I help with your property today?</textarea></label>
+      <button class="button secondary full" type="button" data-voice-preview>▶ Generate preview</button>
+      <div class="preview-feedback" data-preview-status>Ready to generate a private, local preview.</div>
+      <audio controls class="voice-audio hidden" data-voice-audio></audio>
+      <div class="info-note voice-note"><strong>Live-call protection</strong><p>The portal will not start a preview or voice change while it detects an active phone call. Make changes during an idle moment.</p></div>
+    </div>
+  </aside>
+</div>
+<section class="panel voice-guide">
+  <div class="panel-heading"><div><h2>Choosing a voice</h2><p>The voice changes tone and accent; speed changes delivery pace.</p></div></div>
+  <div class="guide-grid"><div><span class="metric-icon blue">A</span><h3>American English</h3><p>Uses American pronunciation for all generated prompts.</p></div><div><span class="metric-icon green">B</span><h3>British English</h3><p>Automatically switches pronunciation rules to match the accent.</p></div><div><span class="metric-icon amber">×</span><h3>Natural pacing</h3><p>Start near 1.00× and preview the greeting before changing it.</p></div></div>
+</section>
+<script src="/static/voice.js"></script>
+{% endblock %}

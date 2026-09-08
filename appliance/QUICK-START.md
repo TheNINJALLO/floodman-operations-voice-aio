@@ -9,5 +9,6 @@
 7. Start the container and wait until `/ready` is healthy.
 8. Retrieve `ADMIN_TOKEN` from `data/runtime.env` if it was generated, use **Recovery access** on `/login`, and create the first named administrator.
 9. Sign in with the new username and password. Open **Notifications** on each user's HTTPS device and enable browser alerts.
-10. Test `/simulator` before routing the live DID.
-11. Run one full call, one hangup, one unsupported request, and one human transfer.
+10. Open **Voice**, preview the desired installed voice, and save its speaking speed.
+11. Test `/simulator` before routing the live DID.
+12. Run one full call, one hangup, one unsupported request, and one human transfer.

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import io
 import logging
 import re
 import sqlite3
 import time
 import uuid
+import wave
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -12,7 +14,7 @@ from typing import Any
 from urllib.parse import urlencode, urlparse
 
 from fastapi import Cookie, FastAPI, Form, Header, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
@@ -49,6 +51,12 @@ class SimulatorRequest(BaseModel):
 class PushSubscriptionRequest(BaseModel):
     endpoint: str = Field(min_length=10, max_length=4096)
     keys: dict[str, str]
+
+
+class VoicePreviewRequest(BaseModel):
+    voice: str = Field(min_length=3, max_length=64)
+    speed: float = Field(ge=0.75, le=1.25)
+    text: str = Field(min_length=1, max_length=240)
 
 
 class Runtime:
@@ -114,7 +122,7 @@ async def security_headers(request: Request, call_next):
     response.headers.setdefault(
         "Content-Security-Policy",
         "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
-        "connect-src 'self'; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+        "connect-src 'self'; media-src 'self' blob:; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
     )
     if request.url.scheme == "https" or settings.public_base_url.startswith("https://"):
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
@@ -198,6 +206,35 @@ def _session_cookie(response: RedirectResponse, token: str) -> None:
         samesite="strict",
         max_age=settings.session_hours * 3600,
         path="/",
+    )
+
+
+def _voice_catalog(voices: list[str]) -> list[dict[str, str]]:
+    output = []
+    for voice in voices:
+        parts = voice.split("_", 1)
+        output.append(
+            {
+                "id": voice,
+                "name": parts[1].replace("_", " ").title() if len(parts) == 2 else voice,
+                "accent": "British English" if voice.startswith("b") else "American English",
+                "gender": "Female" if len(voice) > 1 and voice[1] == "f" else "Male",
+            }
+        )
+    return output
+
+
+def _wav_response(pcm: bytes) -> Response:
+    output = io.BytesIO()
+    with wave.open(output, "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(8000)
+        wav.writeframes(pcm)
+    return Response(
+        output.getvalue(),
+        media_type="audio/wav",
+        headers={"Cache-Control": "no-store", "Content-Disposition": 'inline; filename="voice-preview.wav"'},
     )
 
 
@@ -760,6 +797,67 @@ async def unsubscribe_push(
 async def unread_notifications(floodman_session: str | None = Cookie(default=None)):
     principal = _require_api(floodman_session)
     return {"count": runtime.database.unread_notification_count(principal.user_id) if principal.user_id else 0}
+
+
+# Voice configuration -------------------------------------------------
+@app.get("/voice", response_class=HTMLResponse)
+async def voice_page(request: Request, floodman_session: str | None = Cookie(default=None)):
+    principal = _principal(floodman_session)
+    if not principal:
+        return RedirectResponse("/login", status_code=303)
+    if not principal.is_admin:
+        return _redirect("/", error="Administrator access is required.")
+    voices = await runtime.tts.available_voices()
+    return templates.TemplateResponse(
+        request,
+        "voice.html",
+        _context(
+            request,
+            principal,
+            "voice",
+            voices=_voice_catalog(voices),
+            current_voice=settings.kokoro_voice,
+            current_speed=settings.kokoro_speed,
+            message=request.query_params.get("message", ""),
+            error=request.query_params.get("error", ""),
+        ),
+    )
+
+
+@app.post("/voice")
+async def save_voice(
+    floodman_session: str | None = Cookie(default=None),
+    csrf_token: str = Form(default=""),
+    voice: str = Form(default=""),
+    speed: float = Form(default=1.0),
+):
+    principal = _require_api(floodman_session, admin=True)
+    _csrf(principal, csrf_token)
+    if runtime.audio.active_calls:
+        return _redirect("/voice", error="Wait for the active phone call to finish before changing the voice.")
+    try:
+        selected_voice, selected_speed = await runtime.tts.configure(voice, speed)
+        _audit(principal, "update", "voice", selected_voice, {"speed": selected_speed})
+        return _redirect("/voice", message="Voice settings saved. New speech will use this voice immediately.")
+    except ValueError as exc:
+        return _redirect("/voice", error=str(exc))
+
+
+@app.post("/api/voice/preview")
+async def preview_voice(
+    payload: VoicePreviewRequest,
+    floodman_session: str | None = Cookie(default=None),
+    x_csrf_token: str | None = Header(default=None),
+):
+    principal = _require_api(floodman_session, admin=True)
+    _csrf(principal, x_csrf_token)
+    if runtime.audio.active_calls:
+        raise HTTPException(409, "A phone call is active. Preview the voice after it finishes.")
+    try:
+        pcm = await runtime.tts.preview(payload.text, payload.voice, payload.speed)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return _wav_response(pcm)
 
 
 # Diagnostics, audit, and simulator ----------------------------------

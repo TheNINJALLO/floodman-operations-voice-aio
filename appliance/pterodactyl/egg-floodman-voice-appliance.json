@@ -460,7 +460,7 @@
         },
         {
             "name": "Kokoro Voice",
-            "description": "Local Kokoro speaker",
+            "description": "Default local Kokoro speaker. A saved selection in the admin portal takes precedence.",
             "env_variable": "KOKORO_VOICE",
             "default_value": "af_heart",
             "user_viewable": true,

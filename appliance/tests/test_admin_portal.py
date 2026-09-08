@@ -3,9 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 import importlib
 import asyncio
+import json
 import re
 import sys
 
+import numpy as np
 import pytest
 from jinja2 import Environment, FileSystemLoader
 from fastapi.testclient import TestClient
@@ -17,6 +19,7 @@ from app.db import Database
 from app.knowledge import KnowledgeBase
 from app.models import IntakeState
 from app.notifications import TeamNotifier
+from app.tts import LocalTTS
 
 
 def preferences(**overrides: bool) -> dict[str, bool]:
@@ -159,6 +162,42 @@ def test_push_worker_and_security_contracts(project_root: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_installed_voice_catalog_preview_and_persistence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    settings = Settings.from_env()
+    tts = LocalTTS(settings)
+
+    class FakeKokoro:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        @staticmethod
+        def get_voices() -> list[str]:
+            return ["ef_dora", "bm_george", "af_heart", "am_liam"]
+
+        def create(self, text: str, **values: object):
+            self.calls.append({"text": text, **values})
+            return np.full(240, .05, dtype=np.float32), 24000
+
+    fake = FakeKokoro()
+    tts._kokoro = fake
+    assert await tts.available_voices() == ["af_heart", "am_liam", "bm_george"]
+    preview = await tts.preview("Thanks for calling.", "bm_george", 1.1)
+    assert preview and fake.calls[-1]["lang"] == "en-gb"
+    assert fake.calls[-1]["voice"] == "bm_george"
+
+    assert await tts.configure("bm_george", 1.1) == ("bm_george", 1.1)
+    saved = json.loads(settings.voice_settings_path.read_text(encoding="utf-8"))
+    assert saved == {"voice": "bm_george", "speed": 1.1}
+    restarted = Settings.from_env()
+    assert restarted.kokoro_voice == "bm_george" and restarted.kokoro_speed == 1.1
+    with pytest.raises(ValueError, match="installed English voice"):
+        await tts.configure("ef_dora", 1.0)
+    with pytest.raises(ValueError, match="between 0.75 and 1.25"):
+        await tts.preview("Hello", "af_heart", 1.5)
+
+
+@pytest.mark.asyncio
 async def test_incoming_push_never_delays_the_call_and_contains_no_customer_pii(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     settings = Settings.from_env()
@@ -228,6 +267,21 @@ def test_recovery_bootstrap_and_named_login_routes(tmp_path: Path, monkeypatch: 
     assert named_login.status_code == 303 and named_login.headers["location"] == "/"
     dashboard = client.get("/")
     assert dashboard.status_code == 200 and "Calls and intake" in dashboard.text
+    named_csrf = re.search(r'<meta name="csrf-token" content="([^"]+)">', dashboard.text)
+    assert named_csrf
+    async def installed_voices() -> list[str]:
+        return ["af_heart", "am_liam", "bf_emma", "bm_george"]
+    async def preview_audio(text: str, voice: str, speed: float) -> bytes:
+        return b"\x00\x00" * 160
+    monkeypatch.setattr(module.runtime.tts, "available_voices", installed_voices)
+    monkeypatch.setattr(module.runtime.tts, "preview", preview_audio)
+    voice_preview = client.post(
+        "/api/voice/preview",
+        headers={"X-CSRF-Token": named_csrf.group(1)},
+        json={"voice": "bf_emma", "speed": 1.0, "text": "Hello from Floodman."},
+    )
+    assert voice_preview.status_code == 200 and voice_preview.headers["content-type"] == "audio/wav"
+    assert voice_preview.content.startswith(b"RIFF")
     notifications = client.get("/notifications")
     assert notifications.status_code == 200 and "Get call alerts on this device" in notifications.text
     call_id = module.runtime.database.create_call(IntakeState(call_uuid="route-test", name="Route Test"))
@@ -240,6 +294,7 @@ def test_recovery_bootstrap_and_named_login_routes(tmp_path: Path, monkeypatch: 
         "/service-area",
         "/notifications",
         "/audit",
+        "/voice",
         "/diagnostics",
         "/simulator",
     ):

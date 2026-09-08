@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import os
 import ipaddress
+import json
+import os
 import re
 import secrets
 from dataclasses import dataclass
@@ -32,6 +33,28 @@ def _float(name: str, default: float) -> float:
 
 def _csv(name: str, default: str = "") -> tuple[str, ...]:
     return tuple(v.strip() for v in os.getenv(name, default).split(",") if v.strip())
+
+
+def _voice_settings(path: Path) -> dict[str, object]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+        return value if isinstance(value, dict) else {}
+    except (OSError, ValueError, TypeError):
+        return {}
+
+
+def _number(value: object, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _voice_name(value: object, default: str) -> str:
+    candidate = str(value or "").strip()
+    pattern = r"(?:af|am|bf|bm)_[a-z0-9_]{1,60}"
+    fallback = default if re.fullmatch(pattern, default) else "af_heart"
+    return candidate if re.fullmatch(pattern, candidate) else fallback
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,6 +161,7 @@ class Settings:
     runtime_dir: Path
     log_dir: Path
     push_dir: Path
+    voice_settings_path: Path
 
     web_host: str
     web_port: int
@@ -225,6 +249,8 @@ class Settings:
         cache = Path(os.getenv("CACHE_DIR", data / "cache"))
         logs = Path(os.getenv("LOG_DIR", data / "logs"))
         push = Path(os.getenv("PUSH_DIR", data / "push"))
+        voice_settings_path = Path(os.getenv("VOICE_SETTINGS_PATH", data / "voice-settings.json"))
+        voice_settings = _voice_settings(voice_settings_path)
         for path in (data, knowledge, models, runtime, cache, logs, push):
             path.mkdir(parents=True, exist_ok=True)
 
@@ -242,6 +268,7 @@ class Settings:
             runtime_dir=runtime,
             log_dir=logs,
             push_dir=push,
+            voice_settings_path=voice_settings_path,
             web_host=os.getenv("WEB_HOST", "0.0.0.0"),
             web_port=_int("WEB_PORT", 8002),
             admin_token=admin,
@@ -264,8 +291,8 @@ class Settings:
             faster_whisper_threads=_int("FASTER_WHISPER_THREADS", max(2, (os.cpu_count() or 4) // 2)),
             kokoro_model_path=Path(os.getenv("KOKORO_MODEL_PATH", models / "kokoro" / "kokoro-v1.0.onnx")),
             kokoro_voices_path=Path(os.getenv("KOKORO_VOICES_PATH", models / "kokoro" / "voices-v1.0.bin")),
-            kokoro_voice=os.getenv("KOKORO_VOICE", "af_heart"),
-            kokoro_speed=_float("KOKORO_SPEED", 1.02),
+            kokoro_voice=_voice_name(voice_settings.get("voice"), os.getenv("KOKORO_VOICE", "af_heart")),
+            kokoro_speed=max(0.75, min(_number(voice_settings.get("speed"), _float("KOKORO_SPEED", 1.02)), 1.25)),
             tts_cache_enabled=_bool("TTS_CACHE_ENABLED", True),
             endpoint_silence_ms=_int("ENDPOINT_SILENCE_MS", 550),
             contact_endpoint_silence_ms=_int("CONTACT_ENDPOINT_SILENCE_MS", 1200),

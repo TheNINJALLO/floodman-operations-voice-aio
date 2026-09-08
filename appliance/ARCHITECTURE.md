@@ -27,6 +27,7 @@ Twilio / SIP carrier
 - ARI and AMI are disabled.
 - The web panel uses salted scrypt password hashes, role-based accounts, revocable server-side sessions, strict HttpOnly cookies, and CSRF tokens. The admin token is retained only for short-lived recovery access.
 - Browser subscriptions use a persistent VAPID key under `DATA_DIR/push`; push previews contain no caller PII and link back to authenticated records.
+- Administrators select from the voices reported by the installed Kokoro bundle. The persisted voice and speed are applied locally, and preview synthesis is blocked during active calls.
 - SIP, RTP, and the panel are the only public surfaces.
 - Knowledge documents marked `approved: false` are never used for answers.
 - The model cannot directly send SMS, transfer a call, finish intake, or choose the next question.

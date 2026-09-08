@@ -145,6 +145,7 @@ class AudioSocketServer:
         self.tts = tts
         self.registry = registry
         self.server: asyncio.AbstractServer | None = None
+        self.active_calls = 0
 
     async def start(self) -> None:
         self.server = await asyncio.start_server(self.handle, self.settings.audiosocket_host, self.settings.audiosocket_port)
@@ -162,6 +163,7 @@ class AudioSocketServer:
         call_uuid = ""
         peer = writer.get_extra_info("peername")
         logger.info("call_event stage=tcp_accept peer=%s", peer)
+        self.active_calls += 1
         try:
             call_uuid = await connection.start()
             logger.info("call_event call_uuid=%s stage=uuid_received", call_uuid)
@@ -256,3 +258,4 @@ class AudioSocketServer:
                 connection.close_reason,
             )
             await connection.close()
+            self.active_calls = max(0, self.active_calls - 1)
