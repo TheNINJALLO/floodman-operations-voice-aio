@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% set page_title = "Audit log" %}
+{% set page_eyebrow = "Account and content change history" %}
+{% block content %}
+<section class="page-heading"><div><span class="eyebrow">Administration</span><h1>Audit log</h1><p>A recent, append-only view of important changes made through the portal.</p></div></section>
+<section class="panel"><div class="panel-heading"><div><h2>Recent activity</h2><p>Newest actions appear first.</p></div><label class="search-box"><span>⌕</span><input type="search" placeholder="Search activity" data-table-search="audit-table"></label></div><div class="table-wrap"><table id="audit-table"><thead><tr><th>Time</th><th>Team member</th><th>Action</th><th>Record</th><th>Details</th></tr></thead><tbody>
+{% for event in events %}<tr><td class="js-date">{{ event.created_at }}</td><td><strong>{{ event.actor_name }}</strong></td><td><span class="status info">{{ event.action | replace('_', ' ') | title }}</span></td><td>{{ event.entity_type | replace('_', ' ') | title }}{% if event.entity_id %} <small>#{{ event.entity_id }}</small>{% endif %}</td><td class="truncate">{% for key, value in event.detail.items() %}{{ key | replace('_', ' ') | title }}: {{ value }}{{ ', ' if not loop.last }}{% else %}—{% endfor %}</td></tr>
+{% else %}<tr><td colspan="5"><div class="empty-state"><span>≡</span><h3>No recorded changes</h3><p>Administrative actions will appear here.</p></div></td></tr>{% endfor %}
+</tbody></table></div></section>
+{% endblock %}

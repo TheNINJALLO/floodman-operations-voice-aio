@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "floodman-voice-appliance"
-version = "0.1.2"
+version = "0.2.0"
 description = "Single-unit, self-hosted Floodman telephone receptionist"
 requires-python = ">=3.10"
 dependencies = [
@@ -21,6 +21,7 @@ dependencies = [
   "kokoro-onnx>=0.4,<1",
   "onnxruntime>=1.20,<2",
   "huggingface-hub>=0.27,<1",
+  "pywebpush>=2.5,<3",
 ]
 
 [project.optional-dependencies]

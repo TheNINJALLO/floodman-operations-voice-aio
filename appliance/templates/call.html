@@ -1,1 +1,44 @@
-{% extends "base.html" %}{% block content %}<h1>Call {{ call.call_uuid }}</h1><div class="grid"><section class="card"><h2>Intake</h2><pre>{{ call.snapshot | tojson(indent=2) }}</pre></section><section class="card"><h2>Conversation</h2>{% for item in call.messages %}<div class="message {{ item.role }}"><strong>{{ item.role }}</strong><p>{{ item.text }}</p></div>{% endfor %}</section></div><section class="card"><h2>Notifications</h2><pre>{{ call.notifications | tojson(indent=2) }}</pre></section>{% endblock %}
+{% extends "base.html" %}
+{% set page_title = "Call #" ~ call.id %}
+{% set page_eyebrow = call.started_at %}
+{% block content %}
+<section class="page-heading compact-heading">
+  <div><a class="back-link" href="/">← Back to calls</a><h1>{{ call.snapshot.get('name') or 'Unknown caller' }}</h1><div class="heading-meta"><span class="status {{ 'danger' if call.snapshot.get('urgency') == 'emergency' else 'info' }}">{{ (call.snapshot.get('urgency') or 'normal') | title }}</span><span>{{ call.caller_number }}</span><span>{{ (call.outcome or call.status) | replace('_', ' ') | title }}</span></div></div>
+  {% if principal.is_admin %}<form method="post" action="/calls/{{ call.id }}/delete" data-confirm="Permanently delete this call and its conversation?" data-confirm-label="Delete call"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button danger-outline" type="submit">Delete call</button></form>{% endif %}
+</section>
+<div class="detail-grid">
+  <section class="panel span-two">
+    <div class="panel-heading"><div><h2>Intake details</h2><p>Customer information captured during the call.</p></div></div>
+    <form method="post" action="/calls/{{ call.id }}/edit" class="form-grid">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Name<input name="name" value="{{ call.snapshot.get('name', '') }}" {{ 'disabled' if not principal.can_manage }}></label>
+      <label>Phone<input name="phone" value="{{ call.snapshot.get('phone', '') }}" {{ 'disabled' if not principal.can_manage }}></label>
+      <label>Email<input type="email" name="email" value="{{ call.snapshot.get('email', '') }}" {{ 'disabled' if not principal.can_manage }}></label>
+      <label>Full address<input name="address" value="{{ call.snapshot.get('address', '') }}" {{ 'disabled' if not principal.can_manage }}></label>
+      <label class="full-field">Service request<textarea name="description" rows="3" {{ 'disabled' if not principal.can_manage }}>{{ call.snapshot.get('description', '') }}</textarea></label>
+      <label>Call status<select name="status" {{ 'disabled' if not principal.can_manage }}><option value="active" {{ 'selected' if call.status == 'active' }}>Active</option><option value="completed" {{ 'selected' if call.status == 'completed' }}>Completed</option></select></label>
+      <label>Outcome<input name="outcome" value="{{ call.outcome or '' }}" {{ 'disabled' if not principal.can_manage }}></label>
+      <label>Current stage<input name="current_stage" value="{{ call.current_stage or '' }}" {{ 'disabled' if not principal.can_manage }}></label>
+      <label>Service key<input name="service_key" value="{{ call.snapshot.get('service_key', '') }}" {{ 'disabled' if not principal.can_manage }}></label>
+      <label>Service status<input name="service_status" value="{{ call.snapshot.get('service_status', '') }}" {{ 'disabled' if not principal.can_manage }}></label>
+      <label>Service-area status<input name="service_area_status" value="{{ call.snapshot.get('service_area_status', '') }}" {{ 'disabled' if not principal.can_manage }}></label>
+      <label>Service-area city<input name="service_area_city" value="{{ call.snapshot.get('service_area_city', '') }}" {{ 'disabled' if not principal.can_manage }}></label>
+      <label>Priority<select name="urgency" {{ 'disabled' if not principal.can_manage }}><option value="normal" {{ 'selected' if call.snapshot.get('urgency') != 'emergency' }}>Normal</option><option value="emergency" {{ 'selected' if call.snapshot.get('urgency') == 'emergency' }}>Emergency</option></select></label>
+      <label>Department<select name="department" {{ 'disabled' if not principal.can_manage }}>{% for value in ['estimating','emergency','billing','support'] %}<option value="{{ value }}" {{ 'selected' if call.snapshot.get('department') == value }}>{{ value | title }}</option>{% endfor %}</select></label>
+      <label class="full-field">Property context<textarea name="property_context" rows="2" {{ 'disabled' if not principal.can_manage }}>{{ call.snapshot.get('property_context', '') }}</textarea></label>
+      <label>Timing summary<input name="timing_summary" value="{{ call.snapshot.get('timing_summary', '') }}" {{ 'disabled' if not principal.can_manage }}></label>
+      <label>Safety summary<input name="safety_summary" value="{{ call.snapshot.get('safety_summary', '') }}" {{ 'disabled' if not principal.can_manage }}></label>
+      <label class="check-field full-field"><input type="checkbox" name="completed" {{ 'checked' if call.intake_completed }} {{ 'disabled' if not principal.can_manage }}><span><strong>Intake complete</strong><small>Mark this record ready for team follow-up.</small></span></label>
+      {% if principal.can_manage %}<div class="form-actions full-field"><button class="button primary" type="submit">Save call details</button></div>{% endif %}
+    </form>
+  </section>
+  <aside class="panel conversation-panel">
+    <div class="panel-heading"><div><h2>Conversation</h2><p>{{ call.messages | length }} messages</p></div></div>
+    <div class="conversation">{% for item in call.messages %}<article class="bubble {{ item.role }}"><small>{{ 'AI assistant' if item.role == 'assistant' else 'Caller' }} · <span class="js-date">{{ item.created_at }}</span></small><p>{{ item.text }}</p></article>{% else %}<div class="empty-state small"><p>No transcript was captured.</p></div>{% endfor %}</div>
+  </aside>
+</div>
+<section class="panel">
+  <div class="panel-heading"><div><h2>Delivery history</h2><p>SMS and internal notification attempts for this call.</p></div></div>
+  <div class="table-wrap"><table><thead><tr><th>Time</th><th>Type</th><th>Recipient</th><th>Status</th><th>Response</th></tr></thead><tbody>{% for item in call.notifications %}<tr><td class="js-date">{{ item.created_at }}</td><td>{{ item.kind | replace('_', ' ') | title }}</td><td>{{ item.recipient }}</td><td><span class="status {{ 'success' if item.status in ['sent','delivered'] else 'neutral' }}">{{ item.status | title }}</span></td><td class="truncate">{{ item.response }}</td></tr>{% else %}<tr><td colspan="5" class="muted">No delivery events recorded.</td></tr>{% endfor %}</tbody></table></div>
+</section>
+{% endblock %}

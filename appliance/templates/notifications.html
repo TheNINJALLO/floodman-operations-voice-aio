@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% set page_title = "Notifications" %}
+{% set page_eyebrow = "Real-time call alerts for this account" %}
+{% block content %}
+<section class="page-heading"><div><span class="eyebrow">Stay informed</span><h1>Notification center</h1><p>Receive safe, private alerts when call activity needs your attention.</p></div>{% if notifications %}<form method="post" action="/notifications/read-all"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button secondary" type="submit">Mark all read</button></form>{% endif %}</section>
+<section class="push-card" data-push-panel data-push-available="{{ 'true' if push_available else 'false' }}" data-push-secure="{{ 'true' if push_secure else 'false' }}">
+  <span class="push-art" aria-hidden="true">●</span>
+  <div><span class="eyebrow light">Browser alerts</span><h2>Get call alerts on this device</h2><p>Alerts contain only a general event and a secure link. Caller details stay inside the signed-in portal.</p><p class="push-status" data-push-status>Checking this browser…</p></div>
+  <div class="push-actions"><button class="button light" type="button" data-push-enable>Enable alerts</button><button class="button outline-light hidden" type="button" data-push-disable>Disable on this device</button><form method="post" action="/notifications/test"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button outline-light" type="submit">Send test</button></form></div>
+</section>
+<div class="notification-layout">
+  <section class="panel">
+    <div class="panel-heading"><div><h2>Recent alerts</h2><p>{{ notifications | length }} most recent events</p></div></div>
+    <div class="notification-list">
+      {% for item in notifications %}<article class="notification-item {{ 'unread' if not item.read_at }}"><span class="notification-icon {{ 'urgent' if item.kind == 'emergency' else '' }}">{{ '!' if item.kind == 'emergency' else '●' }}</span><div><div class="notification-title"><strong>{{ item.title }}</strong><small class="js-date">{{ item.created_at }}</small></div><p>{{ item.body }}</p><div class="notification-actions">{% if item.url %}<a href="{{ item.url }}">View details →</a>{% endif %}<form method="post" action="/notifications/{{ item.id }}/delete"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="text-button" type="submit">Remove</button></form></div></div></article>
+      {% else %}<div class="empty-state"><span>●</span><h3>You're all caught up</h3><p>New call events will appear here.</p></div>{% endfor %}
+    </div>
+  </section>
+  <aside class="panel device-panel">
+    <div class="panel-heading"><div><h2>Registered devices</h2><p>{{ subscriptions | length }} browser{{ '' if subscriptions | length == 1 else 's' }}</p></div></div>
+    {% for device in subscriptions %}<div class="device-item"><span class="device-icon">▣</span><div><strong>{{ device.user_agent[:42] or 'Browser device' }}{{ '…' if device.user_agent | length > 42 }}</strong><small>Added <span class="js-date">{{ device.created_at }}</span></small><small>{{ 'Last delivered ' ~ device.last_success_at if device.last_success_at else 'Waiting for first delivery' }}</small></div><span class="status {{ 'warning' if device.failure_count else 'success' }}">{{ device.failure_count ~ ' failed' if device.failure_count else 'Ready' }}</span></div>{% else %}<div class="empty-state small"><p>No browsers have enabled alerts yet.</p></div>{% endfor %}
+    <a class="settings-link" href="/profile">Manage which events you receive →</a>
+  </aside>
+</div>
+{% endblock %}

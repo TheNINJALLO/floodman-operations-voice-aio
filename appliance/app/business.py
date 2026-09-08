@@ -38,6 +38,30 @@ class BusinessDirectory:
             cities = raw.get("cities") or []
             self.cities = {str(city).strip().lower() for city in cities if str(city).strip()}
 
+    def configuration(self) -> dict[str, Any]:
+        raw = yaml.safe_load(self.path.read_text(encoding="utf-8")) if self.path.exists() else {}
+        value = raw or {}
+        return {
+            "state": str(value.get("state") or ""),
+            "description": str(value.get("description") or ""),
+            "cities": sorted({str(city).strip() for city in value.get("cities") or [] if str(city).strip()}),
+        }
+
+    def save_configuration(self, state: str, description: str, cities: list[str]) -> None:
+        cleaned = sorted({str(city).strip()[:100] for city in cities if str(city).strip()}, key=str.casefold)
+        if not cleaned:
+            raise ValueError("At least one service city is required.")
+        value = {
+            "state": str(state or "").strip()[:100],
+            "description": str(description or "").strip()[:1000],
+            "cities": cleaned,
+        }
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self.path.with_suffix(".tmp")
+        temporary.write_text(yaml.safe_dump(value, sort_keys=False, allow_unicode=True), encoding="utf-8")
+        temporary.replace(self.path)
+        self.reload()
+
     def service_area(self, address_or_city: str) -> ServiceAreaResult:
         text = normalized(address_or_city)
         matches = [city for city in self.cities if re.search(rf"(?:^| ){re.escape(normalized(city))}(?:$| )", text)]

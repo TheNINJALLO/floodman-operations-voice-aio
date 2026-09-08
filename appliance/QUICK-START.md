@@ -7,6 +7,7 @@
 5. Assign TCP 8003, SIP 5060, and UDP 10000-10100.
 6. Configure SIP, transfer numbers, and Twilio SMS credentials.
 7. Start the container and wait until `/ready` is healthy.
-8. Retrieve `ADMIN_TOKEN` from `data/runtime.env` if it was generated.
-9. Test `/simulator` before routing the live DID.
-10. Run one full call, one hangup, one unsupported request, and one human transfer.
+8. Retrieve `ADMIN_TOKEN` from `data/runtime.env` if it was generated, use **Recovery access** on `/login`, and create the first named administrator.
+9. Sign in with the new username and password. Open **Notifications** on each user's HTTPS device and enable browser alerts.
+10. Test `/simulator` before routing the live DID.
+11. Run one full call, one hangup, one unsupported request, and one human transfer.

@@ -1,1 +1,38 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Floodman Login</title><link rel="stylesheet" href="/static/app.css"></head><body class="login"><form method="post" class="card login-card"><h1>Floodman Voice Appliance</h1><p>Enter the appliance admin token.</p><input type="password" name="token" required autofocus><button type="submit">Sign in</button></form></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#102a43">
+  <title>Sign in · Floodman Call Center</title>
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="login-page">
+  <main class="login-wrap">
+    <section class="login-intro">
+      <div class="brand login-brand"><span class="brand-mark">F</span><span><strong>Floodman</strong><small>Call Center</small></span></div>
+      <div><span class="eyebrow light">Secure operations portal</span><h1>Every call, organized and ready for action.</h1><p>Manage caller intake, team access, service knowledge, and real-time alerts from one private workspace.</p></div>
+      <div class="trust-row"><span>✓ Private AI</span><span>✓ Role-based access</span><span>✓ Audit history</span></div>
+    </section>
+    <section class="login-panel">
+      <div class="login-card">
+        <span class="eyebrow">Welcome back</span><h2>Sign in to your account</h2><p class="muted">Use the username and password assigned by an administrator.</p>
+        {% if message %}<div class="alert success"><span>✓</span><p>{{ message }}</p></div>{% endif %}
+        {% if error %}<div class="alert danger"><span>!</span><p>{{ error }}</p></div>{% endif %}
+        <form method="post" action="/login" class="form-stack">
+          <label>Username<input name="username" autocomplete="username" autofocus placeholder="your.username"></label>
+          <label>Password<input type="password" name="password" autocomplete="current-password" placeholder="••••••••••••"></label>
+          <button class="button primary full" type="submit">Sign in</button>
+        </form>
+        <details class="recovery-box" {{ 'open' if user_count == 0 else '' }}>
+          <summary>{{ 'Set up the first administrator' if user_count == 0 else 'Recovery access' }}</summary>
+          <p>{{ 'Enter the appliance admin token once, then create your first named administrator.' if user_count == 0 else 'Use the appliance admin token only if normal account access is unavailable.' }}</p>
+          <form method="post" action="/login" class="form-stack compact-stack"><label>Recovery token<input type="password" name="recovery_token" autocomplete="off"></label><button class="button secondary full" type="submit">Continue with recovery token</button></form>
+        </details>
+      </div>
+      <p class="login-foot">Authorized Floodman team members only.</p>
+    </section>
+  </main>
+</body>
+</html>

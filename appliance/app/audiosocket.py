@@ -167,6 +167,9 @@ class AudioSocketServer:
             logger.info("call_event call_uuid=%s stage=uuid_received", call_uuid)
             metadata = self.registry.read_pre(call_uuid)
             session = self.core.create_session(call_uuid, metadata.get("caller_number", ""), metadata.get("called_number", ""))
+            call_started = getattr(self.core, "call_started", None)
+            if call_started is not None:
+                await call_started(session)
             logger.info(
                 "call_event call_uuid=%s stage=session_created call_id=%s channel_id=%s sip_call_id=%s",
                 call_uuid,

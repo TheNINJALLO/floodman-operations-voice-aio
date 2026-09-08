@@ -1,1 +1,8 @@
-{% extends "base.html" %}{% block content %}<h1>Local conversation simulator</h1><p>This exercises the same deterministic intake state machine without placing a phone call.</p><div class="card"><div id="chat" class="chat"></div><form id="sim-form"><input id="sim-input" autocomplete="off" placeholder="Type the caller response"><button>Send</button><button type="button" id="reset">Reset</button></form></div><script src="/static/simulator.js"></script>{% endblock %}
+{% extends "base.html" %}
+{% set page_title = "Conversation simulator" %}
+{% set page_eyebrow = "Test the production intake flow safely" %}
+{% block content %}
+<section class="page-heading"><div><span class="eyebrow">Test workspace</span><h1>Conversation simulator</h1><p>Exercise the same deterministic intake flow without placing a phone call.</p></div><button class="button secondary" type="button" id="reset">Start over</button></section>
+<section class="simulator-shell panel"><div class="simulator-head"><span class="avatar bot-avatar">F</span><div><strong>Floodman AI receptionist</strong><small><span class="system-dot"></span> Local model ready</small></div></div><div id="chat" class="chat" aria-live="polite"></div><form id="sim-form" class="composer"><input id="sim-input" autocomplete="off" placeholder="Type the caller's response…" aria-label="Caller response"><button class="button primary" type="submit">Send</button></form><p class="help centered">Simulator records are saved as calls and can be managed from the Calls page.</p></section>
+<script src="/static/simulator.js"></script>
+{% endblock %}

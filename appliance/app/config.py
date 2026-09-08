@@ -137,6 +137,7 @@ class Settings:
     cache_dir: Path
     runtime_dir: Path
     log_dir: Path
+    push_dir: Path
 
     web_host: str
     web_port: int
@@ -144,6 +145,8 @@ class Settings:
     internal_token: str
     public_base_url: str
     trusted_hosts: tuple[str, ...]
+    session_hours: int
+    web_push_subject: str
 
     database_path: Path
     service_area_path: Path
@@ -221,7 +224,8 @@ class Settings:
         runtime = Path(os.getenv("RUNTIME_DIR", data / "runtime"))
         cache = Path(os.getenv("CACHE_DIR", data / "cache"))
         logs = Path(os.getenv("LOG_DIR", data / "logs"))
-        for path in (data, knowledge, models, runtime, cache, logs):
+        push = Path(os.getenv("PUSH_DIR", data / "push"))
+        for path in (data, knowledge, models, runtime, cache, logs, push):
             path.mkdir(parents=True, exist_ok=True)
 
         admin = os.getenv("ADMIN_TOKEN", "").strip() or secrets.token_urlsafe(32)
@@ -237,12 +241,15 @@ class Settings:
             cache_dir=cache,
             runtime_dir=runtime,
             log_dir=logs,
+            push_dir=push,
             web_host=os.getenv("WEB_HOST", "0.0.0.0"),
             web_port=_int("WEB_PORT", 8002),
             admin_token=admin,
             internal_token=internal,
             public_base_url=public_base_url,
             trusted_hosts=_csv("TRUSTED_HOSTS", trusted_default),
+            session_hours=max(1, min(_int("SESSION_HOURS", 12), 168)),
+            web_push_subject=os.getenv("WEB_PUSH_SUBJECT", "mailto:notifications@oninetwork.com").strip(),
             database_path=Path(os.getenv("DATABASE_PATH", data / "floodman.db")),
             service_area_path=Path(os.getenv("SERVICE_AREA_PATH", data / "service_area.yaml")),
             audiosocket_host=os.getenv("AUDIOSOCKET_HOST", "127.0.0.1"),

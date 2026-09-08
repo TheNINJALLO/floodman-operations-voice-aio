@@ -53,7 +53,7 @@ The default context is 4096 tokens and one inference lane. This is intentionally
 5. Assign web port `8003`, SIP port `5060` and UDP RTP allocations `10000-10100`.
 6. Fill in the SIP/Twilio and team-recipient values. AI provider keys do not exist in this project.
 7. Start the server. First boot downloads roughly several gigabytes of local model files into `/home/container/data/models`.
-8. Open the web panel with the generated or configured `ADMIN_TOKEN` and run the conversation simulator before placing the first phone call.
+8. Open the web panel, expand **Set up the first administrator**, and use the generated or configured `ADMIN_TOKEN` once. Create a named administrator and use username/password access after that.
 
 ## Persistent layout
 
@@ -65,6 +65,7 @@ The default context is 4096 tokens and one inference lane. This is intentionally
 ├── service_area.yaml
 ├── models/
 ├── cache/tts/
+├── push/
 ├── runtime/precall/
 ├── runtime/actions/
 ├── asterisk/
@@ -75,12 +76,15 @@ The startup environment parser validates the whole file before changing it. Brok
 
 ## Web panel
 
-- Call list and completed/partial intake
-- Full caller and assistant transcript
-- Notification status
-- Local conversation simulator
-- Model and readiness status
-- Bounded diagnostic log tails
+- Username/password accounts with administrator, manager, and viewer roles
+- Call list, editable intake details, full transcripts, and controlled deletion
+- Editable approved knowledge documents and service-area cities
+- Per-user notification preferences, in-app notifications, and Web Push alerts
+- Local conversation simulator, model readiness, audit history, and bounded log tails
+
+The original `ADMIN_TOKEN` remains a short-lived recovery path and is not a day-to-day account. Passwords are salted and one-way hashed; changing a password revokes that user's sessions. Administrative changes are written to the audit log.
+
+Browser push requires the public panel to use HTTPS. Each team member signs in on their own device, opens **Notifications**, and chooses **Enable alerts**. Permission is controlled by the browser and can be revoked there at any time. Push previews intentionally contain no caller name, phone number, address, or project details; those remain behind authenticated access.
 
 Health endpoints:
 
@@ -126,7 +130,7 @@ pip install -e '.[dev]'
 pytest -q
 ```
 
-The repository tests deterministic intake, confirmations, unsupported work, emergency routing, service-area checks, partial notifications, database cascades, environment parsing, Asterisk rendering, and the one-unit GPU contract.
+The repository tests deterministic intake, confirmations, unsupported work, emergency routing, account authorization, browser-notification privacy, service-area and knowledge editing, database cascades, environment parsing, Asterisk rendering, and the one-unit GPU contract.
 
 ## Production acceptance checklist
 
@@ -134,6 +138,8 @@ The repository tests deterministic intake, confirmations, unsupported work, emer
 - Qwen3 model loaded without VRAM exhaustion
 - Faster-Whisper and Kokoro ready
 - `/ready` returns HTTP 200
+- First named administrator can sign in and the recovery token still works
+- Browser push can be enabled on an HTTPS device and a test notification arrives
 - Inbound and outbound RTP passes through AudioSocket
 - Complete intake finishes in the simulator and by phone
 - Partial hangup sends exactly one alert per recipient

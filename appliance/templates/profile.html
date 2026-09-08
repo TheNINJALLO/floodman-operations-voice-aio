@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% set page_title = "Your profile" %}
+{% set page_eyebrow = "Account and alert preferences" %}
+{% block content %}
+<section class="page-heading"><div><span class="eyebrow">Personal settings</span><h1>Your profile</h1><p>Keep your display name and notification choices up to date.</p></div></section>
+<div class="settings-grid">
+  <section class="panel">
+    <div class="panel-heading"><div><h2>Profile details</h2><p>Signed in as @{{ user.username }} · {{ user.role | title }}</p></div></div>
+    <form method="post" action="/profile" class="form-stack">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Display name<input name="display_name" value="{{ user.display_name }}" maxlength="80" required></label>
+      <fieldset><legend>Call alerts</legend>
+        <label class="check-field"><input type="checkbox" name="notify_new_calls" {{ 'checked' if user.notify_new_calls }}><span><strong>New calls</strong><small>When a caller enters the system.</small></span></label>
+        <label class="check-field"><input type="checkbox" name="notify_completed_calls" {{ 'checked' if user.notify_completed_calls }}><span><strong>Completed intake</strong><small>When a customer record is ready.</small></span></label>
+        <label class="check-field"><input type="checkbox" name="notify_emergencies" {{ 'checked' if user.notify_emergencies }}><span><strong>Emergency calls</strong><small>When urgent action may be required.</small></span></label>
+      </fieldset>
+      <button class="button primary" type="submit">Save preferences</button>
+    </form>
+  </section>
+  <section class="panel">
+    <div class="panel-heading"><div><h2>Change password</h2><p>This signs out every current session.</p></div></div>
+    <form method="post" action="/users/{{ user.id }}/password" class="form-stack"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><label>New password<input type="password" name="password" autocomplete="new-password" required minlength="12"></label><p class="help">Use at least 12 characters and three of uppercase, lowercase, numbers, or symbols.</p><button class="button secondary" type="submit">Change password</button></form>
+  </section>
+</div>
+{% endblock %}

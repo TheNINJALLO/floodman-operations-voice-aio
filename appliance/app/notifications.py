@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Iterable
 
@@ -8,6 +9,7 @@ import httpx
 from app.config import Settings
 from app.db import Database
 from app.models import IntakeState
+from app.webpush import WebPushService
 
 logger = logging.getLogger(__name__)
 
@@ -58,11 +60,26 @@ class TeamNotifier:
     def __init__(self, settings: Settings, database: Database):
         self.settings = settings
         self.database = database
+        self.web_push = WebPushService(settings, database)
+        self._background_tasks: set[asyncio.Task[int]] = set()
+
+    async def call_started(self, call_id: int, state: IntakeState) -> int:
+        # Never make the caller wait for an external push service before hearing
+        # the greeting. The task is retained until completion and reports errors.
+        task = asyncio.create_task(self.web_push.publish_call(call_id, state, "call_started"))
+        self._background_tasks.add(task)
+        task.add_done_callback(self._call_started_done)
+        return 0
+
+    def _call_started_done(self, task: asyncio.Task[int]) -> None:
+        self._background_tasks.discard(task)
+        try:
+            task.result()
+        except Exception:
+            logger.exception("Unable to publish the incoming-call user notification")
 
     async def send(self, call_id: int, state: IntakeState, *, kind: str = "lead", partial: bool = False) -> int:
         values = recipients(self.settings, state)
-        if not values:
-            return 0
         body = build_message(state, self.settings.callback_sla_hours, partial=partial)
         count = 0
         for recipient in values:
@@ -72,6 +89,10 @@ class TeamNotifier:
             status, response = await self._send_one(recipient, body)
             if self.database.record_notification(call_id, kind, recipient, status, response, key):
                 count += 1
+        try:
+            count += await self.web_push.publish_call(call_id, state, kind)
+        except Exception:
+            logger.exception("Unable to publish the call user notification kind=%s", kind)
         return count
 
     async def _send_one(self, recipient: str, body: str) -> tuple[str, str]:

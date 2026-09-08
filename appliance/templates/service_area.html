@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% set page_title = "Service area" %}
+{% set page_eyebrow = "Published locations for call qualification" %}
+{% block content %}
+<section class="page-heading"><div><span class="eyebrow">Coverage management</span><h1>Service area</h1><p>Control which cities the assistant can confidently identify as covered.</p></div></section>
+<div class="settings-grid service-grid">
+  <section class="panel">
+    <div class="panel-heading"><div><h2>Coverage settings</h2><p>Changes are applied to new conversations immediately.</p></div></div>
+    <form method="post" action="/service-area" class="form-stack">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>State or region<input name="state" value="{{ service_area.state }}" maxlength="100" {{ 'disabled' if not principal.can_manage }}></label>
+      <label>Description<textarea name="description" rows="4" maxlength="1000" {{ 'disabled' if not principal.can_manage }}>{{ service_area.description }}</textarea><small>Internal context describing the overall region.</small></label>
+      <label>Cities<textarea name="cities" rows="14" required {{ 'disabled' if not principal.can_manage }}>{{ service_area.cities | join('\n') }}</textarea><small>Enter one city per line. At least one city is required.</small></label>
+      {% if principal.can_manage %}<button class="button primary" type="submit">Save service area</button>{% endif %}
+    </form>
+  </section>
+  <aside class="panel coverage-preview">
+    <div class="panel-heading"><div><h2>Published coverage</h2><p>{{ service_area.cities | length }} cit{{ 'y' if service_area.cities | length == 1 else 'ies' }} in {{ service_area.state or 'the configured region' }}</p></div></div>
+    <div class="city-list">{% for city in service_area.cities %}<span>{{ city }}</span>{% else %}<div class="empty-state small"><p>No cities configured.</p></div>{% endfor %}</div>
+    <div class="info-note"><strong>Careful qualification</strong><p>Addresses outside this list remain eligible for manual team review. The assistant will not reject them automatically.</p></div>
+  </aside>
+</div>
+{% endblock %}

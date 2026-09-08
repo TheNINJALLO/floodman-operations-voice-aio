@@ -1,1 +1,66 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{ title or 'Floodman Voice Appliance' }}</title><link rel="stylesheet" href="/static/app.css"></head><body><header><div><strong>Floodman Voice Appliance</strong><span class="badge">Local AI</span></div><nav><a href="/">Calls</a><a href="/simulator">Simulator</a><a href="/diagnostics">Diagnostics</a><form method="post" action="/logout"><button>Log out</button></form></nav></header><main>{% block content %}{% endblock %}</main></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#102a43">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <title>{{ title or 'Floodman Call Center' }}</title>
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="/static/manifest.webmanifest">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <a class="brand" href="/" aria-label="Floodman call center home">
+        <span class="brand-mark" aria-hidden="true">F</span>
+        <span><strong>Floodman</strong><small>Call Center</small></span>
+      </a>
+      <nav class="primary-nav" aria-label="Primary navigation">
+        <a href="/" class="{{ 'active' if section == 'calls' else '' }}"><span aria-hidden="true">◫</span> Calls</a>
+        <a href="/knowledge" class="{{ 'active' if section == 'knowledge' else '' }}"><span aria-hidden="true">◇</span> Knowledge</a>
+        <a href="/service-area" class="{{ 'active' if section == 'service-area' else '' }}"><span aria-hidden="true">⌖</span> Service area</a>
+        {% if principal.user_id %}
+        <a href="/notifications" class="{{ 'active' if section == 'notifications' else '' }}"><span aria-hidden="true">●</span> Notifications <span class="nav-count {{ 'hidden' if not unread_notifications else '' }}" data-unread-count>{{ unread_notifications }}</span></a>
+        {% endif %}
+        {% if principal.can_manage %}
+        <a href="/simulator" class="{{ 'active' if section == 'simulator' else '' }}"><span aria-hidden="true">▷</span> Simulator</a>
+        {% endif %}
+        <a href="/diagnostics" class="{{ 'active' if section == 'diagnostics' else '' }}"><span aria-hidden="true">⌁</span> Diagnostics</a>
+        {% if principal.is_admin %}
+        <div class="nav-label">Administration</div>
+        <a href="/users" class="{{ 'active' if section == 'users' else '' }}"><span aria-hidden="true">◎</span> Users</a>
+        <a href="/audit" class="{{ 'active' if section == 'audit' else '' }}"><span aria-hidden="true">≡</span> Audit log</a>
+        {% endif %}
+      </nav>
+      <div class="sidebar-footer"><span class="system-dot"></span><span>Private AI online</span></div>
+    </aside>
+
+    <div class="app-main">
+      <header class="topbar">
+        <button class="icon-button mobile-menu" type="button" data-menu-toggle aria-label="Open navigation" aria-expanded="false">☰</button>
+        <div class="topbar-title"><strong>{{ page_title or 'Operations' }}</strong><small>{{ page_eyebrow or 'Floodman Voice Appliance' }}</small></div>
+        <div class="account-menu">
+          {% if principal.user_id %}<a class="icon-button notification-link" href="/notifications" aria-label="Notifications">●<span class="notification-pip {{ 'hidden' if not unread_notifications else '' }}" data-unread-pip></span></a>{% endif %}
+          <a class="account-identity" href="{{ '/profile' if principal.user_id else '/users' }}">
+            <span class="avatar">{{ principal.display_name[0] | upper }}</span>
+            <span><strong>{{ principal.display_name }}</strong><small>{{ principal.role | title }}</small></span>
+          </a>
+          <form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button ghost compact" type="submit">Log out</button></form>
+        </div>
+      </header>
+      <main class="content">
+        {% set flash_message = message or request.query_params.get('message', '') %}
+        {% set flash_error = error or request.query_params.get('error', '') %}
+        {% if flash_message %}<div class="alert success" role="status"><span>✓</span><p>{{ flash_message }}</p><button type="button" data-dismiss aria-label="Dismiss">×</button></div>{% endif %}
+        {% if flash_error %}<div class="alert danger" role="alert"><span>!</span><p>{{ flash_error }}</p><button type="button" data-dismiss aria-label="Dismiss">×</button></div>{% endif %}
+        {% if principal.is_recovery %}<div class="alert warning"><span>!</span><p>You are using the short-lived recovery account. Create a named administrator, then sign in with that account.</p></div>{% endif %}
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+  <div class="sidebar-scrim" data-menu-toggle></div>
+</body>
+</html>

@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% set page_title = "Knowledge library" %}
+{% set page_eyebrow = "Approved information for the voice assistant" %}
+{% block content %}
+<section class="page-heading"><div><span class="eyebrow">AI content</span><h1>Knowledge library</h1><p>Add and maintain the approved information the assistant can use during calls.</p></div>{% if principal.can_manage %}<a class="button secondary" href="/knowledge">+ New document</a>{% endif %}</section>
+<div class="split-layout">
+  <section class="panel">
+    <div class="panel-heading"><div><h2>Documents</h2><p>{{ documents | length }} managed document{{ '' if documents | length == 1 else 's' }}</p></div><label class="search-box"><span>⌕</span><input type="search" placeholder="Search documents" data-table-search="knowledge-table"></label></div>
+    <div class="table-wrap"><table id="knowledge-table"><thead><tr><th>Document</th><th>Category</th><th>AI status</th><th></th></tr></thead><tbody>
+      {% for document in documents %}<tr><td><strong>{{ document.title }}</strong><small>{{ document.slug }}.md</small></td><td>{{ document.category | title }}</td><td><span class="status {{ 'success' if document.approved else 'neutral' }}">{{ 'Approved' if document.approved else 'Draft' }}</span></td><td><a class="row-action" href="/knowledge?edit={{ document.slug }}">→</a></td></tr>
+      {% else %}<tr><td colspan="4"><div class="empty-state"><span>◇</span><h3>No documents</h3><p>Add a document to teach the assistant approved business information.</p></div></td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>
+  {% if selected or principal.can_manage %}
+  <aside class="panel editor-panel">
+    {% set document = selected or {} %}
+    <div class="panel-heading"><div><span class="eyebrow">{{ 'Edit document' if selected else 'New document' }}</span><h2>{{ selected.title if selected else 'Add knowledge' }}</h2><p>Approved content is reloaded as soon as you save.</p></div>{% if selected %}<a class="icon-button" href="/knowledge">×</a>{% endif %}</div>
+    <form method="post" action="/knowledge/save" class="form-stack">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="original_slug" value="{{ document.get('slug', '') }}">
+      <label>File name<input name="slug" value="{{ document.get('slug', '') }}" required pattern="[a-z0-9][a-z0-9_-]{1,79}" placeholder="financing-options" {{ 'disabled' if not principal.can_manage }}><small>Lowercase letters, numbers, dashes, or underscores.</small></label>
+      <label>Title<input name="title" value="{{ document.get('title', '') }}" maxlength="160" required {{ 'disabled' if not principal.can_manage }}></label>
+      <label>Category<input name="category" value="{{ document.get('category', 'general') }}" maxlength="80" {{ 'disabled' if not principal.can_manage }}></label>
+      <label>Tags<input name="tags" value="{{ document.get('tags', '') }}" placeholder="financing, payment, estimate" {{ 'disabled' if not principal.can_manage }}><small>Comma-separated phrases used for matching.</small></label>
+      <label>Content<textarea name="body" rows="14" required {{ 'disabled' if not principal.can_manage }}>{{ document.get('body', '') }}</textarea></label>
+      <label class="check-field"><input type="checkbox" name="approved" {{ 'checked' if document.get('approved') }} {{ 'disabled' if not principal.can_manage }}><span><strong>Approved for AI answers</strong><small>Draft documents remain stored but are not used.</small></span></label>
+      {% if principal.can_manage %}<button class="button primary full" type="submit">Save and reload</button>{% endif %}
+    </form>
+    {% if selected and principal.is_admin %}<form method="post" action="/knowledge/{{ selected.slug }}/delete" data-confirm="Permanently delete this knowledge document?" data-confirm-label="Delete document" class="danger-zone"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button danger-outline full" type="submit">Delete document</button></form>{% endif %}
+  </aside>
+  {% endif %}
+</div>
+{% endblock %}

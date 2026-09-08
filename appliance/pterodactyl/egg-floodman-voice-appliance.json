@@ -60,12 +60,32 @@
         },
         {
             "name": "Admin Token",
-            "description": "Web-panel login token. Leave blank on first boot to generate.",
+            "description": "Short-lived web-panel recovery token. Leave blank on first boot to generate, then create named user accounts.",
             "env_variable": "ADMIN_TOKEN",
             "default_value": "",
             "user_viewable": true,
             "user_editable": true,
             "rules": "nullable|string|min:24|max:256",
+            "field_type": "text"
+        },
+        {
+            "name": "User Session Hours",
+            "description": "Hours before a named web-panel session expires.",
+            "env_variable": "SESSION_HOURS",
+            "default_value": "12",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|integer|min:1|max:168",
+            "field_type": "text"
+        },
+        {
+            "name": "Web Push Contact",
+            "description": "VAPID contact claim for browser push, normally a mailto address.",
+            "env_variable": "WEB_PUSH_SUBJECT",
+            "default_value": "mailto:notifications@oninetwork.com",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:255",
             "field_type": "text"
         },
         {

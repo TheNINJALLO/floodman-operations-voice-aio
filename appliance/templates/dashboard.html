@@ -1,1 +1,22 @@
-{% extends "base.html" %}{% block content %}<section class="hero"><div><h1>Calls and intake</h1><p>Local Faster-Whisper, Qwen3, and Kokoro. No paid AI provider is in the call path.</p></div><a class="button" href="/simulator">Test conversation</a></section><div class="card"><table><thead><tr><th>Started</th><th>Caller</th><th>Outcome</th><th>Stage</th><th>Name</th><th>Need</th></tr></thead><tbody>{% for call in calls %}<tr><td><a href="/calls/{{ call.id }}">{{ call.started_at }}</a></td><td>{{ call.caller_number }}</td><td>{{ call.outcome or call.status }}</td><td>{{ call.current_stage }}</td><td>{{ call.snapshot.name or 'Unknown' }}</td><td>{{ call.snapshot.description or '' }}</td></tr>{% else %}<tr><td colspan="6">No calls yet.</td></tr>{% endfor %}</tbody></table></div>{% endblock %}
+{% extends "base.html" %}
+{% set page_title = "Call activity" %}
+{% set page_eyebrow = "Live intake and customer requests" %}
+{% block content %}
+<section class="page-heading">
+  <div><span class="eyebrow">Operations overview</span><h1>Calls and intake</h1><p>Review every conversation, see what needs attention, and keep the team moving.</p></div>
+  {% if principal.can_manage %}<a class="button secondary" href="/simulator">Run a test call</a>{% endif %}
+</section>
+<section class="metric-grid" aria-label="Call summary">
+  <article class="metric-card"><span class="metric-icon blue">◫</span><div><small>Total calls</small><strong>{{ counts.total }}</strong><p>All recorded intake</p></div></article>
+  <article class="metric-card"><span class="metric-icon amber">◷</span><div><small>Active now</small><strong>{{ counts.active }}</strong><p>Calls in progress</p></div></article>
+  <article class="metric-card"><span class="metric-icon green">✓</span><div><small>Intakes complete</small><strong>{{ counts.completed }}</strong><p>Ready for follow-up</p></div></article>
+  <article class="metric-card"><span class="metric-icon red">!</span><div><small>Emergencies</small><strong>{{ counts.emergencies }}</strong><p>Priority response</p></div></article>
+</section>
+<section class="panel">
+  <div class="panel-heading"><div><h2>Recent calls</h2><p>Newest activity appears first.</p></div><label class="search-box"><span aria-hidden="true">⌕</span><input type="search" placeholder="Search calls" data-table-search="calls-table" aria-label="Search calls"></label></div>
+  <div class="table-wrap"><table id="calls-table"><thead><tr><th>Started</th><th>Caller</th><th>Status</th><th>Customer</th><th>Request</th><th>Priority</th><th><span class="sr-only">Open</span></th></tr></thead><tbody>
+  {% for call in calls %}<tr><td><strong class="js-date">{{ call.started_at }}</strong><small>#{{ call.id }}</small></td><td>{{ call.caller_number }}</td><td><span class="status {{ 'success' if call.intake_completed else ('info' if call.status == 'active' else 'neutral') }}">{{ (call.outcome or call.status) | replace('_', ' ') | title }}</span></td><td>{{ call.snapshot.get('name') or 'Not captured' }}</td><td class="truncate">{{ call.snapshot.get('description') or call.current_stage | replace('_', ' ') | title }}</td><td><span class="status {{ 'danger' if call.snapshot.get('urgency') == 'emergency' else 'neutral' }}">{{ (call.snapshot.get('urgency') or 'normal') | title }}</span></td><td><a class="row-action" href="/calls/{{ call.id }}" aria-label="Open call {{ call.id }}">→</a></td></tr>
+  {% else %}<tr><td colspan="7"><div class="empty-state"><span>◫</span><h3>No calls yet</h3><p>Incoming and simulated calls will appear here.</p></div></td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endblock %}

@@ -1,1 +1,7 @@
-{% extends "base.html" %}{% block content %}<h1>Diagnostics</h1><p>Ready: <strong>{{ ready }}</strong>. Logs are bounded to the newest 160 lines so the panel stays readable.</p>{% for name, text in logs.items() %}<section class="card"><h2>{{ name }}</h2><pre>{{ text }}</pre></section>{% else %}<div class="card">No logs have been written yet.</div>{% endfor %}{% endblock %}
+{% extends "base.html" %}
+{% set page_title = "System diagnostics" %}
+{% set page_eyebrow = "Local services and recent logs" %}
+{% block content %}
+<section class="page-heading"><div><span class="eyebrow">System health</span><h1>Diagnostics</h1><p>Recent bounded logs from the local voice appliance. Sensitive service credentials are never displayed.</p></div><span class="health-pill {{ 'healthy' if ready else 'unhealthy' }}"><span></span>{{ 'System ready' if ready else 'Starting or unavailable' }}</span></section>
+<div class="log-stack">{% for name, text in logs.items() %}<details class="panel log-panel" {{ 'open' if loop.first }}><summary><span><strong>{{ name }}</strong><small>Newest 160 lines</small></span><span>⌄</span></summary><pre>{{ text }}</pre></details>{% else %}<div class="panel empty-state"><span>⌁</span><h3>No logs yet</h3><p>Runtime log output will appear after the services start.</p></div>{% endfor %}</div>
+{% endblock %}

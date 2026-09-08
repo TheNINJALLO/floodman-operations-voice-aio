@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% set page_title = "Team access" %}
+{% set page_eyebrow = "Accounts, roles, and notification permissions" %}
+{% block content %}
+<section class="page-heading"><div><span class="eyebrow">Administration</span><h1>Users</h1><p>Create secure team accounts and control what each person can manage.</p></div><a class="button secondary" href="/users">+ Add user</a></section>
+<div class="split-layout">
+  <section class="panel">
+    <div class="panel-heading"><div><h2>Team members</h2><p>{{ users | length }} account{{ '' if users | length == 1 else 's' }}</p></div><label class="search-box"><span>⌕</span><input type="search" placeholder="Search users" data-table-search="users-table"></label></div>
+    <div class="table-wrap"><table id="users-table"><thead><tr><th>User</th><th>Role</th><th>Status</th><th>Alerts</th><th>Last sign-in</th><th></th></tr></thead><tbody>
+      {% for user in users %}<tr><td><div class="identity-cell"><span class="avatar small-avatar">{{ user.display_name[0] | upper }}</span><span><strong>{{ user.display_name }}</strong><small>@{{ user.username }}</small></span></div></td><td><span class="status info">{{ user.role | title }}</span></td><td><span class="status {{ 'success' if user.active else 'neutral' }}">{{ 'Active' if user.active else 'Inactive' }}</span></td><td>{{ user.push_devices }} device{{ '' if user.push_devices == 1 else 's' }}</td><td class="js-date">{{ user.last_login_at or 'Never' }}</td><td><a class="row-action" href="/users?edit={{ user.id }}" aria-label="Edit {{ user.username }}">→</a></td></tr>
+      {% else %}<tr><td colspan="6"><div class="empty-state"><span>◎</span><h3>No named users yet</h3><p>Create the first administrator using the panel on this page.</p></div></td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>
+  <aside class="panel editor-panel">
+    {% if selected %}
+      <div class="panel-heading"><div><span class="eyebrow">Edit account</span><h2>{{ selected.display_name }}</h2><p>Changes take effect immediately.</p></div><a class="icon-button" href="/users" aria-label="Close">×</a></div>
+      <form method="post" action="/users/{{ selected.id }}/edit" class="form-stack">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>Display name<input name="display_name" required maxlength="80" value="{{ selected.display_name }}"></label>
+        <label>Username<input name="username" required minlength="3" maxlength="40" value="{{ selected.username }}"></label>
+        <label>Role<select name="role"><option value="viewer" {{ 'selected' if selected.role == 'viewer' }}>Viewer — read only</option><option value="manager" {{ 'selected' if selected.role == 'manager' }}>Manager — edit operations</option><option value="admin" {{ 'selected' if selected.role == 'admin' }}>Administrator — full access</option></select></label>
+        <fieldset><legend>Account status</legend><label class="check-field"><input type="checkbox" name="active" {{ 'checked' if selected.active }}><span><strong>Active account</strong><small>Inactive users cannot sign in.</small></span></label></fieldset>
+        <fieldset><legend>Notification preferences</legend>
+          <label class="check-field"><input type="checkbox" name="notify_new_calls" {{ 'checked' if selected.notify_new_calls }}><span><strong>New calls</strong><small>Alert when a caller connects.</small></span></label>
+          <label class="check-field"><input type="checkbox" name="notify_completed_calls" {{ 'checked' if selected.notify_completed_calls }}><span><strong>Completed intake</strong><small>Alert when intake is ready.</small></span></label>
+          <label class="check-field"><input type="checkbox" name="notify_emergencies" {{ 'checked' if selected.notify_emergencies }}><span><strong>Emergency calls</strong><small>Alert on urgent safety events.</small></span></label>
+        </fieldset>
+        <button class="button primary full" type="submit">Save user</button>
+      </form>
+      <hr>
+      <form method="post" action="/users/{{ selected.id }}/password" class="form-stack compact-stack"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><h3>Reset password</h3><label>New password<input type="password" name="password" autocomplete="new-password" required minlength="12"></label><p class="help">At least 12 characters and three character types. All current sessions will be signed out.</p><button class="button secondary full" type="submit">Reset password</button></form>
+      {% if selected.id != principal.user_id %}<form method="post" action="/users/{{ selected.id }}/delete" data-confirm="Delete {{ selected.display_name }} and all of their sessions and notification devices?" data-confirm-label="Delete user" class="danger-zone"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button danger-outline full" type="submit">Delete user</button></form>{% endif %}
+    {% else %}
+      <div class="panel-heading"><div><span class="eyebrow">New account</span><h2>Add a team member</h2><p>Passwords are stored as strong one-way hashes.</p></div></div>
+      <form method="post" action="/users/create" class="form-stack">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>Display name<input name="display_name" required maxlength="80" placeholder="Jordan Smith"></label>
+        <label>Username<input name="username" required minlength="3" maxlength="40" placeholder="jordan.smith"></label>
+        <label>Temporary password<input type="password" name="password" autocomplete="new-password" required minlength="12" placeholder="At least 12 characters"></label>
+        <p class="help">Use at least three of: uppercase, lowercase, numbers, and symbols. Share it with the user through a secure channel.</p>
+        <label>Role<select name="role"><option value="viewer">Viewer — read only</option><option value="manager">Manager — edit operations</option><option value="admin" {{ 'selected' if needs_first_admin }}>Administrator — full access</option></select></label>
+        <fieldset><legend>Notification preferences</legend>
+          <label class="check-field"><input type="checkbox" name="notify_new_calls" checked><span><strong>New calls</strong><small>Alert when a caller connects.</small></span></label>
+          <label class="check-field"><input type="checkbox" name="notify_completed_calls" checked><span><strong>Completed intake</strong><small>Alert when intake is ready.</small></span></label>
+          <label class="check-field"><input type="checkbox" name="notify_emergencies" checked><span><strong>Emergency calls</strong><small>Alert on urgent safety events.</small></span></label>
+        </fieldset>
+        <button class="button primary full" type="submit">Create user</button>
+      </form>
+    {% endif %}
+  </aside>
+</div>
+{% endblock %}

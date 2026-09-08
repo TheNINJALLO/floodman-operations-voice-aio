@@ -64,6 +64,9 @@ class VoiceCore:
         call_id = self.database.create_call(state)
         return CallSession(call_id=call_id, state=state)
 
+    async def call_started(self, session: CallSession) -> None:
+        await self.notifier.call_started(session.call_id, session.state)
+
     @staticmethod
     def greeting() -> str:
         return "Thanks for calling Floodman. This is Ava, Floodman's automated assistant. How can I help?"
