@@ -70,7 +70,7 @@ class WebPushService:
             "partial_no_input": "Caller needs follow-up",
         }.get(kind, "Floodman call update")
         body = {
-            "call_started": "Ava answered a new call. Open the dashboard to follow the intake.",
+            "call_started": "Alex answered a new call. Open the dashboard to follow the intake.",
             "completed_intake": "A caller completed intake. Open the secure dashboard for details.",
             "emergency": "An urgent call requires immediate team review.",
             "human_transfer": "A caller asked to speak with the Floodman team.",

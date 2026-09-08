@@ -15,6 +15,7 @@ def test_contact_normalizers():
 def test_spelled_email_hyphens_are_treated_as_recognition_separators():
     assert normalize_email("j-o-s-h at example dot com") == "josh@example.com"
     assert normalize_email("j - o - s - h at example dot com") == "josh@example.com"
+    assert normalize_email("J-O-A-C-H, S-H at gmail.com.") == "joachsh@gmail.com"
 
 
 def test_real_email_hyphens_are_preserved():

@@ -63,6 +63,10 @@ async def test_spelled_email_confirmation_does_not_say_dash(tmp_path,project_roo
     s=settings(tmp_path,project_root,monkeypatch);db=Database(s.database_path);notifier=StubNotifier();core=VoiceCore(s,db,BusinessDirectory(s.service_area_path),KnowledgeBase(project_root/"knowledge"),StubLLM(),notifier)
     session=core.create_session("spelled-email")
     session.state.stage="email"
-    reply=await core.process(session,"j-o-s-h at example dot com")
-    assert session.state.email=="josh@example.com"
+    reply=await core.process(session,"J-O-A-C-H, S-H at gmail.com.")
+    assert session.state.email=="joachsh@gmail.com"
     assert "dash" not in reply.text.lower()
+
+
+def test_greeting_uses_concise_floodman_introduction():
+    assert VoiceCore.greeting() == "Hello. This is Alex with Floodman. How may I help you today?"

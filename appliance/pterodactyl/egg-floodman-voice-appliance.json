@@ -580,7 +580,7 @@
         },
         {
             "name": "Post TTS Guard",
-            "description": "Echo guard after Ava stops speaking",
+            "description": "Echo guard after the assistant stops speaking",
             "env_variable": "POST_TTS_GUARD_MS",
             "default_value": "120",
             "user_viewable": true,

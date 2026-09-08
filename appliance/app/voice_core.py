@@ -69,7 +69,7 @@ class VoiceCore:
 
     @staticmethod
     def greeting() -> str:
-        return "Thanks for calling Floodman. This is Ava, Floodman's automated assistant. How can I help?"
+        return "Hello. This is Alex with Floodman. How may I help you today?"
 
     def _save(self, session: CallSession) -> None:
         self.database.save_intake(session.call_id, session.state)

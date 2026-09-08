@@ -5,7 +5,7 @@ from typing import Any
 
 PHONE_RE = re.compile(r"\+[1-9][0-9]{7,14}$")
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
-SPELLED_HYPHEN_RUN_RE = re.compile(r"(?<![a-z0-9])(?:[a-z0-9]\s*-\s*){2,}[a-z0-9](?![a-z0-9])")
+SPELLED_SEPARATOR_RUN_RE = re.compile(r"(?<![a-z0-9])(?:[a-z0-9]\s*(?:-|,)\s*)+[a-z0-9](?![a-z0-9])")
 
 SUPPORTED_ALIASES: dict[str, tuple[str, ...]] = {
     "water_damage_restoration": (
@@ -91,10 +91,11 @@ def normalize_phone(value: Any, *, default_country: str = "1") -> str:
 def normalize_email(value: Any) -> str:
     text = clean(value, 320).lower()
     # Whisper can render a slowly spelled sequence such as "j o s h" as
-    # "j-o-s-h" even when the caller never said "dash". Collapse only runs
-    # of individually hyphenated characters before translating an explicitly
-    # spoken "dash" so legitimate names such as "mary-jane" remain intact.
-    text = SPELLED_HYPHEN_RUN_RE.sub(lambda match: re.sub(r"\s*-\s*", "", match.group(0)), text)
+    # "j-o-s-h" even when the caller never said "dash". It may also insert a
+    # comma between two spelled runs, as in "j-o-s-h, s-h". Collapse only runs
+    # of individual characters before translating an explicitly spoken "dash"
+    # so legitimate names such as "mary-jane" remain intact.
+    text = SPELLED_SEPARATOR_RUN_RE.sub(lambda match: re.sub(r"[\s,-]+", "", match.group(0)), text)
     replacements = {
         " at ": "@", " dot ": ".", " underscore ": "_", " dash ": "-", " hyphen ": "-",
         " period ": ".", " gmail com": "gmail.com", " yahoo com": "yahoo.com",
@@ -103,7 +104,7 @@ def normalize_email(value: Any) -> str:
     padded = f" {text} "
     for old, new in replacements.items():
         padded = padded.replace(old, new)
-    email = re.sub(r"\s+", "", padded.strip())
+    email = re.sub(r"\s+", "", padded.strip()).rstrip(".,;:!?")
     return email if EMAIL_RE.fullmatch(email) else ""
 
 
