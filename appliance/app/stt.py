@@ -44,7 +44,8 @@ class LocalSTT:
         if sample_rate != 16000:
             from scipy.signal import resample_poly
             audio = resample_poly(audio, 16000, sample_rate).astype(np.float32)
-        def run() -> str:
+
+        def run(*, vad_filter: bool) -> str:
             assert self._model is not None
             segments, _ = self._model.transcribe(
                 audio,
@@ -52,9 +53,19 @@ class LocalSTT:
                 beam_size=1,
                 best_of=1,
                 temperature=0.0,
-                vad_filter=True,
+                vad_filter=vad_filter,
                 condition_on_previous_text=False,
                 word_timestamps=False,
             )
             return " ".join(segment.text.strip() for segment in segments if segment.text.strip()).strip()
-        return await asyncio.to_thread(run)
+
+        transcript = await asyncio.to_thread(run, vad_filter=True)
+        if transcript:
+            return transcript
+
+        # AudioSocket has already endpointed this clip with its energy VAD. Silero's
+        # second VAD can reject valid one-word telephone answers such as "home",
+        # "business", and "yes", so retry only empty results without that filter.
+        duration_ms = int((audio.size / 16000) * 1000)
+        logger.info("STT VAD returned no speech; retrying captured audio without VAD duration_ms=%d", duration_ms)
+        return await asyncio.to_thread(run, vad_filter=False)
