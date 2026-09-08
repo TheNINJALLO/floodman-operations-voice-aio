@@ -7,6 +7,7 @@ import logging
 import math
 import subprocess
 import tempfile
+import time
 import wave
 from pathlib import Path
 
@@ -160,8 +161,17 @@ class LocalTTS:
             return self._to_pcm(values, rate)
 
     async def warm(self, phrases: tuple[str, ...]) -> None:
+        started = time.monotonic()
+        completed = 0
         for phrase in phrases:
             try:
                 await self.synthesize(phrase)
+                completed += 1
             except Exception:
                 logger.exception("Could not pre-synthesize prompt")
+        logger.info(
+            "TTS prompt cache ready phrases=%d requested=%d duration_ms=%d",
+            completed,
+            len(phrases),
+            int((time.monotonic() - started) * 1000),
+        )

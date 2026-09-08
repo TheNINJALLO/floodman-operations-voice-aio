@@ -19,6 +19,10 @@ class HallucinatingLLM(StubLLM):
         if field == "email": return {"value":"aldrich@example.com"}
         return {}
 
+class RecordingLLM(StubLLM):
+    def __init__(self): self.fields=[]
+    async def extract(self,field,transcript,state): self.fields.append(field);return {}
+
 class StubNotifier:
     def __init__(self): self.calls=[]
     async def send(self,call_id,state,kind="lead",partial=False): self.calls.append((kind,partial,state.to_dict())); return 1
@@ -121,6 +125,37 @@ async def test_contact_fields_cannot_be_rewritten_or_invented_by_llm(tmp_path,pr
     assert session.state.stage=="email"
     assert "aldrich@example.com" not in email_reply.text
     assert "only heard part" in email_reply.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_verbatim_intake_fields_do_not_wait_for_llm_extraction(tmp_path,project_root,monkeypatch):
+    s=settings(tmp_path,project_root,monkeypatch);db=Database(s.database_path);notifier=StubNotifier();llm=RecordingLLM();core=VoiceCore(s,db,BusinessDirectory(s.service_area_path),KnowledgeBase(project_root/"knowledge"),llm,notifier)
+    session=core.create_session("fast-verbatim")
+
+    session.state.stage="timing_summary"
+    await core.process(session,"A couple of weeks ago")
+    session.state.stage="safety_summary"
+    await core.process(session,"No safety concerns")
+    session.state.stage="address"
+    await core.process(session,"8805 East Melendy Street Ludington Michigan")
+
+    assert llm.fields==[]
+    assert session.state.timing_summary=="A couple of weeks ago"
+    assert session.state.safety_summary=="No safety concerns"
+    assert session.state.address=="8805 East Melendy Street Ludington Michigan"
+
+
+def test_normal_call_prompts_are_prepared_for_zero_generation_delay(tmp_path,project_root,monkeypatch):
+    s=settings(tmp_path,project_root,monkeypatch);db=Database(s.database_path);notifier=StubNotifier();core=VoiceCore(s,db,BusinessDirectory(s.service_area_path),KnowledgeBase(project_root/"knowledge"),StubLLM(),notifier)
+    phrases=core.warm_phrases()
+
+    assert VoiceCore.greeting() in phrases
+    assert "Is this a home or a business?" in phrases
+    assert "When did you first notice the mold or musty conditions?" in phrases
+    assert "Any electrical, sewage, or other safety concerns?" in phrases
+    assert "I can get these details to the right team. What name should I put this under?" in phrases
+    assert "What's the best email for you? You can say skip." in phrases
+    assert len(phrases)==len(set(phrases))
 
 
 @pytest.mark.asyncio

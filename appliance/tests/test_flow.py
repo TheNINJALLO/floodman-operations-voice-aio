@@ -7,6 +7,8 @@ def test_short_prompts():
     assert confirmation_question(state, "name") == "Josh Aldrich, right?"
     assert "recorded" not in confirmation_question(state, "email").lower()
     assert contact_endpoint_stage("address")
+    assert not contact_endpoint_stage("confirm_name")
+    assert not contact_endpoint_stage("confirm_email")
 
 
 def test_timing_question_uses_known_service_context():

@@ -55,4 +55,7 @@ def next_stage_after_confirmation(field: str) -> str:
 
 
 def contact_endpoint_stage(stage: str) -> bool:
-    return stage in {"name", "confirm_name", "email", "confirm_email", "phone", "confirm_phone", "address", "confirm_address"}
+    # Collection fields may contain spelling or natural pauses. Confirmation
+    # answers are normally one-word yes/no responses and should endpoint on the
+    # faster conversational timing path.
+    return stage in {"name", "email", "phone", "address"}

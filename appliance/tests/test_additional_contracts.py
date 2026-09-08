@@ -95,6 +95,15 @@ def test_tts_cache_key_is_stable(tmp_path: Path, monkeypatch):
     assert tts._cache_path("hello") != tts._cache_path("goodbye")
 
 
+def test_conversational_endpoint_defaults(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("ENDPOINT_SILENCE_MS", raising=False)
+    monkeypatch.delenv("CONTACT_ENDPOINT_SILENCE_MS", raising=False)
+    settings = Settings.from_env()
+    assert settings.endpoint_silence_ms == 400
+    assert settings.contact_endpoint_silence_ms == 800
+
+
 def test_ari_and_ami_are_not_exposed(project_root: Path):
     renderer = (project_root / "scripts/render_asterisk.py").read_text(encoding="utf-8")
     assert 'write(etc, "http.conf", "[general]\\nenabled=no")' in renderer

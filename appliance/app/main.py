@@ -81,15 +81,7 @@ class Runtime:
         await self.tts.start()
         if not await self.llm.health():
             raise RuntimeError("Local llama.cpp API is not ready")
-        await self.tts.warm(
-            (
-                self.core.greeting(),
-                "Are you still there? I can wait a moment.",
-                "What name should I put this under?",
-                "What's the best email for you? You can say skip.",
-                "What's the full service address?",
-            )
-        )
+        await self.tts.warm(self.core.warm_phrases())
         await self.audio.start()
         self.ready = True
 

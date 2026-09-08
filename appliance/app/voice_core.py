@@ -73,6 +73,38 @@ class VoiceCore:
     def greeting() -> str:
         return "Hello. This is Alex with Floodman. How may I help you today?"
 
+    def warm_phrases(self) -> tuple[str, ...]:
+        """Return the fixed prompts callers are most likely to hear.
+
+        Pre-synthesizing these at startup removes several seconds of generation
+        delay from the normal intake path while retaining dynamic confirmation
+        playback for the caller's actual details.
+        """
+        phrases: list[str] = []
+
+        def add(text: str) -> None:
+            text = clean(text, 1200)
+            if text and text not in phrases:
+                phrases.append(text)
+
+        add(self.greeting())
+        for stage in ("property_context", "safety_summary", "email", "phone", "address"):
+            add(collection_question(IntakeState(call_uuid="warm", stage=stage)))
+        for service_key in (
+            "",
+            "mold_remediation",
+            "water_damage_restoration",
+            "foundation_repair",
+            "sump_pump_and_drainage",
+        ):
+            add(collection_question(IntakeState(call_uuid="warm", stage="timing_summary", service_key=service_key)))
+        add("I can get these details to the right team. What name should I put this under?")
+        add("Is this the best number to call you back on?")
+        add("Are you still there? I can wait a moment.")
+        add("I'm still here. Say hello when you're ready.")
+        add(f"You're all set. The team has your information and will call you within {self.settings.callback_sla_hours} hours. Thanks for calling Floodman.")
+        return tuple(phrases)
+
     def _save(self, session: CallSession) -> None:
         self.database.save_intake(session.call_id, session.state)
 
@@ -146,12 +178,12 @@ class VoiceCore:
             return self._assistant(session, collection_question(state))
 
         if state.stage == "timing_summary":
-            state.timing_summary = await self._extract("timing_summary", transcript, state) or transcript
+            state.timing_summary = transcript
             state.stage = "safety_summary"
             return self._assistant(session, collection_question(state))
 
         if state.stage == "safety_summary":
-            state.safety_summary = await self._extract("safety_summary", transcript, state) or transcript
+            state.safety_summary = transcript
             if detect_emergency(transcript + " " + state.description):
                 state.urgency = "emergency"
                 state.department = "emergency"
@@ -231,7 +263,7 @@ class VoiceCore:
             return self._assistant(session, confirmation_question(state, "phone"))
 
         if state.stage == "address":
-            state.address = await self._extract("address", transcript, state) or transcript
+            state.address = transcript
             area = self.business.service_area(state.address)
             state.service_area_status = area.status
             state.service_area_city = area.city
