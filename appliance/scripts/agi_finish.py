@@ -18,13 +18,19 @@ def main() -> int:
     consume()
     call_uuid = sys.argv[1] if len(sys.argv) > 1 else ""
     path = Path(os.getenv("RUNTIME_DIR", "/home/container/data/runtime")) / "actions" / f"{call_uuid}.json"
-    payload = {}
+    payload = {
+        "action": "missing_action",
+        "number": "",
+        "reason": "no_action_file",
+    }
     if path.exists():
         try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                payload.update(loaded)
         finally:
             path.unlink(missing_ok=True)
-    print(f"SET VARIABLE FLOODMAN_ACTION {safe(payload.get('action', 'hangup'))}")
+    print(f"SET VARIABLE FLOODMAN_ACTION {safe(payload.get('action', 'missing_action'))}")
     print(f"SET VARIABLE FLOODMAN_TRANSFER_NUMBER {safe(payload.get('number', ''))}")
     print(f"SET VARIABLE FLOODMAN_ACTION_REASON {safe(payload.get('reason', ''))}")
     return 0

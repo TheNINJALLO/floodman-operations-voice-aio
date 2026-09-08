@@ -42,6 +42,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     asterisk supervisor python3 python3-pip python3-venv \
     curl ca-certificates ffmpeg espeak-ng libsndfile1 libgomp1 git && \
     rm -rf /var/lib/apt/lists/*
+RUN mkdir -p /usr/share/asterisk/sounds/en && \
+    espeak-ng -s 155 -v en-us -w /tmp/floodman-technical-failure-source.wav \
+      "We're having a temporary technical issue. I've alerted the Floodman team. Please expect a callback as soon as possible." && \
+    ffmpeg -hide_banner -loglevel error -y \
+      -i /tmp/floodman-technical-failure-source.wav -ar 8000 -ac 1 -c:a pcm_s16le \
+      /usr/share/asterisk/sounds/en/floodman-technical-failure.wav && \
+    rm -f /tmp/floodman-technical-failure-source.wav
 RUN groupadd --gid "${CONTAINER_GID}" container && \
     useradd --uid "${CONTAINER_UID}" --gid "${CONTAINER_GID}" \
       --create-home --home-dir /home/container --shell /bin/bash container

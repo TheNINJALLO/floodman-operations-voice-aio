@@ -5,7 +5,7 @@ import os
 import textwrap
 from pathlib import Path
 
-from app.config import Settings
+from app.config import Settings, parse_sip_target
 
 
 def detect_asterisk_module_dir() -> Path:
@@ -81,13 +81,14 @@ def main() -> int:
     debug = 0
     documentation_language = en_US
     """)
-    write(etc, "logger.conf", """
+    write(etc, "logger.conf", f"""
     [general]
     dateformat=%F %T
+    rotatestrategy=rotate
     [logfiles]
-    console => error
-    full => notice,warning,error
-    errors => error
+    console => notice,warning,error
+    {settings.log_dir / 'asterisk-full.log'} => notice,warning,error
+    {settings.log_dir / 'asterisk-errors.log'} => error
     """)
     write(etc, "modules.conf", """
     [modules]
@@ -132,7 +133,9 @@ def main() -> int:
     write(etc, "manager.conf", "[general]\nenabled=no")
     write(etc, "indications.conf", "[general]\ncountry=us\n[us]\ndescription=United States\nringcadence=2000,4000")
 
-    transport = settings.sip_transport if settings.sip_transport in {"udp", "tcp", "tls"} else "udp"
+    sip_target = parse_sip_target(settings.sip_server, settings.sip_port) if settings.sip_server else None
+    transport = (sip_target.transport if sip_target else None) or settings.sip_transport
+    transport = transport if transport in {"udp", "tcp", "tls"} else "udp"
     protocol = "tls" if transport == "tls" else transport
     bind_port = settings.sip_port
     external = f"external_signaling_address={settings.sip_public_ip}\nexternal_media_address={settings.sip_public_ip}" if settings.sip_public_ip else ""
@@ -150,17 +153,17 @@ def main() -> int:
     proxy = f"outbound_proxy={settings.sip_outbound_proxy}" if settings.sip_outbound_proxy else ""
     from_user = f"from_user={settings.sip_from_user}" if settings.sip_from_user else ""
     from_domain = f"from_domain={settings.sip_from_domain}" if settings.sip_from_domain else ""
-    contact = f"contact=sip:{settings.sip_server}:{settings.sip_port}" if settings.sip_server else ""
+    contact = f"contact={sip_target.contact_uri}" if sip_target else ""
     matches = "\n".join(f"match={value}" for value in settings.sip_match_addresses)
     registration = ""
-    if settings.sip_username and settings.sip_password and settings.sip_server:
+    if settings.sip_username and settings.sip_password and sip_target:
         registration = f"""
         [floodman-registration]
         type=registration
         transport=transport-{transport}
         outbound_auth=floodman-trunk-auth
-        server_uri=sip:{settings.sip_server}:{settings.sip_port}
-        client_uri=sip:{settings.sip_username}@{settings.sip_server}
+        server_uri={sip_target.contact_uri}
+        client_uri=sip:{settings.sip_username}@{sip_target.host_literal}
         retry_interval=30
         forbidden_retry_interval=300
         expiration=3600
@@ -225,16 +228,32 @@ def main() -> int:
     [floodman-inbound]
     exten => s,1,NoOp(Floodman Voice Appliance inbound call)
      same => n,Answer()
-     same => n,Set(__FLOODMAN_CALL_ID=${{SHELL(cat /proc/sys/kernel/random/uuid)}})
-     same => n,AGI(/opt/floodman/scripts/agi_prepare.py,${{FLOODMAN_CALL_ID}},${{CALLERID(num)}},${{FLOODMAN_DID}})
-     same => n,AudioSocket(${{FLOODMAN_CALL_ID}},${{FLOODMAN_AUDIOSOCKET}})
+     same => n,Set(TIMEOUT(absolute)=1800)
+     same => n,Set(__FLOODMAN_CALL_ID=${{UUID()}})
+     same => n,Set(__FLOODMAN_CHANNEL_ID=${{CHANNEL(uniqueid)}})
+     same => n,Set(__FLOODMAN_SIP_CALL_ID=${{PJSIP_HEADER(read,Call-ID)}})
+     same => n,Log(NOTICE,FLOODMAN_CALL stage=answered call_uuid=${{FLOODMAN_CALL_ID}} channel_id=${{FLOODMAN_CHANNEL_ID}} sip_call_id=${{FLOODMAN_SIP_CALL_ID}} caller=${{CALLERID(num)}} called=${{FLOODMAN_DID}})
+     same => n,AGI(/opt/floodman/scripts/agi_prepare.py,${{FLOODMAN_CALL_ID}},${{CALLERID(num)}},${{FLOODMAN_DID}},${{FLOODMAN_CHANNEL_ID}},${{FLOODMAN_SIP_CALL_ID}})
+     same => n,GotoIf($["${{FLOODMAN_PREPARED}}"="1"]?audio:fallback)
+     same => n(audio),TryExec(AudioSocket(${{FLOODMAN_CALL_ID}},${{FLOODMAN_AUDIOSOCKET}}))
+     same => n,Set(__FLOODMAN_AUDIO_TRYSTATUS=${{TRYSTATUS}})
+     same => n,Log(NOTICE,FLOODMAN_CALL stage=audiosocket_return call_uuid=${{FLOODMAN_CALL_ID}} channel_id=${{FLOODMAN_CHANNEL_ID}} trystatus=${{FLOODMAN_AUDIO_TRYSTATUS}})
+     same => n,GotoIf($["${{FLOODMAN_AUDIO_TRYSTATUS}}"="SUCCESS"]?finish:fallback)
+     same => n(finish),Set(FLOODMAN_ACTION=missing_action)
      same => n,AGI(/opt/floodman/scripts/agi_finish.py,${{FLOODMAN_CALL_ID}})
+     same => n,Log(NOTICE,FLOODMAN_CALL stage=finish call_uuid=${{FLOODMAN_CALL_ID}} action=${{FLOODMAN_ACTION}} reason=${{FLOODMAN_ACTION_REASON}})
      same => n,GotoIf($["${{FLOODMAN_ACTION}}"="transfer" & "${{FLOODMAN_TRANSFER_NUMBER}}"!=""]?human)
+     same => n,GotoIf($["${{FLOODMAN_ACTION}}"="completed" | "${{FLOODMAN_ACTION}}"="fallback_callback" | "${{FLOODMAN_ACTION}}"="caller_hangup"]?normal-end)
+     same => n,Goto(fallback)
+     same => n(fallback),Log(ERROR,FLOODMAN_CALL stage=technical_fallback call_uuid=${{FLOODMAN_CALL_ID}} channel_id=${{FLOODMAN_CHANNEL_ID}} trystatus=${{FLOODMAN_AUDIO_TRYSTATUS}} action=${{FLOODMAN_ACTION}} reason=${{FLOODMAN_ACTION_REASON}})
+     same => n,Playback(floodman-technical-failure)
      same => n,Hangup()
+     same => n(normal-end),Hangup()
      same => n(human),Set(CALLERID(name)=Floodman)
      same => n,Set(CALLERID(num)={caller_id})
      same => n,Dial(PJSIP/${{FLOODMAN_TRANSFER_NUMBER}}@floodman-trunk,45)
      same => n,Hangup()
+    exten => h,1,Log(NOTICE,FLOODMAN_CALL stage=hangup call_uuid=${{FLOODMAN_CALL_ID}} channel_id=${{FLOODMAN_CHANNEL_ID}} sip_call_id=${{FLOODMAN_SIP_CALL_ID}} cause=${{HANGUPCAUSE}} source=${{CHANNEL(hangupsource)}})
 
     [floodman-outbound]
     exten => _X.,1,Set(CALLERID(name)=Floodman)
@@ -245,7 +264,7 @@ def main() -> int:
     """)
     print(
         f"Rendered Asterisk configuration at {etc} "
-        f"(modules: {module_dir})"
+        f"(modules: {module_dir}; SIP target: {sip_target.contact_uri if sip_target else 'disabled'})"
     )
     return 0
 

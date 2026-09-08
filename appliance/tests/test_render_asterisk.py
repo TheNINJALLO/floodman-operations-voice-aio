@@ -41,12 +41,21 @@ def test_asterisk_renderer(
     etc = tmp_path / "asterisk/etc"
     asterisk = (etc / "asterisk.conf").read_text()
     extensions = (etc / "extensions.conf").read_text()
+    logger = (etc / "logger.conf").read_text()
     modules = (etc / "modules.conf").read_text()
 
     assert f"astmoddir => {module_dir}" in asterisk
-    assert "AudioSocket" in extensions
+    assert "TryExec(AudioSocket" in extensions
+    assert "Set(__FLOODMAN_CALL_ID=${UUID()})" in extensions
+    assert "SHELL(cat /proc/sys/kernel/random/uuid)" not in extensions
     assert "agi_prepare.py" in extensions
     assert "agi_finish.py" in extensions
+    assert "FLOODMAN_ACTION=missing_action" in extensions
+    assert "Playback(floodman-technical-failure)" in extensions
+    assert "stage=audiosocket_return" in extensions
+    assert "stage=hangup" in extensions
+    assert f"{tmp_path / 'logs' / 'asterisk-full.log'} => notice,warning,error" in logger
+    assert "full =>" not in logger
     assert "FLOODMAN_DID=${EXTEN}" in extensions
     assert "noload => res_odbc.so" in modules
     assert (

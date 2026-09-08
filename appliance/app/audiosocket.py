@@ -32,6 +32,7 @@ class AudioSocketConnection:
         self.output_active = False
         self.closed = False
         self.reader_task: asyncio.Task | None = None
+        self.close_reason = "open"
 
     async def read_frame(self) -> tuple[int, bytes]:
         header = await self.reader.readexactly(3)
@@ -51,15 +52,21 @@ class AudioSocketConnection:
             while True:
                 kind, payload = await self.read_frame()
                 if kind == TYPE_HANGUP:
+                    self.close_reason = "asterisk_hangup_frame"
                     break
                 if kind == TYPE_AUDIO and payload and not self.output_active:
                     with contextlib.suppress(asyncio.QueueFull):
                         self.queue.put_nowait(payload)
                 elif kind == TYPE_ERROR:
-                    logger.warning("AudioSocket error frame: %r", payload)
+                    self.close_reason = "asterisk_error_frame"
+                    logger.warning("call_event stage=audiosocket_error code=%s", payload.hex())
                     break
-        except (asyncio.IncompleteReadError, ConnectionResetError, BrokenPipeError):
-            pass
+        except asyncio.IncompleteReadError:
+            self.close_reason = "socket_eof"
+        except ConnectionResetError:
+            self.close_reason = "socket_reset"
+        except BrokenPipeError:
+            self.close_reason = "broken_pipe"
         finally:
             self.closed = True
             with contextlib.suppress(asyncio.QueueFull):
@@ -153,44 +160,96 @@ class AudioSocketServer:
         session = None
         outcome = "caller_hangup"
         call_uuid = ""
+        peer = writer.get_extra_info("peername")
+        logger.info("call_event stage=tcp_accept peer=%s", peer)
         try:
             call_uuid = await connection.start()
+            logger.info("call_event call_uuid=%s stage=uuid_received", call_uuid)
             metadata = self.registry.read_pre(call_uuid)
             session = self.core.create_session(call_uuid, metadata.get("caller_number", ""), metadata.get("called_number", ""))
+            logger.info(
+                "call_event call_uuid=%s stage=session_created call_id=%s channel_id=%s sip_call_id=%s",
+                call_uuid,
+                session.call_id,
+                metadata.get("asterisk_channel_id", ""),
+                metadata.get("sip_call_id", ""),
+            )
             greeting = self.core.greeting()
             self.core.database.add_message(session.call_id, "assistant", greeting)
-            await connection.speak(await self.tts.synthesize(greeting))
+            started = time.monotonic()
+            logger.info("call_event call_uuid=%s stage=greeting_synthesis_started", call_uuid)
+            greeting_audio = await self.tts.synthesize(greeting)
+            logger.info(
+                "call_event call_uuid=%s stage=greeting_synthesis_completed duration_ms=%d audio_bytes=%d",
+                call_uuid,
+                int((time.monotonic() - started) * 1000),
+                len(greeting_audio),
+            )
+            logger.info("call_event call_uuid=%s stage=first_greeting_frame", call_uuid)
+            await connection.speak(greeting_audio)
+            logger.info("call_event call_uuid=%s stage=last_greeting_frame", call_uuid)
             while not connection.closed:
                 audio = await connection.utterance(contact=contact_endpoint_stage(session.state.stage))
                 if audio is None:
                     break
                 if not audio:
+                    logger.info("call_event call_uuid=%s stage=no_input", call_uuid)
                     reply = await self.core.no_input(session)
                 else:
+                    logger.info("call_event call_uuid=%s stage=caller_audio_received audio_bytes=%d", call_uuid, len(audio))
                     try:
+                        started = time.monotonic()
+                        logger.info("call_event call_uuid=%s stage=stt_started", call_uuid)
                         transcript = await self.stt.transcribe(audio, 8000)
+                        logger.info(
+                            "call_event call_uuid=%s stage=stt_completed duration_ms=%d transcript_chars=%d",
+                            call_uuid,
+                            int((time.monotonic() - started) * 1000),
+                            len(transcript),
+                        )
                     except Exception:
-                        logger.exception("Speech recognition failed")
+                        logger.exception("call_event call_uuid=%s stage=stt_failed", call_uuid)
                         transcript = ""
+                    started = time.monotonic()
+                    logger.info("call_event call_uuid=%s stage=voice_core_started", call_uuid)
                     reply = await self.core.process(session, transcript) if transcript else await self.core.no_input(session)
-                await connection.speak(await self.tts.synthesize(reply.text))
+                    logger.info(
+                        "call_event call_uuid=%s stage=voice_core_completed duration_ms=%d",
+                        call_uuid,
+                        int((time.monotonic() - started) * 1000),
+                    )
+                started = time.monotonic()
+                logger.info("call_event call_uuid=%s stage=tts_started", call_uuid)
+                response_audio = await self.tts.synthesize(reply.text)
+                logger.info(
+                    "call_event call_uuid=%s stage=tts_completed duration_ms=%d audio_bytes=%d",
+                    call_uuid,
+                    int((time.monotonic() - started) * 1000),
+                    len(response_audio),
+                )
+                logger.info("call_event call_uuid=%s stage=first_response_frame", call_uuid)
+                await connection.speak(response_audio)
                 if reply.transfer_number:
                     self.registry.write_action(call_uuid, "transfer", reply.transfer_number, "assistant_transfer")
                     outcome = "transfer"
                     break
                 if reply.end_call:
-                    self.registry.write_action(call_uuid, "hangup", "", "assistant_completed")
                     outcome = "completed" if session.state.completed else "no_input"
+                    action = "completed" if session.state.completed else "fallback_callback"
+                    self.registry.write_action(call_uuid, action, "", outcome)
                     break
         except Exception:
-            logger.exception("AudioSocket call failed")
+            logger.exception("call_event call_uuid=%s stage=voice_core_failed", call_uuid or "unknown")
             if call_uuid:
-                self.registry.write_action(call_uuid, "hangup", "", "voice_core_error")
+                self.registry.write_action(call_uuid, "technical_failure", "", "voice_core_error")
             outcome = "error"
-            if not connection.closed:
-                with contextlib.suppress(Exception):
-                    await connection.speak(await self.tts.synthesize("I'm having a technical issue. I will send the information I have to the team. Goodbye."))
         finally:
             if session:
                 await self.core.disconnect(session, outcome)
+            logger.info(
+                "call_event call_uuid=%s stage=socket_closed outcome=%s reason=%s",
+                call_uuid or "unknown",
+                outcome,
+                connection.close_reason,
+            )
             await connection.close()

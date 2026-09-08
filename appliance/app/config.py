@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import ipaddress
+import re
 import secrets
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,6 +32,100 @@ def _float(name: str, default: float) -> float:
 
 def _csv(name: str, default: str = "") -> tuple[str, ...]:
     return tuple(v.strip() for v in os.getenv(name, default).split(",") if v.strip())
+
+
+@dataclass(frozen=True, slots=True)
+class SipTarget:
+    host: str
+    port: int
+    transport: str | None = None
+
+    @property
+    def host_literal(self) -> str:
+        return f"[{self.host}]" if ":" in self.host else self.host
+
+    @property
+    def authority(self) -> str:
+        return f"{self.host_literal}:{self.port}"
+
+    @property
+    def contact_uri(self) -> str:
+        parameter = f";transport={self.transport}" if self.transport else ""
+        return f"sip:{self.authority}{parameter}"
+
+
+def parse_sip_target(value: str, default_port: int = 5060) -> SipTarget:
+    """Parse a SIP host or URI once, without ever appending a duplicate port."""
+    raw = str(value or "").strip()
+    if not raw:
+        raise ValueError("SIP server is empty")
+    if any(character.isspace() for character in raw):
+        raise ValueError("SIP server must not contain whitespace")
+    if not 1 <= int(default_port) <= 65535:
+        raise ValueError("SIP port must be between 1 and 65535")
+
+    scheme = ""
+    match = re.match(r"^(sips?):", raw, flags=re.IGNORECASE)
+    if match:
+        scheme = match.group(1).lower()
+        raw = raw[match.end() :]
+    elif "://" in raw:
+        raise ValueError("SIP server scheme must be sip: or sips:")
+    if raw.startswith("//") or any(character in raw for character in "/?#"):
+        raise ValueError("SIP server must not contain a path, query, or fragment")
+    if "@" in raw:
+        raise ValueError("SIP_SERVER must not contain a user part")
+
+    target, separator, parameter_text = raw.partition(";")
+    transport: str | None = "tls" if scheme == "sips" else None
+    if separator:
+        for parameter in parameter_text.split(";"):
+            name, equals, parameter_value = parameter.partition("=")
+            if name.lower() != "transport" or not equals:
+                raise ValueError(f"Unsupported SIP URI parameter: {name or 'empty'}")
+            candidate = parameter_value.lower()
+            if candidate not in {"udp", "tcp", "tls"}:
+                raise ValueError("SIP transport must be udp, tcp, or tls")
+            if transport and transport != candidate:
+                raise ValueError("sips: URI cannot specify a non-TLS transport")
+            transport = candidate
+
+    host = ""
+    port = int(default_port)
+    if target.startswith("["):
+        bracketed = re.fullmatch(r"\[([^]]+)](?::([0-9]+))?", target)
+        if not bracketed:
+            raise ValueError("Malformed bracketed IPv6 SIP server")
+        host = bracketed.group(1)
+        try:
+            ipaddress.IPv6Address(host)
+        except ValueError as exc:
+            raise ValueError("Invalid IPv6 SIP server") from exc
+        if bracketed.group(2):
+            port = int(bracketed.group(2))
+    else:
+        try:
+            address = ipaddress.ip_address(target)
+        except ValueError:
+            if target.count(":") > 1:
+                raise ValueError("Malformed SIP server or duplicate port")
+            if ":" in target:
+                host, port_text = target.rsplit(":", 1)
+                if not port_text.isdigit():
+                    raise ValueError("SIP port must be numeric")
+                port = int(port_text)
+            else:
+                host = target
+            if not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?", host):
+                raise ValueError("Invalid SIP hostname")
+        else:
+            host = str(address)
+
+    if not host:
+        raise ValueError("SIP host is empty")
+    if not 1 <= port <= 65535:
+        raise ValueError("SIP port must be between 1 and 65535")
+    return SipTarget(host=host, port=port, transport=transport)
 
 
 @dataclass(slots=True)

@@ -7,7 +7,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from app.config import Settings
+from app.config import Settings, parse_sip_target
 
 
 def check(condition: bool, name: str, detail: str, errors: list[str]) -> None:
@@ -44,6 +44,12 @@ def main() -> int:
         check(settings.sip_mode in {"twilio", "generic", "disabled"}, "sip_mode", settings.sip_mode, errors)
         if settings.sip_mode != "disabled":
             check(bool(settings.sip_server), "sip_server", "configured", errors)
+            try:
+                target = parse_sip_target(settings.sip_server, settings.sip_port)
+            except ValueError as exc:
+                check(False, "sip_target", str(exc), errors)
+            else:
+                check(True, "sip_target", target.contact_uri, errors)
     print(f"Blocking errors: {len(errors)}")
     return 1 if errors else 0
 
