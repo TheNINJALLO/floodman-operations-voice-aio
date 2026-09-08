@@ -81,6 +81,10 @@ def classify_property_context(value: Any) -> str:
     text = normalized(value)
     residential = ("home", "house", "residential", "my residence", "homeowner")
     managed = ("business", "commercial", "office", "store", "rental property", "property manager")
+    # Keep this correction scoped to the home/business question. Whisper can
+    # render a short telephone answer of "home" as "hope".
+    if text == "hope":
+        return "Residential property"
     if any(term in text for term in residential):
         return "Residential property"
     if any(term in text for term in managed):
@@ -117,6 +121,17 @@ def normalize_email(value: Any) -> str:
         padded = padded.replace(old, new)
     email = re.sub(r"\s+", "", padded.strip()).rstrip(".,;:!?")
     return email if EMAIL_RE.fullmatch(email) else ""
+
+
+def normalize_name(value: Any) -> str:
+    text = clean(value, 200).strip(" .,;:!?\t\r\n")
+    text = re.sub(
+        r"^(?:my name is|this is|it is|it's|you can put (?:it )?under|put (?:it )?under)\s+",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+    return clean(text, 120).strip(" .,;:!?\t\r\n")
 
 
 def spoken_phone(value: str) -> str:

@@ -1,4 +1,4 @@
-from app.intake import classify_property_context, classify_service, normalize_confirmation, normalize_email, normalize_phone
+from app.intake import classify_property_context, classify_service, normalize_confirmation, normalize_email, normalize_name, normalize_phone
 
 def test_service_classification():
     assert classify_service("water is flooding my basement")["service_status"] == "supported"
@@ -28,3 +28,16 @@ def test_property_context_is_reused_from_volunteered_details():
     assert classify_property_context("I have mold in my house") == "Residential property"
     assert classify_property_context("This is for our commercial office") == "Commercial or managed property"
     assert classify_property_context("There is water coming in") == ""
+
+
+def test_short_home_recognition_confusion_is_scoped_to_property_context():
+    assert classify_property_context("hope") == "Residential property"
+
+
+def test_name_prefix_is_removed_without_rewriting_the_callers_name():
+    assert normalize_name("My name is Josh Aldrich.") == "Josh Aldrich"
+    assert normalize_name("Aldrich") == "Aldrich"
+
+
+def test_partial_email_is_never_treated_as_complete():
+    assert normalize_email("dot com") == ""

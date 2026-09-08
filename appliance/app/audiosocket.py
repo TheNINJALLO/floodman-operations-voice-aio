@@ -283,7 +283,8 @@ class AudioSocketServer:
                 greeting_interrupted,
             )
             while not connection.closed:
-                audio = await connection.utterance(contact=contact_endpoint_stage(session.state.stage))
+                contact = contact_endpoint_stage(session.state.stage)
+                audio = await connection.utterance(contact=contact)
                 if audio is None:
                     break
                 if not audio:
@@ -294,7 +295,7 @@ class AudioSocketServer:
                     try:
                         started = time.monotonic()
                         logger.info("call_event call_uuid=%s stage=stt_started", call_uuid)
-                        transcript = await self.stt.transcribe(audio, 8000)
+                        transcript = await self.stt.transcribe(audio, 8000, contact=contact)
                         logger.info(
                             "call_event call_uuid=%s stage=stt_completed duration_ms=%d transcript_chars=%d",
                             call_uuid,

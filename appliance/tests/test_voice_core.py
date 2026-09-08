@@ -13,6 +13,12 @@ class StubLLM:
     async def health(self): return True
     async def answer(self,q,c): return ""
 
+class HallucinatingLLM(StubLLM):
+    async def extract(self,field,transcript,state):
+        if field == "name": return {"value":"Baldrige"}
+        if field == "email": return {"value":"aldrich@example.com"}
+        return {}
+
 class StubNotifier:
     def __init__(self): self.calls=[]
     async def send(self,call_id,state,kind="lead",partial=False): self.calls.append((kind,partial,state.to_dict())); return 1
@@ -26,13 +32,15 @@ async def test_complete_intake(tmp_path,project_root,monkeypatch):
     s=settings(tmp_path,project_root,monkeypatch);db=Database(s.database_path);notifier=StubNotifier();core=VoiceCore(s,db,BusinessDirectory(s.service_area_path),KnowledgeBase(project_root/"knowledge"),StubLLM(),notifier)
     session=core.create_session("full-call","+12318840943","+12319354921")
     turns=["Water is coming into my basement","home","this morning","no safety concerns","Josh Aldrich","yes","josh at example dot com","yes","yes","8805 East Melendy Street Ludington Michigan","yes"]
-    reply=None
-    for turn in turns: reply=await core.process(session,turn)
+    reply=None;replies=[]
+    for turn in turns:
+        reply=await core.process(session,turn);replies.append(reply.text)
     assert reply and reply.end_call
     assert session.state.completed
     assert session.state.service_area_status=="published"
     assert notifier.calls[-1][0]=="completed_intake"
     assert "within 24 hours" in reply.text
+    assert not any(text.startswith(("Got it.", "Understood.", "Thanks.", "Great.", "Perfect.")) for text in replies)
 
 @pytest.mark.asyncio
 async def test_unsupported_and_emergency(tmp_path,project_root,monkeypatch):
@@ -82,8 +90,37 @@ async def test_volunteered_home_context_skips_redundant_question(tmp_path,projec
     assert session.state.property_context=="Residential property"
     assert session.state.stage=="timing_summary"
     assert "home or a business" not in reply.text.lower()
-    assert reply.text.startswith("Got it.")
+    assert not reply.text.startswith("Got it.")
     assert "mold or musty conditions" in reply.text
+
+
+@pytest.mark.asyncio
+async def test_home_misheard_as_hope_advances_without_repeating_question(tmp_path,project_root,monkeypatch):
+    s=settings(tmp_path,project_root,monkeypatch);db=Database(s.database_path);notifier=StubNotifier();core=VoiceCore(s,db,BusinessDirectory(s.service_area_path),KnowledgeBase(project_root/"knowledge"),StubLLM(),notifier)
+    session=core.create_session("home-hope");session.state.stage="property_context"
+
+    reply=await core.process(session,"hope")
+
+    assert session.state.property_context=="Residential property"
+    assert session.state.stage=="timing_summary"
+    assert "home or a business" not in reply.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_contact_fields_cannot_be_rewritten_or_invented_by_llm(tmp_path,project_root,monkeypatch):
+    s=settings(tmp_path,project_root,monkeypatch);db=Database(s.database_path);notifier=StubNotifier();core=VoiceCore(s,db,BusinessDirectory(s.service_area_path),KnowledgeBase(project_root/"knowledge"),HallucinatingLLM(),notifier)
+    session=core.create_session("grounded-contact");session.state.stage="name"
+
+    name_reply=await core.process(session,"My name is Josh Aldrich")
+    assert session.state.name=="Josh Aldrich"
+    assert "Baldrige" not in name_reply.text
+
+    session.state.stage="email"
+    email_reply=await core.process(session,"dot com")
+    assert session.state.email==""
+    assert session.state.stage=="email"
+    assert "aldrich@example.com" not in email_reply.text
+    assert "only heard part" in email_reply.text.lower()
 
 
 @pytest.mark.asyncio

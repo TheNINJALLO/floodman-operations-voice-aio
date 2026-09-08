@@ -15,6 +15,7 @@ from app.intake import (
     human_requested,
     normalize_confirmation,
     normalize_email,
+    normalize_name,
     normalize_phone,
     normalized,
 )
@@ -128,7 +129,7 @@ class VoiceCore:
             state.service_key = service["service_key"]
             state.property_context = classify_property_context(transcript)
             state.stage = "timing_summary" if state.property_context else "property_context"
-            prefix = "Got it. "
+            prefix = ""
             if state.service_status == "unsupported":
                 state.unsupported_notice_spoken = True
                 prefix = "That is not a service Floodman offers, but I will still send the details to the team. "
@@ -137,14 +138,17 @@ class VoiceCore:
         if state.stage == "property_context":
             state.property_context = classify_property_context(transcript)
             if not state.property_context:
-                state.property_context = await self._extract("property_context", transcript, state) or transcript
+                extracted = await self._extract("property_context", transcript, state)
+                state.property_context = classify_property_context(extracted)
+            if not state.property_context:
+                return self._assistant(session, "Was that a home or a business?")
             state.stage = "timing_summary"
-            return self._assistant(session, "Got it. " + collection_question(state))
+            return self._assistant(session, collection_question(state))
 
         if state.stage == "timing_summary":
             state.timing_summary = await self._extract("timing_summary", transcript, state) or transcript
             state.stage = "safety_summary"
-            return self._assistant(session, "Understood. " + collection_question(state))
+            return self._assistant(session, collection_question(state))
 
         if state.stage == "safety_summary":
             state.safety_summary = await self._extract("safety_summary", transcript, state) or transcript
@@ -157,19 +161,21 @@ class VoiceCore:
                     reply.transfer_number = self.settings.emergency_transfer_number
                     return reply
             state.stage = "name"
-            return self._assistant(session, "Thank you. I can get these details to the right team. " + collection_question(state))
+            return self._assistant(session, "I can get these details to the right team. " + collection_question(state))
 
         if state.stage == "name":
-            state.name = await self._extract("name", transcript, state) or transcript
+            state.name = normalize_name(transcript)
+            if not state.name:
+                return self._assistant(session, "What name should I put this under?")
             state.stage = "confirm_name"
-            return self._assistant(session, "Thanks. " + confirmation_question(state, "name"))
+            return self._assistant(session, confirmation_question(state, "name"))
 
         if state.stage == "confirm_name":
             decision = normalize_confirmation(transcript)
             if decision == "yes":
                 state.confirmations["name"] = state.name
                 state.stage = "email"
-                return self._assistant(session, "Great. " + collection_question(state))
+                return self._assistant(session, collection_question(state))
             if decision == "no":
                 state.stage = "name"
                 state.name = ""
@@ -184,20 +190,17 @@ class VoiceCore:
             else:
                 state.email = normalize_email(transcript)
                 if not state.email:
-                    extracted = await self._extract("email", transcript, state)
-                    state.email = normalize_email(extracted)
-                if not state.email:
-                    return self._assistant(session, "I didn't get a complete email address. Please say it again slowly, or say skip.")
+                    return self._assistant(session, "I only heard part of that email. Please say the part before at, then the domain, or say skip.")
                 state.email_status = "provided"
             state.stage = "confirm_email"
-            return self._assistant(session, "Thanks. " + confirmation_question(state, "email"))
+            return self._assistant(session, confirmation_question(state, "email"))
 
         if state.stage == "confirm_email":
             decision = normalize_confirmation(transcript)
             if decision == "yes":
                 state.confirmations["email"] = state.email or state.email_status
                 question = self._advance_to_contact(state, "phone")
-                return self._assistant(session, "Great. " + question)
+                return self._assistant(session, question)
             if decision == "no":
                 state.stage = "email"
                 state.email = ""
@@ -213,14 +216,14 @@ class VoiceCore:
             if not state.phone:
                 return self._assistant(session, "I didn't get a complete callback number. Please say the ten digits again.")
             state.stage = "confirm_phone"
-            return self._assistant(session, "Thanks. " + confirmation_question(state, "phone"))
+            return self._assistant(session, confirmation_question(state, "phone"))
 
         if state.stage == "confirm_phone":
             decision = normalize_confirmation(transcript)
             if decision == "yes":
                 state.confirmations["phone"] = state.phone
                 state.stage = "address"
-                return self._assistant(session, "Great. " + collection_question(state))
+                return self._assistant(session, collection_question(state))
             if decision == "no":
                 state.stage = "phone"
                 state.phone = ""
@@ -233,7 +236,7 @@ class VoiceCore:
             state.service_area_status = area.status
             state.service_area_city = area.city
             state.stage = "confirm_address"
-            return self._assistant(session, "Thanks. " + confirmation_question(state, "address"))
+            return self._assistant(session, confirmation_question(state, "address"))
 
         if state.stage == "confirm_address":
             decision = normalize_confirmation(transcript)
@@ -243,7 +246,7 @@ class VoiceCore:
                 state.completed = True
                 await self._notify(session, kind="completed_intake", partial=False)
                 state.stage = "done"
-                text = f"Perfect. You're all set. The team has your information and will call you within {self.settings.callback_sla_hours} hours. Thanks for calling Floodman."
+                text = f"You're all set. The team has your information and will call you within {self.settings.callback_sla_hours} hours. Thanks for calling Floodman."
                 reply = self._assistant(session, text)
                 reply.end_call = True
                 return reply

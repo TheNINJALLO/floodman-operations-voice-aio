@@ -318,7 +318,7 @@ class Settings:
             kokoro_model_path=Path(os.getenv("KOKORO_MODEL_PATH", models / "kokoro" / "kokoro-v1.0.onnx")),
             kokoro_voices_path=Path(os.getenv("KOKORO_VOICES_PATH", models / "kokoro" / "voices-v1.0.bin")),
             kokoro_voice=_voice_name(voice_settings.get("voice"), os.getenv("KOKORO_VOICE", "af_heart")),
-            kokoro_speed=max(0.75, min(_number(voice_settings.get("speed"), _float("KOKORO_SPEED", 1.02)), 1.25)),
+            kokoro_speed=max(0.75, min(_number(voice_settings.get("speed"), _float("KOKORO_SPEED", 0.90)), 1.25)),
             tts_cache_enabled=_bool("TTS_CACHE_ENABLED", True),
             endpoint_silence_ms=_int("ENDPOINT_SILENCE_MS", 550),
             contact_endpoint_silence_ms=_int("CONTACT_ENDPOINT_SILENCE_MS", 1200),
