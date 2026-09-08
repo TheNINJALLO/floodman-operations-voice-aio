@@ -4,9 +4,11 @@ name: Build GPU Appliance Recovery Candidate
   push:
     branches:
       - codex/telephony-recovery
+    tags:
+      - "gpu-appliance-promote-*"
+      - "gpu-appliance-rollback-*"
     paths:
       - appliance/**
-      - .github/workflows/ci-gpu-appliance-recovery.yml
   workflow_dispatch:
 
 permissions:
@@ -14,12 +16,13 @@ permissions:
   packages: write
 
 concurrency:
-  group: gpu-appliance-recovery-${{ github.ref }}
+  group: gpu-appliance-recovery-production
   cancel-in-progress: false
 
 jobs:
   test:
     name: Test recovery source
+    if: ${{ !startsWith(github.ref, 'refs/tags/gpu-appliance-rollback-') }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -39,6 +42,7 @@ jobs:
   build:
     name: Publish immutable recovery candidate
     needs: test
+    if: ${{ !startsWith(github.ref, 'refs/tags/gpu-appliance-promote-') && !startsWith(github.ref, 'refs/tags/gpu-appliance-rollback-') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -62,3 +66,62 @@ jobs:
           cache-from: type=gha,scope=gpu-appliance
           cache-to: type=gha,mode=max,scope=gpu-appliance
           provenance: mode=max
+
+  promote:
+    name: Promote tested candidate to production
+    needs: test
+    if: ${{ startsWith(github.ref, 'refs/tags/gpu-appliance-promote-') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve image and candidate
+        shell: bash
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          candidate_sha="${GITHUB_REF_NAME#gpu-appliance-promote-}"
+          if [[ ! "$candidate_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Promotion tag must end with a full 40-character lowercase commit SHA." >&2
+            exit 1
+          fi
+          echo "IMAGE=$image" >> "$GITHUB_ENV"
+          echo "CANDIDATE_SHA=$candidate_sha" >> "$GITHUB_ENV"
+      - name: Verify immutable candidate exists
+        run: docker buildx imagetools inspect "$IMAGE:gpu-appliance-candidate-$CANDIDATE_SHA"
+      - name: Promote candidate
+        run: docker buildx imagetools create --tag "$IMAGE:gpu-appliance" "$IMAGE:gpu-appliance-candidate-$CANDIDATE_SHA"
+      - name: Verify production tag
+        run: docker buildx imagetools inspect "$IMAGE:gpu-appliance"
+
+  rollback:
+    name: Restore production digest
+    if: ${{ startsWith(github.ref, 'refs/tags/gpu-appliance-rollback-') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve image and rollback digest
+        shell: bash
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          rollback_digest="${GITHUB_REF_NAME#gpu-appliance-rollback-}"
+          if [[ ! "$rollback_digest" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "Rollback tag must end with a full 64-character lowercase SHA-256 digest." >&2
+            exit 1
+          fi
+          echo "IMAGE=$image" >> "$GITHUB_ENV"
+          echo "ROLLBACK_DIGEST=$rollback_digest" >> "$GITHUB_ENV"
+      - name: Verify rollback image exists
+        run: docker buildx imagetools inspect "$IMAGE@sha256:$ROLLBACK_DIGEST"
+      - name: Restore production tag
+        run: docker buildx imagetools create --tag "$IMAGE:gpu-appliance" "$IMAGE@sha256:$ROLLBACK_DIGEST"
+      - name: Verify production tag
+        run: docker buildx imagetools inspect "$IMAGE:gpu-appliance"
