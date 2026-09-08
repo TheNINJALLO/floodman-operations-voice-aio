@@ -162,6 +162,7 @@ class Settings:
     log_dir: Path
     push_dir: Path
     voice_settings_path: Path
+    email_settings_path: Path
 
     web_host: str
     web_port: int
@@ -171,6 +172,16 @@ class Settings:
     trusted_hosts: tuple[str, ...]
     session_hours: int
     web_push_subject: str
+
+    email_enabled: bool
+    smtp_host: str
+    smtp_port: int
+    smtp_security: str
+    smtp_username: str
+    smtp_password: str
+    smtp_from_email: str
+    smtp_from_name: str
+    smtp_timeout_seconds: float
 
     database_path: Path
     service_area_path: Path
@@ -250,6 +261,7 @@ class Settings:
         logs = Path(os.getenv("LOG_DIR", data / "logs"))
         push = Path(os.getenv("PUSH_DIR", data / "push"))
         voice_settings_path = Path(os.getenv("VOICE_SETTINGS_PATH", data / "voice-settings.json"))
+        email_settings_path = data / "email-settings.json"
         voice_settings = _voice_settings(voice_settings_path)
         for path in (data, knowledge, models, runtime, cache, logs, push):
             path.mkdir(parents=True, exist_ok=True)
@@ -269,6 +281,7 @@ class Settings:
             log_dir=logs,
             push_dir=push,
             voice_settings_path=voice_settings_path,
+            email_settings_path=email_settings_path,
             web_host=os.getenv("WEB_HOST", "0.0.0.0"),
             web_port=_int("WEB_PORT", 8002),
             admin_token=admin,
@@ -277,6 +290,15 @@ class Settings:
             trusted_hosts=_csv("TRUSTED_HOSTS", trusted_default),
             session_hours=max(1, min(_int("SESSION_HOURS", 12), 168)),
             web_push_subject=os.getenv("WEB_PUSH_SUBJECT", "mailto:notifications@oninetwork.com").strip(),
+            email_enabled=_bool("FLOODMAN_EMAIL_ENABLED", False),
+            smtp_host=os.getenv("SMTP_HOST", "").strip(),
+            smtp_port=max(1, min(_int("SMTP_PORT", 587), 65535)),
+            smtp_security=os.getenv("SMTP_SECURITY", "starttls").strip().lower(),
+            smtp_username=os.getenv("SMTP_USERNAME", "").strip(),
+            smtp_password=os.getenv("SMTP_PASSWORD", ""),
+            smtp_from_email=os.getenv("SMTP_FROM_EMAIL", "").strip(),
+            smtp_from_name=os.getenv("SMTP_FROM_NAME", "Floodman Call Center").strip(),
+            smtp_timeout_seconds=max(3.0, min(_float("SMTP_TIMEOUT_SECONDS", 10.0), 30.0)),
             database_path=Path(os.getenv("DATABASE_PATH", data / "floodman.db")),
             service_area_path=Path(os.getenv("SERVICE_AREA_PATH", data / "service_area.yaml")),
             audiosocket_host=os.getenv("AUDIOSOCKET_HOST", "127.0.0.1"),

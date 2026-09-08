@@ -9,7 +9,9 @@
     <form method="post" action="/profile" class="form-stack">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <label>Display name<input name="display_name" value="{{ user.display_name }}" maxlength="80" required></label>
+      <label>Email address<input type="email" name="email" value="{{ user.email }}" maxlength="320" placeholder="you@floodman.com"><small>Email is required when email alerts are enabled.</small></label>
       <fieldset><legend>Call alerts</legend>
+        <label class="check-field"><input type="checkbox" name="email_notifications" {{ 'checked' if user.email_notifications }}><span><strong>Send alerts by email</strong><small>Email follows the event choices below.</small></span></label>
         <label class="check-field"><input type="checkbox" name="notify_new_calls" {{ 'checked' if user.notify_new_calls }}><span><strong>New calls</strong><small>When a caller enters the system.</small></span></label>
         <label class="check-field"><input type="checkbox" name="notify_completed_calls" {{ 'checked' if user.notify_completed_calls }}><span><strong>Completed intake</strong><small>When a customer record is ready.</small></span></label>
         <label class="check-field"><input type="checkbox" name="notify_emergencies" {{ 'checked' if user.notify_emergencies }}><span><strong>Emergency calls</strong><small>When urgent action may be required.</small></span></label>

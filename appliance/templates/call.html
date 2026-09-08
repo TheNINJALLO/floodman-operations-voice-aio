@@ -38,7 +38,7 @@
   </aside>
 </div>
 <section class="panel">
-  <div class="panel-heading"><div><h2>Delivery history</h2><p>SMS and internal notification attempts for this call.</p></div></div>
-  <div class="table-wrap"><table><thead><tr><th>Time</th><th>Type</th><th>Recipient</th><th>Status</th><th>Response</th></tr></thead><tbody>{% for item in call.notifications %}<tr><td class="js-date">{{ item.created_at }}</td><td>{{ item.kind | replace('_', ' ') | title }}</td><td>{{ item.recipient }}</td><td><span class="status {{ 'success' if item.status in ['sent','delivered'] else 'neutral' }}">{{ item.status | title }}</span></td><td class="truncate">{{ item.response }}</td></tr>{% else %}<tr><td colspan="5" class="muted">No delivery events recorded.</td></tr>{% endfor %}</tbody></table></div>
+  <div class="panel-heading"><div><h2>Delivery history</h2><p>Email and SMS delivery attempts for this call.</p></div></div>
+  <div class="table-wrap"><table><thead><tr><th>Time</th><th>Channel</th><th>Event</th><th>Recipient</th><th>Status</th><th>Response</th></tr></thead><tbody>{% for item in call.notifications %}<tr><td class="js-date">{{ item.created_at }}</td><td>{{ item.channel | upper }}</td><td>{{ item.kind | replace('_', ' ') | title }}</td><td>{{ item.recipient }}</td><td><span class="status {{ 'success' if item.status in ['sent','delivered'] else ('info' if item.status == 'queued' else 'neutral') }}">{{ item.status | title }}</span></td><td class="truncate">{{ item.response }}</td></tr>{% else %}<tr><td colspan="6" class="muted">No delivery events recorded.</td></tr>{% endfor %}</tbody></table></div>
 </section>
 {% endblock %}

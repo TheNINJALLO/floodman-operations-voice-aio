@@ -89,6 +89,96 @@
             "field_type": "text"
         },
         {
+            "name": "Team Email Enabled",
+            "description": "Bootstrap permission-scoped email delivery. SMTP can also be configured in the secure web panel.",
+            "env_variable": "FLOODMAN_EMAIL_ENABLED",
+            "default_value": "false",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "SMTP Host",
+            "description": "Mail provider SMTP hostname.",
+            "env_variable": "SMTP_HOST",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:255",
+            "field_type": "text"
+        },
+        {
+            "name": "SMTP Port",
+            "description": "Mail provider SMTP port, usually 587 for STARTTLS or 465 for TLS.",
+            "env_variable": "SMTP_PORT",
+            "default_value": "587",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|integer|min:1|max:65535",
+            "field_type": "text"
+        },
+        {
+            "name": "SMTP Security",
+            "description": "SMTP transport security mode.",
+            "env_variable": "SMTP_SECURITY",
+            "default_value": "starttls",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|in:starttls,tls,none",
+            "field_type": "text"
+        },
+        {
+            "name": "SMTP Username",
+            "description": "Optional SMTP login username. Configure secrets in the secure web panel when possible.",
+            "env_variable": "SMTP_USERNAME",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:320",
+            "field_type": "text"
+        },
+        {
+            "name": "SMTP Password",
+            "description": "Optional SMTP password or provider app password. Prefer configuring this in the secure web panel.",
+            "env_variable": "SMTP_PASSWORD",
+            "default_value": "",
+            "user_viewable": false,
+            "user_editable": false,
+            "rules": "nullable|string|max:1024",
+            "field_type": "text"
+        },
+        {
+            "name": "SMTP Sender Email",
+            "description": "Verified sender address for Floodman call notifications.",
+            "env_variable": "SMTP_FROM_EMAIL",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|email|max:320",
+            "field_type": "text"
+        },
+        {
+            "name": "SMTP Sender Name",
+            "description": "Friendly sender name shown to recipients.",
+            "env_variable": "SMTP_FROM_NAME",
+            "default_value": "Floodman Call Center",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:120",
+            "field_type": "text"
+        },
+        {
+            "name": "SMTP Timeout",
+            "description": "Maximum seconds allowed for a background SMTP connection.",
+            "env_variable": "SMTP_TIMEOUT_SECONDS",
+            "default_value": "10",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|numeric|min:3|max:30",
+            "field_type": "text"
+        },
+        {
             "name": "Internal Token",
             "description": "Internal API token. Leave blank to generate.",
             "env_variable": "INTERNAL_TOKEN",

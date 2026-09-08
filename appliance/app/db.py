@@ -65,6 +65,7 @@ class Database:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     call_id INTEGER NOT NULL REFERENCES calls(id) ON DELETE CASCADE,
                     kind TEXT NOT NULL,
+                    channel TEXT NOT NULL DEFAULT 'sms',
                     recipient TEXT NOT NULL,
                     status TEXT NOT NULL,
                     response TEXT NOT NULL DEFAULT '',
@@ -75,12 +76,14 @@ class Database:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     username TEXT NOT NULL COLLATE NOCASE UNIQUE,
                     display_name TEXT NOT NULL,
+                    email TEXT NOT NULL DEFAULT '',
                     password_hash TEXT NOT NULL,
                     role TEXT NOT NULL DEFAULT 'viewer' CHECK(role IN ('admin','manager','viewer')),
                     active INTEGER NOT NULL DEFAULT 1,
                     notify_new_calls INTEGER NOT NULL DEFAULT 1,
                     notify_completed_calls INTEGER NOT NULL DEFAULT 1,
                     notify_emergencies INTEGER NOT NULL DEFAULT 1,
+                    email_notifications INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     last_login_at TEXT,
@@ -135,6 +138,17 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_events(created_at DESC);
                 """
             )
+            self._ensure_column(db, "users", "email", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(db, "users", "email_notifications", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(db, "notifications", "channel", "TEXT NOT NULL DEFAULT 'sms'")
+            db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users(email COLLATE NOCASE) WHERE email<>''")
+            db.execute("CREATE INDEX IF NOT EXISTS idx_notifications_channel ON notifications(channel, status)")
+
+    @staticmethod
+    def _ensure_column(db: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+        columns = {str(row["name"]) for row in db.execute(f"PRAGMA table_info({table})")}
+        if column not in columns:
+            db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
     def create_call(self, state: IntakeState) -> int:
         with self._lock, self.connect() as db:
@@ -186,16 +200,45 @@ class Database:
         with self.connect() as db:
             db.execute("UPDATE calls SET ended_at=?, status='completed', outcome=? WHERE id=?", (utcnow(), outcome, call_id))
 
-    def record_notification(self, call_id: int, kind: str, recipient: str, status: str, response: str, key: str) -> bool:
+    def record_notification(
+        self,
+        call_id: int,
+        kind: str,
+        recipient: str,
+        status: str,
+        response: str,
+        key: str,
+        *,
+        channel: str = "sms",
+    ) -> bool:
         try:
             with self.connect() as db:
                 db.execute(
-                    "INSERT INTO notifications(call_id,kind,recipient,status,response,idempotency_key,created_at) VALUES(?,?,?,?,?,?,?)",
-                    (call_id, kind, recipient, status, response[:2000], key, utcnow()),
+                    "INSERT INTO notifications(call_id,kind,channel,recipient,status,response,idempotency_key,created_at) VALUES(?,?,?,?,?,?,?,?)",
+                    (call_id, kind, channel, recipient, status, response[:2000], key, utcnow()),
                 )
             return True
         except sqlite3.IntegrityError:
             return False
+
+    def reserve_notification(self, call_id: int, kind: str, channel: str, recipient: str, key: str) -> int | None:
+        try:
+            with self.connect() as db:
+                result = db.execute(
+                    """INSERT INTO notifications(call_id,kind,channel,recipient,status,response,idempotency_key,created_at)
+                       VALUES(?,?,?,?,?,?,?,?)""",
+                    (call_id, kind, channel, recipient, "queued", "Waiting for delivery", key, utcnow()),
+                )
+            return int(result.lastrowid)
+        except sqlite3.IntegrityError:
+            return None
+
+    def complete_notification(self, notification_id: int, status: str, response: str) -> None:
+        with self.connect() as db:
+            db.execute(
+                "UPDATE notifications SET status=?,response=? WHERE id=?",
+                (str(status or "failed")[:40], str(response or "")[:2000], notification_id),
+            )
 
     def notification_exists(self, key: str) -> bool:
         with self.connect() as db:
@@ -225,7 +268,13 @@ class Database:
             if not row:
                 return None
             messages = [dict(value) for value in db.execute("SELECT role,text,created_at FROM messages WHERE call_id=? ORDER BY id", (call_id,))]
-            notifications = [dict(value) for value in db.execute("SELECT kind,recipient,status,response,created_at FROM notifications WHERE call_id=? ORDER BY id", (call_id,))]
+            notifications = [
+                dict(value)
+                for value in db.execute(
+                    "SELECT channel,kind,recipient,status,response,created_at FROM notifications WHERE call_id=? ORDER BY id",
+                    (call_id,),
+                )
+            ]
         item = dict(row)
         item["snapshot"] = json.loads(item.pop("snapshot_json") or "{}")
         item["messages"] = messages
@@ -311,23 +360,26 @@ class Database:
         role: str,
         preferences: dict[str, bool],
         created_by: int | None,
+        email: str = "",
     ) -> int:
         now = utcnow()
         with self.connect() as db:
             result = db.execute(
                 """INSERT INTO users(
-                       username,display_name,password_hash,role,active,
-                       notify_new_calls,notify_completed_calls,notify_emergencies,
+                       username,display_name,email,password_hash,role,active,
+                       notify_new_calls,notify_completed_calls,notify_emergencies,email_notifications,
                        created_at,updated_at,created_by
-                   ) VALUES(?,?,?,?,1,?,?,?,?,?,?)""",
+                   ) VALUES(?,?,?,?,?,1,?,?,?,?,?,?,?)""",
                 (
                     username,
                     display_name,
+                    email,
                     password_hash,
                     role,
                     int(bool(preferences.get("notify_new_calls", True))),
                     int(bool(preferences.get("notify_completed_calls", True))),
                     int(bool(preferences.get("notify_emergencies", True))),
+                    int(bool(preferences.get("email_notifications", False))),
                     now,
                     now,
                     created_by,
@@ -338,8 +390,8 @@ class Database:
     def list_users(self) -> list[dict[str, Any]]:
         with self.connect() as db:
             rows = db.execute(
-                """SELECT u.id,u.username,u.display_name,u.role,u.active,
-                          u.notify_new_calls,u.notify_completed_calls,u.notify_emergencies,
+                """SELECT u.id,u.username,u.display_name,u.email,u.role,u.active,
+                          u.notify_new_calls,u.notify_completed_calls,u.notify_emergencies,u.email_notifications,
                           u.created_at,u.updated_at,u.last_login_at,
                           COUNT(p.id) AS push_devices
                    FROM users u LEFT JOIN push_subscriptions p ON p.user_id=u.id
@@ -348,13 +400,13 @@ class Database:
         return [dict(row) for row in rows]
 
     def get_user(self, user_id: int, *, include_secret: bool = False) -> dict[str, Any] | None:
-        columns = "*" if include_secret else "id,username,display_name,role,active,notify_new_calls,notify_completed_calls,notify_emergencies,created_at,updated_at,last_login_at"
+        columns = "*" if include_secret else "id,username,display_name,email,role,active,notify_new_calls,notify_completed_calls,notify_emergencies,email_notifications,created_at,updated_at,last_login_at"
         with self.connect() as db:
             row = db.execute(f"SELECT {columns} FROM users WHERE id=?", (user_id,)).fetchone()
         return dict(row) if row else None
 
     def get_user_by_username(self, username: str, *, include_secret: bool = False) -> dict[str, Any] | None:
-        columns = "*" if include_secret else "id,username,display_name,role,active,notify_new_calls,notify_completed_calls,notify_emergencies,created_at,updated_at,last_login_at"
+        columns = "*" if include_secret else "id,username,display_name,email,role,active,notify_new_calls,notify_completed_calls,notify_emergencies,email_notifications,created_at,updated_at,last_login_at"
         with self.connect() as db:
             row = db.execute(f"SELECT {columns} FROM users WHERE username=? COLLATE NOCASE", (username,)).fetchone()
         return dict(row) if row else None
@@ -367,20 +419,23 @@ class Database:
         role: str,
         active: bool,
         preferences: dict[str, bool],
+        email: str = "",
     ) -> None:
         with self.connect() as db:
             db.execute(
-                """UPDATE users SET username=?,display_name=?,role=?,active=?,
-                          notify_new_calls=?,notify_completed_calls=?,notify_emergencies=?,updated_at=?
+                """UPDATE users SET username=?,display_name=?,email=?,role=?,active=?,
+                          notify_new_calls=?,notify_completed_calls=?,notify_emergencies=?,email_notifications=?,updated_at=?
                    WHERE id=?""",
                 (
                     username,
                     display_name,
+                    email,
                     role,
                     int(active),
                     int(bool(preferences.get("notify_new_calls"))),
                     int(bool(preferences.get("notify_completed_calls"))),
                     int(bool(preferences.get("notify_emergencies"))),
+                    int(bool(preferences.get("email_notifications"))),
                     utcnow(),
                     user_id,
                 ),
@@ -472,6 +527,33 @@ class Database:
                     continue
                 created.append({"id": int(result.lastrowid), "user_id": int(row["id"]), "title": title, "body": body, "url": url, "kind": kind})
         return created
+
+    def list_email_notification_recipients(
+        self,
+        kind: str,
+        *,
+        target_user_id: int | None = None,
+    ) -> list[dict[str, Any]]:
+        preference = {
+            "call_started": "notify_new_calls",
+            "completed_intake": "notify_completed_calls",
+            "emergency": "notify_emergencies",
+        }.get(kind)
+        query = (
+            "SELECT id,email,display_name FROM users "
+            "WHERE active=1 AND email_notifications=1 AND email<>'' "
+            "AND role IN ('admin','manager','viewer')"
+        )
+        parameters: list[Any] = []
+        if preference:
+            query += f" AND {preference}=1"
+        if target_user_id is not None:
+            query += " AND id=?"
+            parameters.append(target_user_id)
+        query += " ORDER BY id"
+        with self.connect() as db:
+            rows = db.execute(query, tuple(parameters)).fetchall()
+        return [dict(row) for row in rows]
 
     def list_user_notifications(self, user_id: int, limit: int = 100) -> list[dict[str, Any]]:
         with self.connect() as db:

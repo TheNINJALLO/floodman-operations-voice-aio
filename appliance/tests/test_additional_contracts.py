@@ -8,7 +8,7 @@ import pytest
 from app.business import BusinessDirectory
 from app.config import Settings
 from app.models import IntakeState
-from app.notifications import build_message
+from app.notifications import build_email_message, build_message
 from app.tts import LocalTTS
 
 
@@ -56,6 +56,27 @@ def test_sms_contains_every_recovered_field():
     body = build_message(state, 24, partial=False)
     for value in ("Josh Aldrich", "+12318840943", "josh@example.com", "1 Main Street", "Water in basement", "24 hours"):
         assert value in body
+
+
+def test_incoming_call_email_contains_no_customer_pii():
+    state = IntakeState(
+        call_uuid="private-call",
+        name="Sensitive Customer",
+        phone="+12315550100",
+        email="sensitive@example.com",
+        address="1 Private Street",
+    )
+    body = build_email_message(
+        state,
+        24,
+        "https://voice.example.com",
+        42,
+        kind="call_started",
+        partial=True,
+    )
+    for value in (state.name, state.phone, state.email, state.address, state.call_uuid):
+        assert value not in body
+    assert body.count("https://voice.example.com/calls/42") == 1
 
 
 def test_trusted_host_is_derived_from_public_url(tmp_path: Path, monkeypatch):

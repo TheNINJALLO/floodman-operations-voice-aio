@@ -25,6 +25,7 @@ from app.auth import AuthManager, Principal
 from app.business import BusinessDirectory
 from app.config import Settings
 from app.db import Database
+from app.emailer import normalize_user_email
 from app.knowledge import KnowledgeBase
 from app.llm import LocalLLM
 from app.notifications import TeamNotifier
@@ -95,6 +96,7 @@ class Runtime:
     async def stop(self) -> None:
         self.ready = False
         await self.audio.stop()
+        await self.notifier.stop()
 
 
 runtime = Runtime()
@@ -189,11 +191,17 @@ def _audit(principal: Principal, action: str, entity_type: str, entity_id: str =
     runtime.database.audit(principal.user_id, principal.username, action, entity_type, entity_id, detail)
 
 
-def _preferences(new_calls: str | None, completed: str | None, emergencies: str | None) -> dict[str, bool]:
+def _preferences(
+    new_calls: str | None,
+    completed: str | None,
+    emergencies: str | None,
+    email_notifications: str | None,
+) -> dict[str, bool]:
     return {
         "notify_new_calls": new_calls is not None,
         "notify_completed_calls": completed is not None,
         "notify_emergencies": emergencies is not None,
+        "email_notifications": email_notifications is not None,
     }
 
 
@@ -246,7 +254,13 @@ async def health() -> dict[str, Any]:
 @app.get("/ready")
 async def ready() -> JSONResponse:
     llm = await runtime.llm.health() if runtime.ready else False
-    value = {"ready": bool(runtime.ready and llm), "llm": llm, "stt": runtime.stt._model is not None, "tts": runtime.tts._kokoro is not None}
+    value = {
+        "ready": bool(runtime.ready and llm),
+        "llm": llm,
+        "stt": runtime.stt._model is not None,
+        "tts": runtime.tts._kokoro is not None,
+        "email": runtime.notifier.email.configuration.configured,
+    }
     return JSONResponse(value, status_code=200 if value["ready"] else 503)
 
 
@@ -428,11 +442,13 @@ async def create_user(
     csrf_token: str = Form(default=""),
     username: str = Form(default=""),
     display_name: str = Form(default=""),
+    email: str = Form(default=""),
     password: str = Form(default=""),
     role: str = Form(default="viewer"),
     notify_new_calls: str | None = Form(default=None),
     notify_completed_calls: str | None = Form(default=None),
     notify_emergencies: str | None = Form(default=None),
+    email_notifications: str | None = Form(default=None),
 ):
     principal = _require_api(floodman_session, admin=True)
     _csrf(principal, csrf_token)
@@ -440,15 +456,16 @@ async def create_user(
         user_id = runtime.auth.create_user(
             username=username,
             display_name=display_name,
+            email=email,
             password=password,
             role=role,
-            preferences=_preferences(notify_new_calls, notify_completed_calls, notify_emergencies),
+            preferences=_preferences(notify_new_calls, notify_completed_calls, notify_emergencies, email_notifications),
             actor=principal,
         )
         _audit(principal, "create", "user", str(user_id), {"username": username.strip().lower(), "role": role})
         return _redirect("/users", message="User account created.")
     except (ValueError, PermissionError, sqlite3.IntegrityError) as exc:
-        message = "That username is already in use." if isinstance(exc, sqlite3.IntegrityError) else str(exc)
+        message = "That username or email address is already in use." if isinstance(exc, sqlite3.IntegrityError) else str(exc)
         return _redirect("/users", error=message)
 
 
@@ -459,11 +476,13 @@ async def edit_user(
     csrf_token: str = Form(default=""),
     username: str = Form(default=""),
     display_name: str = Form(default=""),
+    email: str = Form(default=""),
     role: str = Form(default="viewer"),
     active: str | None = Form(default=None),
     notify_new_calls: str | None = Form(default=None),
     notify_completed_calls: str | None = Form(default=None),
     notify_emergencies: str | None = Form(default=None),
+    email_notifications: str | None = Form(default=None),
 ):
     principal = _require_api(floodman_session, admin=True)
     _csrf(principal, csrf_token)
@@ -472,15 +491,16 @@ async def edit_user(
             user_id,
             username=username,
             display_name=display_name,
+            email=email,
             role=role,
             active=active is not None,
-            preferences=_preferences(notify_new_calls, notify_completed_calls, notify_emergencies),
+            preferences=_preferences(notify_new_calls, notify_completed_calls, notify_emergencies, email_notifications),
             actor=principal,
         )
         _audit(principal, "update", "user", str(user_id), {"username": username.strip().lower(), "role": role, "active": active is not None})
         return _redirect("/users", message="User account updated.")
     except (ValueError, PermissionError, LookupError, sqlite3.IntegrityError) as exc:
-        message = "That username is already in use." if isinstance(exc, sqlite3.IntegrityError) else str(exc)
+        message = "That username or email address is already in use." if isinstance(exc, sqlite3.IntegrityError) else str(exc)
         return _redirect(f"/users?edit={user_id}", error=message)
 
 
@@ -542,9 +562,11 @@ async def update_profile(
     floodman_session: str | None = Cookie(default=None),
     csrf_token: str = Form(default=""),
     display_name: str = Form(default=""),
+    email: str = Form(default=""),
     notify_new_calls: str | None = Form(default=None),
     notify_completed_calls: str | None = Form(default=None),
     notify_emergencies: str | None = Form(default=None),
+    email_notifications: str | None = Form(default=None),
 ):
     principal = _require_api(floodman_session)
     _csrf(principal, csrf_token)
@@ -553,14 +575,23 @@ async def update_profile(
     user = runtime.database.get_user(principal.user_id)
     if not user:
         return _redirect("/login", error="User account not found.")
-    runtime.database.update_user(
-        principal.user_id,
-        user["username"],
-        str(display_name or "").strip()[:80] or user["display_name"],
-        user["role"],
-        bool(user["active"]),
-        _preferences(notify_new_calls, notify_completed_calls, notify_emergencies),
-    )
+    preferences = _preferences(notify_new_calls, notify_completed_calls, notify_emergencies, email_notifications)
+    try:
+        email = normalize_user_email(email)
+        if preferences["email_notifications"] and not email:
+            raise ValueError("An email address is required when email alerts are enabled.")
+        runtime.database.update_user(
+            principal.user_id,
+            user["username"],
+            str(display_name or "").strip()[:80] or user["display_name"],
+            user["role"],
+            bool(user["active"]),
+            preferences,
+            email,
+        )
+    except (ValueError, sqlite3.IntegrityError) as exc:
+        message = "That email address is already in use." if isinstance(exc, sqlite3.IntegrityError) else str(exc)
+        return _redirect("/profile", error=message)
     _audit(principal, "update", "profile", str(principal.user_id))
     return _redirect("/profile", message="Profile and notification preferences saved.")
 
@@ -694,6 +725,8 @@ async def notifications_page(request: Request, floodman_session: str | None = Co
             subscriptions=subscriptions,
             push_available=bool(runtime.notifier.web_push.public_key),
             push_secure=settings.public_base_url.startswith("https://"),
+            user=runtime.database.get_user(principal.user_id),
+            email_config=runtime.notifier.email.configuration.public_dict(),
             message=request.query_params.get("message", ""),
             error=request.query_params.get("error", ""),
         ),
@@ -740,6 +773,29 @@ async def test_notification(
         "This device can receive secure call alerts.",
     )
     return _redirect("/notifications", message="Test notification sent.")
+
+
+@app.post("/notifications/test-email")
+async def test_personal_email(
+    floodman_session: str | None = Cookie(default=None),
+    csrf_token: str = Form(default=""),
+):
+    principal = _require_api(floodman_session)
+    _csrf(principal, csrf_token)
+    if principal.user_id is None:
+        return _redirect("/users", error="Create a named user account first.")
+    user = runtime.database.get_user(principal.user_id)
+    if not user or not user["email"]:
+        return _redirect("/profile", error="Add an email address to your profile first.")
+    status, response = await runtime.notifier.email.send(
+        user["email"],
+        "Floodman email notifications are ready",
+        f"Your Floodman account can receive call email alerts.\n\nOpen the secure dashboard:\n{settings.public_base_url}/notifications",
+    )
+    _audit(principal, "test", "email_delivery", str(principal.user_id), {"status": status})
+    if status != "sent":
+        return _redirect("/notifications", error=response)
+    return _redirect("/notifications", message="Test email accepted by the mail server.")
 
 
 @app.get("/api/push/config")
@@ -797,6 +853,94 @@ async def unsubscribe_push(
 async def unread_notifications(floodman_session: str | None = Cookie(default=None)):
     principal = _require_api(floodman_session)
     return {"count": runtime.database.unread_notification_count(principal.user_id) if principal.user_id else 0}
+
+
+# Email delivery configuration --------------------------------------
+@app.get("/email-settings", response_class=HTMLResponse)
+async def email_settings_page(request: Request, floodman_session: str | None = Cookie(default=None)):
+    principal = _principal(floodman_session)
+    if not principal:
+        return RedirectResponse("/login", status_code=303)
+    if not principal.is_admin:
+        return _redirect("/", error="Administrator access is required.")
+    return templates.TemplateResponse(
+        request,
+        "email_settings.html",
+        _context(
+            request,
+            principal,
+            "email-settings",
+            email_config=runtime.notifier.email.configuration.public_dict(),
+            message=request.query_params.get("message", ""),
+            error=request.query_params.get("error", ""),
+        ),
+    )
+
+
+@app.post("/email-settings")
+async def save_email_settings(
+    floodman_session: str | None = Cookie(default=None),
+    csrf_token: str = Form(default=""),
+    enabled: str | None = Form(default=None),
+    host: str = Form(default=""),
+    port: int = Form(default=587),
+    security: str = Form(default="starttls"),
+    username: str = Form(default=""),
+    password: str = Form(default=""),
+    from_email: str = Form(default=""),
+    from_name: str = Form(default="Floodman Call Center"),
+    timeout_seconds: float = Form(default=10.0),
+):
+    principal = _require_api(floodman_session, admin=True)
+    _csrf(principal, csrf_token)
+    try:
+        configuration = runtime.notifier.email.configure(
+            {
+                "enabled": enabled is not None,
+                "host": host,
+                "port": port,
+                "security": security,
+                "username": username,
+                "password": password,
+                "from_email": from_email,
+                "from_name": from_name,
+                "timeout_seconds": timeout_seconds,
+            }
+        )
+        _audit(
+            principal,
+            "update",
+            "email_settings",
+            detail={
+                "enabled": configuration.enabled,
+                "host": configuration.host,
+                "port": configuration.port,
+                "security": configuration.security,
+                "from_email": configuration.from_email,
+            },
+        )
+        return _redirect("/email-settings", message="Email delivery settings saved and activated.")
+    except ValueError as exc:
+        return _redirect("/email-settings", error=str(exc))
+
+
+@app.post("/email-settings/test")
+async def test_email_settings(
+    floodman_session: str | None = Cookie(default=None),
+    csrf_token: str = Form(default=""),
+    recipient: str = Form(default=""),
+):
+    principal = _require_api(floodman_session, admin=True)
+    _csrf(principal, csrf_token)
+    status, response = await runtime.notifier.email.send(
+        recipient,
+        "Floodman SMTP test",
+        f"Email delivery is connected to the Floodman Call Center.\n\nOpen the secure dashboard:\n{settings.public_base_url}",
+    )
+    _audit(principal, "test", "email_settings", detail={"status": status})
+    if status != "sent":
+        return _redirect("/email-settings", error=response)
+    return _redirect("/email-settings", message="Test email accepted by the mail server.")
 
 
 # Voice configuration -------------------------------------------------

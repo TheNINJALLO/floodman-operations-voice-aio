@@ -266,7 +266,7 @@ class VoiceCore:
     async def _notify(self, session: CallSession, *, kind: str, partial: bool) -> None:
         count = await self.notifier.send(session.call_id, session.state, kind=kind, partial=partial)
         session.notification_sent = session.notification_sent or count > 0
-        self.database.save_intake(session.call_id, session.state, "sent" if count else "not_configured_or_duplicate")
+        self.database.save_intake(session.call_id, session.state, "queued" if count else "not_configured_or_duplicate")
 
     async def no_input(self, session: CallSession) -> VoiceReply:
         session.no_input_count += 1

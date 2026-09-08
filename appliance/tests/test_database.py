@@ -11,3 +11,12 @@ def test_database_cascade_and_notification(tmp_path):
     assert db.get_call(call_id)["messages"][0]["text"] == "hello"
     db.delete_call_by_uuid("call-1")
     assert db.get_call(call_id) is None
+
+
+def test_database_adds_email_delivery_columns(tmp_path):
+    db = Database(tmp_path / "email-migration.db")
+    with db.connect() as connection:
+        user_columns = {row["name"] for row in connection.execute("PRAGMA table_info(users)")}
+        notification_columns = {row["name"] for row in connection.execute("PRAGMA table_info(notifications)")}
+    assert {"email", "email_notifications"} <= user_columns
+    assert "channel" in notification_columns

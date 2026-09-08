@@ -8,7 +8,8 @@
 6. Configure SIP, transfer numbers, and Twilio SMS credentials.
 7. Start the container and wait until `/ready` is healthy.
 8. Retrieve `ADMIN_TOKEN` from `data/runtime.env` if it was generated, use **Recovery access** on `/login`, and create the first named administrator.
-9. Sign in with the new username and password. Open **Notifications** on each user's HTTPS device and enable browser alerts.
-10. Open **Voice**, preview the desired installed voice, and save its speaking speed.
-11. Test `/simulator` before routing the live DID.
-12. Run one full call, one hangup, one unsupported request, and one human transfer.
+9. Sign in with the new username and password. Add each user's email address and alert permissions, then open **Email delivery** to configure and test SMTP.
+10. Open **Notifications** on each user's HTTPS device and enable browser alerts.
+11. Open **Voice**, preview the desired installed voice, and save its speaking speed.
+12. Test `/simulator` before routing the live DID.
+13. Run one full call, one hangup, one unsupported request, and one human transfer.

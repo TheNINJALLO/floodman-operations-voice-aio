@@ -8,6 +8,18 @@
   <div><span class="eyebrow light">Browser alerts</span><h2>Get call alerts on this device</h2><p>Alerts contain only a general event and a secure link. Caller details stay inside the signed-in portal.</p><p class="push-status" data-push-status>Checking this browser…</p></div>
   <div class="push-actions"><button class="button light" type="button" data-push-enable>Enable alerts</button><button class="button outline-light hidden" type="button" data-push-disable>Disable on this device</button><form method="post" action="/notifications/test"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button outline-light" type="submit">Send test</button></form></div>
 </section>
+<section class="panel email-alert-card">
+  <div>
+    <span class="eyebrow">Email alerts</span>
+    <h2>{{ 'Email delivery is ready' if email_config.configured else 'Email delivery needs setup' }}</h2>
+    {% if user.email %}<p>Call alerts for this account can be sent to <strong>{{ user.email }}</strong> when enabled in your profile.</p>{% else %}<p>Add your email address in your profile to receive call alerts.</p>{% endif %}
+  </div>
+  <div class="email-alert-actions">
+    {% if user.email %}<form method="post" action="/notifications/test-email"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button secondary" type="submit">Send test email</button></form>{% endif %}
+    <a class="button ghost" href="/profile">Email preferences</a>
+    {% if principal.is_admin %}<a class="button ghost" href="/email-settings">SMTP settings</a>{% endif %}
+  </div>
+</section>
 <div class="notification-layout">
   <section class="panel">
     <div class="panel-heading"><div><h2>Recent alerts</h2><p>{{ notifications | length }} most recent events</p></div></div>

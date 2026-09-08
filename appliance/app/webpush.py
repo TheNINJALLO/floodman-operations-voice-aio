@@ -56,6 +56,11 @@ class WebPushService:
         return public_key
 
     async def publish_call(self, call_id: int, state: IntakeState, kind: str) -> int:
+        records = self.create_call_records(call_id, state, kind)
+        await self.send_records(records)
+        return len(records)
+
+    def create_call_records(self, call_id: int, state: IntakeState, kind: str) -> list[dict[str, Any]]:
         title = {
             "call_started": "Incoming Floodman call",
             "completed_intake": "New intake completed",
@@ -80,8 +85,7 @@ class WebPushService:
             url=f"/calls/{call_id}",
             call_id=call_id,
         )
-        await self.send_records(records)
-        return len(records)
+        return records
 
     async def publish_manual(self, user_id: int, title: str, body: str, url: str = "/notifications") -> int:
         records = self.database.create_user_notifications(

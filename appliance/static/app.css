@@ -187,6 +187,11 @@ hr { margin: 20px; border: 0; border-top: 1px solid var(--line); }
 .device-item strong { max-width: 180px; overflow: hidden; font-size: .76rem; text-overflow: ellipsis; white-space: nowrap; }
 .device-item small { color: var(--muted); font-size: .67rem; }
 .settings-link { display: block; margin: 16px 17px 0; font-size: .78rem; font-weight: 700; }
+.email-alert-card { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 20px; }
+.email-alert-card h2, .email-alert-card p { margin-bottom: 0; }
+.email-alert-card p { margin-top: 4px; color: var(--muted); font-size: .82rem; }
+.email-alert-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.panel-form { padding: 20px; }
 .voice-layout { display: grid; grid-template-columns: minmax(360px, .9fr) minmax(360px, 1.1fr); align-items: start; gap: 18px; }
 .voice-editor > .form-stack { padding: 20px; }
 .range-value { float: right; color: var(--blue-700); font-size: .8rem; font-weight: 850; }
@@ -297,6 +302,9 @@ input[type="range"] { height: 28px; min-height: 0; padding: 0; border: 0; box-sh
   .push-card { grid-template-columns: auto 1fr; padding: 19px; }
   .push-actions { grid-column: 1 / -1; justify-content: stretch; }
   .push-actions > *, .push-actions .button { flex: 1; }
+  .email-alert-card { align-items: flex-start; flex-direction: column; }
+  .email-alert-actions { width: 100%; justify-content: stretch; }
+  .email-alert-actions > *, .email-alert-actions .button { flex: 1; }
   .notification-title { display: block; }
   .guide-grid { grid-template-columns: 1fr; }
   .notification-title small { display: block; margin-top: 2px; }

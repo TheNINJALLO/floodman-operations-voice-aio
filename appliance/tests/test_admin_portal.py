@@ -16,6 +16,7 @@ from app.auth import AuthManager, Principal, hash_password, verify_password
 from app.business import BusinessDirectory
 from app.config import Settings
 from app.db import Database
+from app.emailer import EmailService
 from app.knowledge import KnowledgeBase
 from app.models import IntakeState
 from app.notifications import TeamNotifier
@@ -27,6 +28,7 @@ def preferences(**overrides: bool) -> dict[str, bool]:
         "notify_new_calls": True,
         "notify_completed_calls": True,
         "notify_emergencies": True,
+        "email_notifications": False,
     }
     values.update(overrides)
     return values
@@ -66,6 +68,7 @@ def test_user_roles_sessions_and_last_admin_protection(tmp_path: Path) -> None:
         role="manager",
         preferences=preferences(),
         actor=recovery,
+        email="manager@example.com",
     )
     admin_session = auth.authenticate("FIRST.ADMIN", "Admin password 47!")
     assert admin_session is not None
@@ -206,12 +209,10 @@ async def test_incoming_push_never_delays_the_call_and_contains_no_customer_pii(
     notifier = TeamNotifier(settings, database)
     gate = asyncio.Event()
 
-    async def slow_publish(call_id: int, state: IntakeState, kind: str) -> int:
-        records = database.create_user_notifications(event_key="privacy-test", kind=kind, title="Incoming Floodman call", body="Open the secure dashboard for details.", url=f"/calls/{call_id}", call_id=call_id)
+    async def slow_send(records: list[dict[str, object]]) -> None:
         await gate.wait()
-        return len(records)
 
-    monkeypatch.setattr(notifier.web_push, "publish_call", slow_publish)
+    monkeypatch.setattr(notifier.web_push, "send_records", slow_send)
     state = IntakeState(call_uuid="privacy-call", name="Sensitive Customer", phone="+12315550100")
     call_id = database.create_call(state)
     assert await asyncio.wait_for(notifier.call_started(call_id, state), timeout=.1) == 0
@@ -248,8 +249,10 @@ def test_recovery_bootstrap_and_named_login_routes(tmp_path: Path, monkeypatch: 
             "csrf_token": csrf.group(1),
             "username": "portal.admin",
             "display_name": "Portal Admin",
+            "email": "portal.admin@example.com",
             "password": "Portal password 47!",
             "role": "admin",
+            "email_notifications": "on",
             "notify_new_calls": "on",
             "notify_completed_calls": "on",
             "notify_emergencies": "on",
@@ -290,6 +293,7 @@ def test_recovery_bootstrap_and_named_login_routes(tmp_path: Path, monkeypatch: 
         "/users",
         "/users?edit=1",
         "/profile",
+        "/email-settings",
         "/knowledge",
         "/service-area",
         "/notifications",
@@ -300,3 +304,110 @@ def test_recovery_bootstrap_and_named_login_routes(tmp_path: Path, monkeypatch: 
     ):
         response = client.get(path)
         assert response.status_code == 200, path
+
+
+@pytest.mark.asyncio
+async def test_email_settings_persist_mask_secrets_and_send(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    settings = Settings.from_env()
+    service = EmailService(settings)
+    configuration = service.configure(
+        {
+            "enabled": True,
+            "host": "smtp.example.com",
+            "port": 587,
+            "security": "starttls",
+            "username": "mailer@example.com",
+            "password": "provider-secret",
+            "from_email": "notifications@example.com",
+            "from_name": "Floodman Alerts",
+            "timeout_seconds": 8,
+        }
+    )
+    assert configuration.configured
+    assert service.configuration.public_dict()["password_configured"] is True
+    assert "password" not in service.configuration.public_dict()
+    assert "provider-secret" not in json.dumps(service.configuration.public_dict())
+
+    sent: list[tuple[str, str, str]] = []
+
+    def capture_send(current, recipient: str, subject: str, body: str) -> None:
+        assert current.password == "provider-secret"
+        sent.append((recipient, subject, body))
+
+    monkeypatch.setattr(service, "_send_sync", capture_send)
+    status, response = await service.send("manager@example.com", "Call ready", "Open the dashboard")
+    assert status == "sent" and "accepted" in response.lower()
+    assert sent == [("manager@example.com", "Call ready", "Open the dashboard")]
+
+    restarted = EmailService(settings)
+    assert restarted.configuration.password == "provider-secret"
+    restarted.configure({**restarted.configuration.public_dict(), "password": "", "port": 465, "security": "tls"})
+    assert restarted.configuration.password == "provider-secret" and restarted.configuration.port == 465
+
+
+@pytest.mark.asyncio
+async def test_email_call_alerts_are_permission_scoped_idempotent_and_nonblocking(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    settings = Settings.from_env()
+    database = Database(settings.database_path)
+    enabled_preferences = preferences(email_notifications=True)
+    allowed_id = database.create_user(
+        "email.on", "Email On", "hash", "manager", enabled_preferences, None, "allowed@example.com"
+    )
+    database.create_user(
+        "email.off",
+        "Email Off",
+        "hash",
+        "viewer",
+        preferences(email_notifications=False),
+        allowed_id,
+        "disabled@example.com",
+    )
+    database.create_user(
+        "event.off",
+        "Event Off",
+        "hash",
+        "admin",
+        preferences(email_notifications=True, notify_completed_calls=False),
+        allowed_id,
+        "quiet@example.com",
+    )
+    notifier = TeamNotifier(settings, database)
+    gate = asyncio.Event()
+    delivered: list[tuple[str, str, str]] = []
+
+    async def slow_email(recipient: str, subject: str, body: str) -> tuple[str, str]:
+        delivered.append((recipient, subject, body))
+        await gate.wait()
+        return "sent", "accepted"
+
+    monkeypatch.setattr(notifier.email, "send", slow_email)
+    state = IntakeState(
+        call_uuid="email-call",
+        name="Customer Name",
+        phone="+12315550100",
+        address="1 Main Street",
+        description="Water in basement",
+    )
+    call_id = database.create_call(state)
+    count = await asyncio.wait_for(
+        notifier.send(call_id, state, kind="completed_intake", partial=False),
+        timeout=.1,
+    )
+    assert count == 3  # Two in-app records and one permission-scoped email.
+    assert await notifier.send(call_id, state, kind="completed_intake", partial=False) == 0
+    await asyncio.sleep(0)
+    attempts = database.get_call(call_id)["notifications"]
+    assert [(item["channel"], item["recipient"], item["status"]) for item in attempts] == [
+        ("email", "allowed@example.com", "queued")
+    ]
+    for _ in range(10):
+        if delivered:
+            break
+        await asyncio.sleep(0)
+    gate.set()
+    await notifier.stop()
+    assert delivered[0][0] == "allowed@example.com"
+    assert "Customer Name" in delivered[0][2] and "/calls/" in delivered[0][2]
+    assert database.get_call(call_id)["notifications"][0]["status"] == "sent"

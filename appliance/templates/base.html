@@ -32,6 +32,7 @@
         {% if principal.is_admin %}
         <div class="nav-label">Administration</div>
         <a href="/users" class="{{ 'active' if section == 'users' else '' }}"><span aria-hidden="true">◎</span> Users</a>
+        <a href="/email-settings" class="{{ 'active' if section == 'email-settings' else '' }}"><span aria-hidden="true">✉</span> Email delivery</a>
         <a href="/voice" class="{{ 'active' if section == 'voice' else '' }}"><span aria-hidden="true">◖</span> Voice</a>
         <a href="/audit" class="{{ 'active' if section == 'audit' else '' }}"><span aria-hidden="true">≡</span> Audit log</a>
         {% endif %}

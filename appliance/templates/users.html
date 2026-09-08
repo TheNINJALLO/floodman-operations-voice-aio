@@ -7,7 +7,7 @@
   <section class="panel">
     <div class="panel-heading"><div><h2>Team members</h2><p>{{ users | length }} account{{ '' if users | length == 1 else 's' }}</p></div><label class="search-box"><span>⌕</span><input type="search" placeholder="Search users" data-table-search="users-table"></label></div>
     <div class="table-wrap"><table id="users-table"><thead><tr><th>User</th><th>Role</th><th>Status</th><th>Alerts</th><th>Last sign-in</th><th></th></tr></thead><tbody>
-      {% for user in users %}<tr><td><div class="identity-cell"><span class="avatar small-avatar">{{ user.display_name[0] | upper }}</span><span><strong>{{ user.display_name }}</strong><small>@{{ user.username }}</small></span></div></td><td><span class="status info">{{ user.role | title }}</span></td><td><span class="status {{ 'success' if user.active else 'neutral' }}">{{ 'Active' if user.active else 'Inactive' }}</span></td><td>{{ user.push_devices }} device{{ '' if user.push_devices == 1 else 's' }}</td><td class="js-date">{{ user.last_login_at or 'Never' }}</td><td><a class="row-action" href="/users?edit={{ user.id }}" aria-label="Edit {{ user.username }}">→</a></td></tr>
+      {% for user in users %}<tr><td><div class="identity-cell"><span class="avatar small-avatar">{{ user.display_name[0] | upper }}</span><span><strong>{{ user.display_name }}</strong><small>@{{ user.username }}{% if user.email %} · {{ user.email }}{% endif %}</small></span></div></td><td><span class="status info">{{ user.role | title }}</span></td><td><span class="status {{ 'success' if user.active else 'neutral' }}">{{ 'Active' if user.active else 'Inactive' }}</span></td><td>{{ user.push_devices }} device{{ '' if user.push_devices == 1 else 's' }}{% if user.email_notifications and user.email %}<small>Email on</small>{% endif %}</td><td class="js-date">{{ user.last_login_at or 'Never' }}</td><td><a class="row-action" href="/users?edit={{ user.id }}" aria-label="Edit {{ user.username }}">→</a></td></tr>
       {% else %}<tr><td colspan="6"><div class="empty-state"><span>◎</span><h3>No named users yet</h3><p>Create the first administrator using the panel on this page.</p></div></td></tr>{% endfor %}
     </tbody></table></div>
   </section>
@@ -18,9 +18,11 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <label>Display name<input name="display_name" required maxlength="80" value="{{ selected.display_name }}"></label>
         <label>Username<input name="username" required minlength="3" maxlength="40" value="{{ selected.username }}"></label>
+        <label>Email address<input type="email" name="email" maxlength="320" value="{{ selected.email }}" placeholder="team@floodman.com"><small>Required only when email alerts are enabled.</small></label>
         <label>Role<select name="role"><option value="viewer" {{ 'selected' if selected.role == 'viewer' }}>Viewer — read only</option><option value="manager" {{ 'selected' if selected.role == 'manager' }}>Manager — edit operations</option><option value="admin" {{ 'selected' if selected.role == 'admin' }}>Administrator — full access</option></select></label>
         <fieldset><legend>Account status</legend><label class="check-field"><input type="checkbox" name="active" {{ 'checked' if selected.active }}><span><strong>Active account</strong><small>Inactive users cannot sign in.</small></span></label></fieldset>
         <fieldset><legend>Notification preferences</legend>
+          <label class="check-field"><input type="checkbox" name="email_notifications" {{ 'checked' if selected.email_notifications }}><span><strong>Email delivery</strong><small>Send selected call events to this user's email.</small></span></label>
           <label class="check-field"><input type="checkbox" name="notify_new_calls" {{ 'checked' if selected.notify_new_calls }}><span><strong>New calls</strong><small>Alert when a caller connects.</small></span></label>
           <label class="check-field"><input type="checkbox" name="notify_completed_calls" {{ 'checked' if selected.notify_completed_calls }}><span><strong>Completed intake</strong><small>Alert when intake is ready.</small></span></label>
           <label class="check-field"><input type="checkbox" name="notify_emergencies" {{ 'checked' if selected.notify_emergencies }}><span><strong>Emergency calls</strong><small>Alert on urgent safety events.</small></span></label>
@@ -36,10 +38,12 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <label>Display name<input name="display_name" required maxlength="80" placeholder="Jordan Smith"></label>
         <label>Username<input name="username" required minlength="3" maxlength="40" placeholder="jordan.smith"></label>
+        <label>Email address<input type="email" name="email" required maxlength="320" placeholder="jordan@floodman.com"></label>
         <label>Temporary password<input type="password" name="password" autocomplete="new-password" required minlength="12" placeholder="At least 12 characters"></label>
         <p class="help">Use at least three of: uppercase, lowercase, numbers, and symbols. Share it with the user through a secure channel.</p>
         <label>Role<select name="role"><option value="viewer">Viewer — read only</option><option value="manager">Manager — edit operations</option><option value="admin" {{ 'selected' if needs_first_admin }}>Administrator — full access</option></select></label>
         <fieldset><legend>Notification preferences</legend>
+          <label class="check-field"><input type="checkbox" name="email_notifications" checked><span><strong>Email delivery</strong><small>Send selected call events to this user's email.</small></span></label>
           <label class="check-field"><input type="checkbox" name="notify_new_calls" checked><span><strong>New calls</strong><small>Alert when a caller connects.</small></span></label>
           <label class="check-field"><input type="checkbox" name="notify_completed_calls" checked><span><strong>Completed intake</strong><small>Alert when intake is ready.</small></span></label>
           <label class="check-field"><input type="checkbox" name="notify_emergencies" checked><span><strong>Emergency calls</strong><small>Alert on urgent safety events.</small></span></label>

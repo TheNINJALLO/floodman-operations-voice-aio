@@ -8,6 +8,7 @@ import secrets
 from dataclasses import dataclass
 
 from app.db import Database
+from app.emailer import normalize_user_email
 
 
 USERNAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{2,39}$")
@@ -159,9 +160,13 @@ class AuthManager:
         role: str,
         preferences: dict[str, bool],
         actor: Principal,
+        email: str = "",
     ) -> int:
         if not actor.is_admin:
             raise PermissionError("Administrator access is required.")
+        email = normalize_user_email(email)
+        if preferences.get("email_notifications") and not email:
+            raise ValueError("An email address is required when email alerts are enabled.")
         return self.database.create_user(
             validate_username(username),
             str(display_name or "").strip()[:80] or validate_username(username),
@@ -169,6 +174,7 @@ class AuthManager:
             self._validate_role(role),
             preferences,
             actor.user_id,
+            email,
         )
 
     def update_user(
@@ -181,6 +187,7 @@ class AuthManager:
         active: bool,
         preferences: dict[str, bool],
         actor: Principal,
+        email: str = "",
     ) -> None:
         if not actor.is_admin:
             raise PermissionError("Administrator access is required.")
@@ -193,6 +200,9 @@ class AuthManager:
                 raise ValueError("At least one active administrator must remain.")
         if actor.user_id == user_id and not active:
             raise ValueError("You cannot deactivate your own account.")
+        email = normalize_user_email(email)
+        if preferences.get("email_notifications") and not email:
+            raise ValueError("An email address is required when email alerts are enabled.")
         self.database.update_user(
             user_id,
             validate_username(username),
@@ -200,6 +210,7 @@ class AuthManager:
             next_role,
             active,
             preferences,
+            email,
         )
 
     def set_password(self, user_id: int, password: str, actor: Principal) -> None:

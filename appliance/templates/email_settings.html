@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% set page_title = "Email delivery" %}
+{% set page_eyebrow = "Secure SMTP configuration and testing" %}
+{% block content %}
+<section class="page-heading">
+  <div><span class="eyebrow">Administration</span><h1>Email delivery</h1><p>Send permission-scoped call alerts to team accounts through your mail provider.</p></div>
+  <span class="health-pill {{ 'healthy' if email_config.configured else 'unhealthy' }}"><span></span>{{ 'Ready' if email_config.configured else 'Not configured' }}</span>
+</section>
+<div class="settings-grid">
+  <section class="panel">
+    <div class="panel-heading"><div><h2>SMTP connection</h2><p>Saved securely outside the container image and activated immediately.</p></div></div>
+    <form method="post" action="/email-settings" class="form-grid">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label class="check-field full-field"><input type="checkbox" name="enabled" {{ 'checked' if email_config.enabled }}><span><strong>Enable email delivery</strong><small>Call delivery continues even if the mail provider is unavailable.</small></span></label>
+      <label>SMTP host<input name="host" maxlength="255" value="{{ email_config.host }}" placeholder="smtp.example.com"></label>
+      <label>SMTP port<input type="number" name="port" min="1" max="65535" value="{{ email_config.port }}"></label>
+      <label>Connection security<select name="security"><option value="starttls" {{ 'selected' if email_config.security == 'starttls' }}>STARTTLS</option><option value="tls" {{ 'selected' if email_config.security == 'tls' }}>TLS from connection</option><option value="none" {{ 'selected' if email_config.security == 'none' }}>None — trusted relay only</option></select></label>
+      <label>Timeout in seconds<input type="number" name="timeout_seconds" min="3" max="30" step="1" value="{{ email_config.timeout_seconds }}"></label>
+      <label>SMTP username<input name="username" maxlength="320" autocomplete="off" value="{{ email_config.username }}" placeholder="Usually your sender email"></label>
+      <label>SMTP password<input type="password" name="password" maxlength="1024" autocomplete="new-password" placeholder="{{ 'Saved — leave blank to keep' if email_config.password_configured else 'Provider password or app password' }}"></label>
+      <label>Sender email<input type="email" name="from_email" maxlength="320" value="{{ email_config.from_email }}" placeholder="notifications@floodman.com"></label>
+      <label>Sender name<input name="from_name" maxlength="120" value="{{ email_config.from_name }}"></label>
+      <div class="form-actions full-field"><button class="button primary" type="submit">Save and activate</button></div>
+    </form>
+  </section>
+  <aside class="panel">
+    <div class="panel-heading"><div><h2>Delivery test</h2><p>Verify provider acceptance before enabling user alerts.</p></div></div>
+    <form method="post" action="/email-settings/test" class="form-stack panel-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Test recipient<input type="email" name="recipient" required maxlength="320" placeholder="you@floodman.com"></label>
+      <button class="button secondary full" type="submit">Send test email</button>
+      <p class="help">A successful test means the SMTP server accepted the message. Final inbox placement remains controlled by your mail provider.</p>
+    </form>
+    <div class="info-note"><strong>Permission routing</strong><p>Only active users with a valid email, email delivery enabled, and permission for the selected call event receive messages. Passwords are never returned to the browser.</p></div>
+  </aside>
+</div>
+{% endblock %}

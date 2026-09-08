@@ -26,7 +26,7 @@ Intake order:
 6. Email and one-field confirmation
 7. Phone and one-field confirmation
 8. Address and one-field confirmation
-9. Team SMS and the 24-hour callback message
+9. Team SMS, permission-scoped email/browser notifications, and the 24-hour callback message
 
 Unsupported work is still collected and sent. A hangup sends whatever was recovered. Immediate electrical, sewage, rising-water, gas, or structural danger triggers emergency notification and an optional transfer.
 
@@ -81,11 +81,14 @@ The startup environment parser validates the whole file before changing it. Brok
 - Editable approved knowledge documents and service-area cities
 - Live selection and preview of installed American and British English voices, with persisted speaking speed
 - Per-user notification preferences, in-app notifications, and Web Push alerts
+- Per-user email destinations, permission-scoped SMTP call alerts, provider testing, and channel delivery history
 - Local conversation simulator, model readiness, audit history, and bounded log tails
 
 The original `ADMIN_TOKEN` remains a short-lived recovery path and is not a day-to-day account. Passwords are salted and one-way hashed; changing a password revokes that user's sessions. Administrative changes are written to the audit log.
 
 Browser push requires the public panel to use HTTPS. Each team member signs in on their own device, opens **Notifications**, and chooses **Enable alerts**. Permission is controlled by the browser and can be revoked there at any time. Push previews intentionally contain no caller name, phone number, address, or project details; those remain behind authenticated access.
+
+Email delivery is configured by an administrator under **Email delivery**. SMTP passwords are persisted with restricted file permissions in `DATA_DIR/email-settings.json`, never returned to the browser, and can be bootstrapped from the `SMTP_*` environment variables. Each active user supplies a unique email address and chooses both the email channel and the call-event types they are permitted to receive. New-call messages contain only a secure portal link; completed, emergency, transfer, and partial-call emails contain the recovered intake summary and link to the authenticated call workspace. SMTP and SMS run outside the live conversation path.
 
 Administrators can open **Voice**, choose any English voice installed in the Kokoro bundle, adjust the speed, and generate a local preview before saving. The selection is stored in `DATA_DIR/voice-settings.json` and takes precedence over the environment default after restart. The portal refuses to start voice previews or changes while it detects a live phone call.
 
@@ -112,7 +115,7 @@ PUBLIC_IP
 TWILIO_PHONE_NUMBER
 ```
 
-Transfers are placed through the same trunk. Team SMS can use an Account SID/Auth Token or Twilio API key pair.
+Transfers are placed through the same trunk. Team SMS can use an Account SID/Auth Token or Twilio API key pair. Team email supports authenticated or trusted-relay SMTP with STARTTLS, direct TLS, or an explicitly selected unencrypted private relay.
 
 ## Migration from Floodman Operations Voice AIO
 
