@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.audiosocket import AudioSocketServer, TYPE_AUDIO, TYPE_HANGUP, TYPE_UUID
+from app.audiosocket import AudioSocketConnection, AudioSocketServer, TYPE_AUDIO, TYPE_HANGUP, TYPE_UUID
 
 
 class FakeDatabase:
@@ -67,7 +67,33 @@ def settings():
         vad_energy_threshold=325,
         minimum_speech_ms=160,
         maximum_utterance_seconds=1,
+        barge_in_enabled=True,
+        barge_in_min_speech_ms=160,
+        barge_in_energy_threshold=325,
+        barge_in_preroll_ms=240,
     )
+
+
+class BufferWriter:
+    def __init__(self):
+        self.frames: list[bytes] = []
+
+    def write(self, payload: bytes) -> None:
+        self.frames.append(payload)
+
+    async def drain(self) -> None:
+        return None
+
+    def close(self) -> None:
+        return None
+
+    async def wait_closed(self) -> None:
+        return None
+
+
+def audio_frame(sample: int, milliseconds: int = 20) -> bytes:
+    payload = int(sample).to_bytes(2, "little", signed=True) * int(8000 * milliseconds / 1000)
+    return bytes([TYPE_AUDIO]) + struct.pack("!H", len(payload)) + payload
 
 
 async def connect(server: AudioSocketServer):
@@ -123,3 +149,74 @@ async def test_audiosocket_records_technical_failure_action() -> None:
     writer.close()
     await writer.wait_closed()
     await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_caller_speech_interrupts_playback_and_is_preserved() -> None:
+    reader = asyncio.StreamReader()
+    writer = BufferWriter()
+    connection = AudioSocketConnection(reader, writer, settings())
+    connection.reader_task = asyncio.create_task(connection._reader_loop())
+    playback = asyncio.create_task(connection.speak(b"\x00\x00" * 8000))
+
+    while len(writer.frames) < 3:
+        await asyncio.sleep(0.01)
+    for _ in range(10):
+        reader.feed_data(audio_frame(1200))
+    for _ in range(6):
+        reader.feed_data(audio_frame(0))
+
+    assert await asyncio.wait_for(playback, timeout=1) is True
+    captured = await asyncio.wait_for(connection.utterance(contact=False), timeout=1)
+    assert captured
+    assert len(captured) >= 10 * 320
+    assert len(writer.frames) < 50
+
+    reader.feed_data(bytes([TYPE_HANGUP, 0, 0]))
+    await asyncio.wait_for(connection.reader_task, timeout=1)
+    await connection.close()
+
+
+@pytest.mark.asyncio
+async def test_line_noise_does_not_interrupt_playback() -> None:
+    reader = asyncio.StreamReader()
+    writer = BufferWriter()
+    connection = AudioSocketConnection(reader, writer, settings())
+    connection.reader_task = asyncio.create_task(connection._reader_loop())
+    playback = asyncio.create_task(connection.speak(b"\x00\x00" * 3200))
+
+    while len(writer.frames) < 3:
+        await asyncio.sleep(0.01)
+    for _ in range(12):
+        reader.feed_data(audio_frame(100))
+
+    assert await asyncio.wait_for(playback, timeout=1) is False
+    assert len(writer.frames) == 20
+
+    reader.feed_data(bytes([TYPE_HANGUP, 0, 0]))
+    await asyncio.wait_for(connection.reader_task, timeout=1)
+    await connection.close()
+
+
+@pytest.mark.asyncio
+async def test_speech_queued_during_processing_is_not_cleared_before_playback() -> None:
+    reader = asyncio.StreamReader()
+    writer = BufferWriter()
+    connection = AudioSocketConnection(reader, writer, settings())
+    connection.reader_task = asyncio.create_task(connection._reader_loop())
+
+    for _ in range(10):
+        reader.feed_data(audio_frame(1200))
+    for _ in range(6):
+        reader.feed_data(audio_frame(0))
+    await asyncio.sleep(0.05)
+    assert connection.queue.qsize() >= 10
+
+    assert await connection.speak(b"\x00\x00" * 3200) is True
+    assert writer.frames == []
+    captured = await asyncio.wait_for(connection.utterance(contact=False), timeout=1)
+    assert captured and len(captured) >= 10 * 320
+
+    reader.feed_data(bytes([TYPE_HANGUP, 0, 0]))
+    await asyncio.wait_for(connection.reader_task, timeout=1)
+    await connection.close()

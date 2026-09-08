@@ -589,6 +589,46 @@
             "field_type": "text"
         },
         {
+            "name": "Caller Barge-In",
+            "description": "Let callers interrupt playback and preserve what they say",
+            "env_variable": "BARGE_IN_ENABLED",
+            "default_value": "true",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "Barge-In Speech Time",
+            "description": "Voiced milliseconds required before interrupting playback",
+            "env_variable": "BARGE_IN_MIN_SPEECH_MS",
+            "default_value": "160",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|integer|min:80|max:1000",
+            "field_type": "text"
+        },
+        {
+            "name": "Barge-In Energy",
+            "description": "Audio energy required to distinguish caller speech from line noise",
+            "env_variable": "BARGE_IN_ENERGY_THRESHOLD",
+            "default_value": "325",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|integer|min:100|max:5000",
+            "field_type": "text"
+        },
+        {
+            "name": "Barge-In Pre-Roll",
+            "description": "Milliseconds retained from the beginning of an interruption",
+            "env_variable": "BARGE_IN_PREROLL_MS",
+            "default_value": "240",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|integer|min:0|max:1000",
+            "field_type": "text"
+        },
+        {
             "name": "Log Level",
             "description": "Application log level",
             "env_variable": "LOG_LEVEL",

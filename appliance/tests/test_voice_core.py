@@ -70,3 +70,32 @@ async def test_spelled_email_confirmation_does_not_say_dash(tmp_path,project_roo
 
 def test_greeting_uses_concise_floodman_introduction():
     assert VoiceCore.greeting() == "Hello. This is Alex with Floodman. How may I help you today?"
+
+
+@pytest.mark.asyncio
+async def test_volunteered_home_context_skips_redundant_question(tmp_path,project_root,monkeypatch):
+    s=settings(tmp_path,project_root,monkeypatch);db=Database(s.database_path);notifier=StubNotifier();core=VoiceCore(s,db,BusinessDirectory(s.service_area_path),KnowledgeBase(project_root/"knowledge"),StubLLM(),notifier)
+    session=core.create_session("natural-home")
+
+    reply=await core.process(session,"I have mold in my house")
+
+    assert session.state.property_context=="Residential property"
+    assert session.state.stage=="timing_summary"
+    assert "home or a business" not in reply.text.lower()
+    assert reply.text.startswith("Got it.")
+    assert "mold or musty conditions" in reply.text
+
+
+@pytest.mark.asyncio
+async def test_no_input_waits_before_safe_callback_fallback(tmp_path,project_root,monkeypatch):
+    s=settings(tmp_path,project_root,monkeypatch);db=Database(s.database_path);notifier=StubNotifier();core=VoiceCore(s,db,BusinessDirectory(s.service_area_path),KnowledgeBase(project_root/"knowledge"),StubLLM(),notifier)
+    session=core.create_session("patient-no-input")
+
+    first=await core.no_input(session)
+    second=await core.no_input(session)
+    third=await core.no_input(session)
+
+    assert "wait a moment" in first.text.lower() and not first.end_call
+    assert "say hello" in second.text.lower() and not second.end_call
+    assert third.end_call
+    assert notifier.calls[-1][0]=="partial_no_input"

@@ -33,6 +33,10 @@ class AudioSocketConnection:
         self.closed = False
         self.reader_task: asyncio.Task | None = None
         self.close_reason = "open"
+        self.barge_in_event = asyncio.Event()
+        self._barge_audio = bytearray()
+        self._barge_voiced_ms = 0.0
+        self._barge_silence_ms = 0.0
 
     async def read_frame(self) -> tuple[int, bytes]:
         header = await self.reader.readexactly(3)
@@ -54,9 +58,11 @@ class AudioSocketConnection:
                 if kind == TYPE_HANGUP:
                     self.close_reason = "asterisk_hangup_frame"
                     break
-                if kind == TYPE_AUDIO and payload and not self.output_active:
-                    with contextlib.suppress(asyncio.QueueFull):
-                        self.queue.put_nowait(payload)
+                if kind == TYPE_AUDIO and payload:
+                    if self.output_active and self.settings.barge_in_enabled:
+                        self._capture_barge_in(payload)
+                    elif not self.output_active:
+                        self._queue_audio(payload)
                 elif kind == TYPE_ERROR:
                     self.close_reason = "asterisk_error_frame"
                     logger.warning("call_event stage=audiosocket_error code=%s", payload.hex())
@@ -72,6 +78,72 @@ class AudioSocketConnection:
             with contextlib.suppress(asyncio.QueueFull):
                 self.queue.put_nowait(None)
 
+    def _queue_audio(self, payload: bytes) -> None:
+        with contextlib.suppress(asyncio.QueueFull):
+            self.queue.put_nowait(payload)
+
+    @staticmethod
+    def _duration_ms(payload: bytes) -> float:
+        return (len(payload) / 2 / 8000) * 1000
+
+    def _reset_barge_in(self) -> None:
+        self._barge_audio.clear()
+        self._barge_voiced_ms = 0.0
+        self._barge_silence_ms = 0.0
+
+    def _capture_barge_in(self, payload: bytes) -> None:
+        if self.barge_in_event.is_set():
+            self._queue_audio(payload)
+            return
+
+        duration_ms = self._duration_ms(payload)
+        self._barge_audio.extend(payload)
+        retained_ms = self.settings.barge_in_preroll_ms + self.settings.barge_in_min_speech_ms
+        maximum_bytes = max(2, int(8000 * 2 * retained_ms / 1000))
+        if len(self._barge_audio) > maximum_bytes:
+            del self._barge_audio[: len(self._barge_audio) - maximum_bytes]
+
+        energy = rms(payload)
+        if energy >= self.settings.barge_in_energy_threshold:
+            self._barge_voiced_ms += duration_ms
+            self._barge_silence_ms = 0.0
+        elif self._barge_voiced_ms:
+            self._barge_silence_ms += duration_ms
+            if self._barge_silence_ms > 120:
+                self._barge_voiced_ms = 0.0
+                self._barge_silence_ms = 0.0
+
+        if self._barge_voiced_ms >= self.settings.barge_in_min_speech_ms:
+            buffered = bytes(self._barge_audio)
+            self._reset_barge_in()
+            self.barge_in_event.set()
+            self._queue_audio(buffered)
+            logger.info(
+                "call_event stage=barge_in_detected energy=%d buffered_audio_bytes=%d",
+                energy,
+                len(buffered),
+            )
+
+    def _queued_speech_waiting(self) -> bool:
+        """Preserve speech received while the previous turn was being processed."""
+        frames: list[bytes] = []
+        while True:
+            try:
+                frame = self.queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            if frame is None:
+                continue
+            frames.append(frame)
+
+        for frame in frames:
+            self._capture_barge_in(frame)
+
+        if self.barge_in_event.is_set():
+            logger.info("call_event stage=queued_barge_in_detected buffered_frames=%d", len(frames))
+            return True
+        return False
+
     async def clear_audio(self) -> None:
         while True:
             try:
@@ -79,20 +151,33 @@ class AudioSocketConnection:
             except asyncio.QueueEmpty:
                 return
 
-    async def speak(self, pcm16le: bytes) -> None:
+    async def speak(self, pcm16le: bytes) -> bool:
         if not pcm16le or self.closed:
-            return
+            return False
+        self.barge_in_event.clear()
+        self._reset_barge_in()
+        if self.settings.barge_in_enabled and self._queued_speech_waiting():
+            return True
         self.output_active = True
         await self.clear_audio()
+        interrupted = False
         try:
             for chunk in chunk_pcm(pcm16le, 8000, 20):
+                if self.closed or self.barge_in_event.is_set():
+                    interrupted = self.barge_in_event.is_set()
+                    break
                 self.writer.write(bytes([TYPE_AUDIO]) + struct.pack("!H", len(chunk)) + chunk)
                 await self.writer.drain()
                 await asyncio.sleep(0.020)
         finally:
-            await asyncio.sleep(max(0, self.settings.post_tts_guard_ms) / 1000)
-            await self.clear_audio()
+            if not interrupted:
+                await asyncio.sleep(max(0, self.settings.post_tts_guard_ms) / 1000)
+                interrupted = self.barge_in_event.is_set()
+            if not interrupted:
+                await self.clear_audio()
+                self._reset_barge_in()
             self.output_active = False
+        return interrupted
 
     async def utterance(self, *, contact: bool) -> bytes | None:
         endpoint_ms = self.settings.contact_endpoint_silence_ms if contact else self.settings.endpoint_silence_ms
@@ -191,8 +276,12 @@ class AudioSocketServer:
                 len(greeting_audio),
             )
             logger.info("call_event call_uuid=%s stage=first_greeting_frame", call_uuid)
-            await connection.speak(greeting_audio)
-            logger.info("call_event call_uuid=%s stage=last_greeting_frame", call_uuid)
+            greeting_interrupted = await connection.speak(greeting_audio)
+            logger.info(
+                "call_event call_uuid=%s stage=last_greeting_frame interrupted=%s",
+                call_uuid,
+                greeting_interrupted,
+            )
             while not connection.closed:
                 audio = await connection.utterance(contact=contact_endpoint_stage(session.state.stage))
                 if audio is None:
@@ -233,7 +322,12 @@ class AudioSocketServer:
                     len(response_audio),
                 )
                 logger.info("call_event call_uuid=%s stage=first_response_frame", call_uuid)
-                await connection.speak(response_audio)
+                response_interrupted = await connection.speak(response_audio)
+                logger.info(
+                    "call_event call_uuid=%s stage=last_response_frame interrupted=%s",
+                    call_uuid,
+                    response_interrupted,
+                )
                 if reply.transfer_number:
                     self.registry.write_action(call_uuid, "transfer", reply.transfer_number, "assistant_transfer")
                     outcome = "transfer"

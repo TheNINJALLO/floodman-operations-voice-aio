@@ -77,6 +77,17 @@ def normalize_confirmation(value: Any) -> str:
     return ""
 
 
+def classify_property_context(value: Any) -> str:
+    text = normalized(value)
+    residential = ("home", "house", "residential", "my residence", "homeowner")
+    managed = ("business", "commercial", "office", "store", "rental property", "property manager")
+    if any(term in text for term in residential):
+        return "Residential property"
+    if any(term in text for term in managed):
+        return "Commercial or managed property"
+    return ""
+
+
 def normalize_phone(value: Any, *, default_country: str = "1") -> str:
     digits = re.sub(r"\D", "", str(value or ""))
     if len(digits) == 10:

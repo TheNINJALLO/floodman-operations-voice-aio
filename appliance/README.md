@@ -136,6 +136,14 @@ pip install -e '.[dev]'
 pytest -q
 ```
 
+### Natural turn-taking
+
+Caller barge-in is enabled by default. While Alex is speaking, sustained caller
+speech stops further playback and the complete buffered answer is sent to local
+speech recognition. `BARGE_IN_MIN_SPEECH_MS`, `BARGE_IN_ENERGY_THRESHOLD`, and
+`BARGE_IN_PREROLL_MS` can be tuned for unusually noisy telephone lines without
+exposing AudioSocket or speech services publicly.
+
 The repository tests deterministic intake, confirmations, unsupported work, emergency routing, account authorization, browser-notification privacy, service-area and knowledge editing, database cascades, environment parsing, Asterisk rendering, and the one-unit GPU contract.
 
 ## Production acceptance checklist

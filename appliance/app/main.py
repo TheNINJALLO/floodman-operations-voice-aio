@@ -84,7 +84,7 @@ class Runtime:
         await self.tts.warm(
             (
                 self.core.greeting(),
-                "I didn't catch that. Please say it once more.",
+                "Are you still there? I can wait a moment.",
                 "What name should I put this under?",
                 "What's the best email for you? You can say skip.",
                 "What's the full service address?",

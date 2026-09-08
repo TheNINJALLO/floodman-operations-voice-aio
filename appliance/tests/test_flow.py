@@ -7,3 +7,10 @@ def test_short_prompts():
     assert confirmation_question(state, "name") == "Josh Aldrich, right?"
     assert "recorded" not in confirmation_question(state, "email").lower()
     assert contact_endpoint_stage("address")
+
+
+def test_timing_question_uses_known_service_context():
+    state = IntakeState(call_uuid="mold", stage="timing_summary", service_key="mold_remediation")
+    assert collection_question(state) == "When did you first notice the mold or musty conditions?"
+    state.service_key = "water_damage_restoration"
+    assert "actively coming in" in collection_question(state)

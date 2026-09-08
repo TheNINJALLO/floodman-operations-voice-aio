@@ -13,6 +13,14 @@ def collection_question(state: IntakeState) -> str:
     if stage == "property_context":
         return "Is this a home or a business?"
     if stage == "timing_summary":
+        if state.service_key == "mold_remediation":
+            return "When did you first notice the mold or musty conditions?"
+        if state.service_key == "water_damage_restoration":
+            return "Is water actively coming in now, or when did this start?"
+        if state.service_key == "foundation_repair":
+            return "When did you first notice the foundation issue?"
+        if state.service_key == "sump_pump_and_drainage":
+            return "When did the pump or drainage problem start?"
         return "When did this start?"
     if stage == "safety_summary":
         return "Any electrical, sewage, or other safety concerns?"
