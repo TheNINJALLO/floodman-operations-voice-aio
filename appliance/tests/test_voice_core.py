@@ -56,3 +56,13 @@ async def test_partial_notification_is_idempotent_at_core_level(tmp_path,project
     await core.process(session,"wet crawl space")
     await core.disconnect(session)
     assert notifier.calls and notifier.calls[-1][1] is True
+
+
+@pytest.mark.asyncio
+async def test_spelled_email_confirmation_does_not_say_dash(tmp_path,project_root,monkeypatch):
+    s=settings(tmp_path,project_root,monkeypatch);db=Database(s.database_path);notifier=StubNotifier();core=VoiceCore(s,db,BusinessDirectory(s.service_area_path),KnowledgeBase(project_root/"knowledge"),StubLLM(),notifier)
+    session=core.create_session("spelled-email")
+    session.state.stage="email"
+    reply=await core.process(session,"j-o-s-h at example dot com")
+    assert session.state.email=="josh@example.com"
+    assert "dash" not in reply.text.lower()

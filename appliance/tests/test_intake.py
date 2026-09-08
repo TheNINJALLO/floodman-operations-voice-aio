@@ -10,3 +10,14 @@ def test_contact_normalizers():
     assert normalize_phone("231 884 0943") == "+12318840943"
     assert normalize_confirmation("Yes, that's right") == "yes"
     assert normalize_confirmation("No, wrong") == "no"
+
+
+def test_spelled_email_hyphens_are_treated_as_recognition_separators():
+    assert normalize_email("j-o-s-h at example dot com") == "josh@example.com"
+    assert normalize_email("j - o - s - h at example dot com") == "josh@example.com"
+
+
+def test_real_email_hyphens_are_preserved():
+    assert normalize_email("mary-jane at example dot com") == "mary-jane@example.com"
+    assert normalize_email("mary dash jane at example dot com") == "mary-jane@example.com"
+    assert normalize_email("mary hyphen jane at example dot com") == "mary-jane@example.com"
