@@ -229,7 +229,7 @@ def main() -> int:
     exten => s,1,NoOp(Floodman Voice Appliance inbound call)
      same => n,Answer()
      same => n,Set(TIMEOUT(absolute)=1800)
-     same => n,Set(__FLOODMAN_CALL_ID=${{UUID()}})
+     same => n,Set(__FLOODMAN_CALL_ID=${{SHELL(head -c 36 /proc/sys/kernel/random/uuid)}})
      same => n,Set(__FLOODMAN_CHANNEL_ID=${{CHANNEL(uniqueid)}})
      same => n,Set(__FLOODMAN_SIP_CALL_ID=${{PJSIP_HEADER(read,Call-ID)}})
      same => n,Log(NOTICE,FLOODMAN_CALL stage=answered call_uuid=${{FLOODMAN_CALL_ID}} channel_id=${{FLOODMAN_CHANNEL_ID}} sip_call_id=${{FLOODMAN_SIP_CALL_ID}} caller=${{CALLERID(num)}} called=${{FLOODMAN_DID}})

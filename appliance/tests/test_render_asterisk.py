@@ -46,7 +46,11 @@ def test_asterisk_renderer(
 
     assert f"astmoddir => {module_dir}" in asterisk
     assert "TryExec(AudioSocket" in extensions
-    assert "Set(__FLOODMAN_CALL_ID=${UUID()})" in extensions
+    assert (
+        "Set(__FLOODMAN_CALL_ID=${SHELL(head -c 36 "
+        "/proc/sys/kernel/random/uuid)})"
+    ) in extensions
+    assert "${UUID()}" not in extensions
     assert "SHELL(cat /proc/sys/kernel/random/uuid)" not in extensions
     assert "agi_prepare.py" in extensions
     assert "agi_finish.py" in extensions
