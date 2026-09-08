@@ -45,8 +45,8 @@ jobs:
               raise SystemExit('Pterodactyl egg synchronization failed')
 
           variables = root_data.get('variables', [])
-          if len(variables) != 64:
-              raise SystemExit(f'Expected 64 egg variables, found {len(variables)}')
+          if len(variables) != 68:
+              raise SystemExit(f'Expected 68 egg variables, found {len(variables)}')
 
           required = {
               'CALL_RECORDING_ENABLED',
