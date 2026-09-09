@@ -13,6 +13,7 @@ def test_unified_image_runs_voice_and_business_suite_on_distinct_ports(project_r
     assert "WEB_PORT=8802" in entrypoint
     assert "BUSINESS_SUITE_EVENTS_URL=\"http://127.0.0.1:9004/" in entrypoint
     assert "export VIRTUAL_ENV=/opt/voice-venv" in entrypoint
+    assert 'export TZ="${FLOODMAN_TIMEZONE:-America/Detroit}"' in entrypoint
     assert "readonly PYTHON_BIN=/opt/voice-venv/bin/python" in entrypoint
     assert "/opt/python312/bin" in entrypoint
     assert 'VIRTUAL_ENV="${VIRTUAL_ENV:-/opt/voice-venv}"' not in entrypoint
@@ -107,6 +108,7 @@ def test_unified_image_runs_voice_and_business_suite_on_distinct_ports(project_r
     assert "location ^~ /mobile-api/" in gateway
     assert "proxy_pass http://127.0.0.1:8700" in gateway
     assert "listen 0.0.0.0:9004" in gateway
+    assert "absolute_redirect off" in gateway
     assert "proxy_pass http://127.0.0.1:8701" in gateway
 
     orchestrator_start = (project_root / "unified" / "start-orchestrator-api.sh").read_text(encoding="utf-8")

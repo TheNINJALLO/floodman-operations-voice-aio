@@ -32,11 +32,13 @@ grep -Fq 'root /home/container/runtime/gauzy-web-active;' /opt/floodman/aio/ngin
 grep -Fq 'location ^~ /mobile-api/' /opt/floodman/unified/gateway-nginx.conf
 grep -Fq 'proxy_pass http://127.0.0.1:8700;' /opt/floodman/unified/gateway-nginx.conf
 grep -Fq 'listen 0.0.0.0:9004;' /opt/floodman/unified/gateway-nginx.conf
+grep -Fq 'absolute_redirect off;' /opt/floodman/unified/gateway-nginx.conf
 grep -Fq 'proxy_pass http://127.0.0.1:8701;' /opt/floodman/unified/gateway-nginx.conf
 ! grep -Fq 'nginx -e ' /opt/floodman/aio/start-hub.sh
 grep -Fq 'NoNewPrivs:[[:space:]]*1' /opt/floodman/unified/bin/initdb
 grep -Fq 'FLOODMAN_PTERODACTYL_ROOTLESS=1' /opt/floodman/unified/bin/postgres
 grep -Fq 'export VIRTUAL_ENV=/opt/voice-venv' /opt/floodman/scripts/entrypoint.sh
+grep -Fq 'export TZ="${FLOODMAN_TIMEZONE:-America/Detroit}"' /opt/floodman/scripts/entrypoint.sh
 grep -Fq 'readonly PYTHON_BIN=/opt/voice-venv/bin/python' /opt/floodman/scripts/entrypoint.sh
 grep -Fq '/opt/python312/bin' /opt/floodman/scripts/entrypoint.sh
 grep -Fq 'export APP_LOGO="${APP_LOGO:-${FLOODMAN_PUBLIC_URL}/floodman-brand/floodman-wordmark.svg}"' /opt/floodman/scripts/entrypoint.sh

@@ -2,6 +2,8 @@
 set -euo pipefail
 
 export DATA_DIR="${DATA_DIR:-/home/container/data}"
+export TZ="${FLOODMAN_TIMEZONE:-America/Detroit}"
+export DEFAULT_TIMEZONE="${DEFAULT_TIMEZONE:-${TZ}}"
 # The legacy Pterodactyl egg injects VIRTUAL_ENV=/opt/venv. That path belonged
 # to the old voice-only image and must not override the unified image runtime.
 export VIRTUAL_ENV=/opt/voice-venv
