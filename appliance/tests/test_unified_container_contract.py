@@ -106,6 +106,11 @@ def test_unified_image_runs_voice_and_business_suite_on_distinct_ports(project_r
     assert "server_name api.oninetwork.com" in gateway
     assert "location ^~ /mobile-api/" in gateway
     assert "proxy_pass http://127.0.0.1:8700" in gateway
+    assert "listen 0.0.0.0:9004" in gateway
+    assert "proxy_pass http://127.0.0.1:8701" in gateway
+
+    orchestrator_start = (project_root / "unified" / "start-orchestrator-api.sh").read_text(encoding="utf-8")
+    assert "--host 127.0.0.1 --port 8701" in orchestrator_start
 
 
 def test_unified_mutable_paths_resolve_under_data_dir(project_root: Path):
