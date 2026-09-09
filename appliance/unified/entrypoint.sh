@@ -1,37 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Wings can override the image USER and launch the process as namespace root.
-# Drop to the image's numeric account before touching persistent data;
-# PostgreSQL intentionally refuses to initialize as root.  Use setpriv instead
-# of runuser: a failed identity handoff must stop, never recurse into an
-# unbounded process tree on a panel-managed container.
-if [[ "$(id -u)" == "0" ]]; then
-  if [[ "${FLOODMAN_PRIVILEGE_DROP_ATTEMPTED:-}" == "1" ]]; then
-    echo "Floodman refused a repeated root privilege handoff." >&2
-    exit 1
-  fi
-  root_data_dir="${DATA_DIR:-/home/container/data}"
-  if [[ "${root_data_dir}" != "/home/container/data" ]]; then
-    echo "Floodman refused ownership repair outside /home/container/data." >&2
-    exit 1
-  fi
-  mkdir -p "${root_data_dir}"
-  # Older panel images ran as root. Repair only mismatched ownership inside the
-  # dedicated data mount, without following links or rewriting file contents.
-  find -P "${root_data_dir}" -xdev \( ! -uid 988 -o ! -gid 988 \) \
-    -exec chown -h 988:988 {} +
-  exec setpriv --reuid=988 --regid=988 --clear-groups -- \
-    env FLOODMAN_PRIVILEGE_DROP_ATTEMPTED=1 HOME=/home/container \
-      USER=container LOGNAME=container "$0" "$@"
-fi
-unset FLOODMAN_PRIVILEGE_DROP_ATTEMPTED
-
 export DATA_DIR="${DATA_DIR:-/home/container/data}"
 # The legacy Pterodactyl egg injects VIRTUAL_ENV=/opt/venv. That path belonged
 # to the old voice-only image and must not override the unified image runtime.
 export VIRTUAL_ENV=/opt/voice-venv
-export PATH="/opt/node24/bin:/opt/python312/bin:/usr/lib/postgresql/14/bin:${VIRTUAL_ENV}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+export PATH="/opt/floodman/unified/bin:/opt/node24/bin:/opt/python312/bin:/usr/lib/postgresql/14/bin:${VIRTUAL_ENV}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 export PYTHONPATH="/opt/voice"
 readonly PYTHON_BIN=/opt/voice-venv/bin/python
 RUNTIME_ENV="${RUNTIME_ENV:-${DATA_DIR}/runtime.env}"
@@ -179,5 +153,48 @@ export FLOODMAN_OWNER_PASSWORD="${FLOODMAN_OWNER_PASSWORD:-$(openssl rand -hex 1
   printf 'export FLOODMAN_OWNER_PASSWORD=%q\n' "${FLOODMAN_OWNER_PASSWORD}"
 } > "${owner_file}"
 chmod 0600 "${owner_file}"
+
+# Pterodactyl runs this image as namespace root and removes CAP_CHOWN.  The
+# Suite's files remain usable that way, but PostgreSQL correctly refuses to run
+# as root.  Give only its data and socket directories to uid 988 by creating
+# them as that uid.  A pre-existing non-empty database is never moved.
+prepare_postgres_directory() {
+  local target="$1" mode="$2" label="$3" owner backup suffix parent parent_mode
+  if [[ -e "${target}" && ! -d "${target}" ]]; then
+    echo "Floodman refused unexpected ${label} path: ${target}" >&2
+    exit 1
+  fi
+  if [[ -d "${target}" ]]; then
+    owner="$(stat -c '%u' "${target}")"
+    if [[ "${owner}" == "988" ]]; then
+      return
+    fi
+    if [[ -n "$(find "${target}" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
+      echo "Floodman refused to move non-empty ${label}: ${target}" >&2
+      exit 1
+    fi
+    backup="${target}.pre-unified-root"
+    suffix=1
+    while [[ -e "${backup}" ]]; do
+      backup="${target}.pre-unified-root-${suffix}"
+      suffix=$((suffix + 1))
+    done
+    mv "${target}" "${backup}"
+    echo "Preserved empty ${label} at ${backup}."
+  fi
+  parent="$(dirname "${target}")"
+  mkdir -p "${parent}"
+  parent_mode="$(stat -c '%a' "${parent}")"
+  chmod g+rwx "${parent}"
+  if ! setpriv --reuid=988 --regid=0 --clear-groups -- \
+    mkdir -m "${mode}" "${target}"; then
+    chmod "${parent_mode}" "${parent}"
+    return 1
+  fi
+  chmod "${parent_mode}" "${parent}"
+}
+
+prepare_postgres_directory "${FM_DATA}/postgres" 0750 "PostgreSQL data directory"
+prepare_postgres_directory "${FM_RUN}/postgres" 0770 "PostgreSQL socket directory"
 
 exec /opt/floodman/aio/start-suite.sh

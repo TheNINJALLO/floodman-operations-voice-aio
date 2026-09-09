@@ -166,6 +166,8 @@ RUN set -eux; \
 COPY unified/entrypoint.sh /opt/floodman/scripts/entrypoint.sh
 COPY unified/start-voice-control.sh unified/start-voice-llama.sh unified/start-voice-asterisk.sh \
      unified/healthcheck.sh unified/image-contract.sh /opt/floodman/unified/
+COPY unified/postgres-init-wrapper.sh /opt/floodman/unified/bin/initdb
+COPY unified/postgres-server-wrapper.sh /opt/floodman/unified/bin/postgres
 COPY unified/gateway-nginx.conf unified/proxy-headers.conf /opt/floodman/unified/
 COPY unified/voice-supervisor.conf /opt/floodman/aio/voice-supervisor.conf
 
@@ -189,7 +191,7 @@ RUN set -eux; \
     ln -s data/business/diagnostics /home/container/diagnostics; \
     ln -s data/business/tmp /home/container/tmp; \
     chmod 0755 /usr/local/bin/mailpit /opt/floodman/aio/*.sh /opt/floodman/scripts/*.sh \
-      /opt/floodman/scripts/*.py /opt/floodman/unified/*.sh; \
+      /opt/floodman/scripts/*.py /opt/floodman/unified/*.sh /opt/floodman/unified/bin/*; \
     chown -R container:container /home/container /opt/floodman /opt/voice /opt/voice-venv \
       /opt/pydeps /opt/llama /srv/gauzy /opt/gauzy-web-pristine /opt/documenso
 

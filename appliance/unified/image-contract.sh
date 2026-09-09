@@ -2,10 +2,11 @@
 set -euo pipefail
 test -x /opt/voice-venv/bin/python
 command -v setpriv >/dev/null
-grep -Fq 'setpriv --reuid=988 --regid=988 --clear-groups' /opt/floodman/scripts/entrypoint.sh
-grep -Fq 'FLOODMAN_PRIVILEGE_DROP_ATTEMPTED' /opt/floodman/scripts/entrypoint.sh
-grep -Fq 'find -P "${root_data_dir}" -xdev' /opt/floodman/scripts/entrypoint.sh
-grep -Fq 'refused ownership repair outside /home/container/data' /opt/floodman/scripts/entrypoint.sh
+test -x /opt/floodman/unified/bin/initdb
+test -x /opt/floodman/unified/bin/postgres
+grep -Fq '/opt/floodman/unified/bin:/opt/node24/bin' /opt/floodman/scripts/entrypoint.sh
+grep -Fq 'prepare_postgres_directory "${FM_DATA}/postgres"' /opt/floodman/scripts/entrypoint.sh
+grep -Fq 'refused to move non-empty ${label}' /opt/floodman/scripts/entrypoint.sh
 grep -Fq 'export VIRTUAL_ENV=/opt/voice-venv' /opt/floodman/scripts/entrypoint.sh
 grep -Fq 'readonly PYTHON_BIN=/opt/voice-venv/bin/python' /opt/floodman/scripts/entrypoint.sh
 grep -Fq '/opt/python312/bin' /opt/floodman/scripts/entrypoint.sh

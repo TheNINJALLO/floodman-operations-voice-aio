@@ -19,14 +19,21 @@ def test_unified_image_runs_voice_and_business_suite_on_distinct_ports(project_r
     assert "cp -R --no-preserve=mode,ownership,timestamps /opt/floodman/hub/." in entrypoint
     assert "cp -a /opt/floodman/hub/." not in entrypoint
     assert 'export APP_LOGO="${APP_LOGO:-${FLOODMAN_PUBLIC_URL}/floodman-brand/floodman-wordmark.svg}"' in entrypoint
-    assert 'if [[ "$(id -u)" == "0" ]]' in entrypoint
-    assert "setpriv --reuid=988 --regid=988 --clear-groups" in entrypoint
-    assert "FLOODMAN_PRIVILEGE_DROP_ATTEMPTED" in entrypoint
-    assert 'root_data_dir="${DATA_DIR:-/home/container/data}"' in entrypoint
-    assert 'find -P "${root_data_dir}" -xdev' in entrypoint
-    assert "refused ownership repair outside /home/container/data" in entrypoint
-    assert entrypoint.index('find -P "${root_data_dir}"') < entrypoint.index("setpriv --reuid=988")
-    assert entrypoint.index("setpriv --reuid=988") < entrypoint.index('mkdir -p "${DATA_DIR}"')
+    assert "/opt/floodman/unified/bin:/opt/node24/bin" in entrypoint
+    assert 'prepare_postgres_directory "${FM_DATA}/postgres"' in entrypoint
+    assert 'prepare_postgres_directory "${FM_RUN}/postgres"' in entrypoint
+    assert "refused to move non-empty ${label}" in entrypoint
+    assert "mv \"${target}\" \"${backup}\"" in entrypoint
+    assert "setpriv --reuid=988 --regid=0 --clear-groups" in entrypoint
+    assert entrypoint.index("prepare_postgres_directory") < entrypoint.index("exec /opt/floodman/aio/start-suite.sh")
+    assert "unbounded process tree" not in entrypoint
+
+    init_wrapper = (project_root / "unified" / "postgres-init-wrapper.sh").read_text(encoding="utf-8")
+    server_wrapper = (project_root / "unified" / "postgres-server-wrapper.sh").read_text(encoding="utf-8")
+    assert "--pwfile=/dev/stdin" in init_wrapper
+    assert "setpriv --reuid=988 --regid=0 --clear-groups" in init_wrapper
+    assert "setpriv --reuid=988 --regid=0 --clear-groups" in server_wrapper
+    assert "/usr/lib/postgresql/14/bin/postgres" in server_wrapper
     assert "PUBLIC_BASE_URL=\"${VOICE_PUBLIC_BASE_URL" in (project_root / "unified" / "start-voice-control.sh").read_text(encoding="utf-8")
     assert "program:voice-llama" in supervisor
     assert "program:voice-control" in supervisor
