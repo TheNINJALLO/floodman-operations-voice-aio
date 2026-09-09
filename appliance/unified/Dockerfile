@@ -4,6 +4,10 @@ ARG NODE22_IMAGE=node:22.22.2-bookworm-slim@sha256:9f6d5975c7dca860947d3915877f8
 ARG CUDA_DEVEL_IMAGE=nvidia/cuda:12.4.1-devel-ubuntu22.04@sha256:da6791294b0b04d7e65d87b7451d6f2390b4d36225ab0701ee7dfec5769829f5
 ARG CUDA_RUNTIME_IMAGE=nvidia/cuda:12.4.1-runtime-ubuntu22.04@sha256:517da2300c184c9999ec203c2665244bdebd3578d12fcc7065e83667932643d9
 ARG LLAMA_CPP_COMMIT=6d05498314db1b57f81c271080018aa2d0b89be9
+ARG BUSINESS_RUNTIME_URL=https://raw.githubusercontent.com/TheNINJALLO/floodman-business-suite-aio/b81f9db3bbfa221dd2e439ad28624b3066fe8b0e/deployment/releases/floodman-operations-runtime-v4.7.2.zip
+ARG BUSINESS_RUNTIME_SHA256=f8d3d07ff885ecde57703abba1567d151ecc4419c5afb4a73bcb5f91a054f177
+ARG BUSINESS_LAUNCHER_URL=https://raw.githubusercontent.com/TheNINJALLO/floodman-business-suite-aio/b81f9db3bbfa221dd2e439ad28624b3066fe8b0e/deployment/releases/mobile-start-v4.7.2.sh
+ARG BUSINESS_LAUNCHER_SHA256=f8169ed1d039ec94db8d8fecaf8708e3d322d1dea489dff09afd2766f81c3c96
 
 FROM ${BUSINESS_SUITE_IMAGE} AS business
 FROM ${NODE24_IMAGE} AS node24
@@ -35,6 +39,10 @@ RUN git clone https://github.com/ggml-org/llama.cpp.git && \
 FROM ${CUDA_RUNTIME_IMAGE}
 ARG CONTAINER_UID=988
 ARG CONTAINER_GID=988
+ARG BUSINESS_RUNTIME_URL
+ARG BUSINESS_RUNTIME_SHA256
+ARG BUSINESS_LAUNCHER_URL
+ARG BUSINESS_LAUNCHER_SHA256
 ENV DEBIAN_FRONTEND=noninteractive \
     VIRTUAL_ENV=/opt/voice-venv \
     PATH=/opt/node24/bin:/usr/lib/postgresql/14/bin:/opt/voice-venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
@@ -51,7 +59,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       asterisk bash build-essential ca-certificates cargo coreutils curl espeak-ng ffmpeg \
       gettext-base git jq libffi-dev libgomp1 libsndfile1 libssl-dev netcat-openbsd \
       nginx openssl postgresql-14 postgresql-client-14 postgresql-contrib python3 \
-      python3-dev python3-pip python3-venv supervisor tzdata && \
+      python3-dev python3-pip python3-venv supervisor tzdata unzip && \
     rm -rf /var/lib/apt/lists/*
 
 RUN groupadd --gid "${CONTAINER_GID}" container && \
@@ -71,6 +79,29 @@ COPY --from=business --chown=container:container /srv/gauzy/ /srv/gauzy/
 COPY --from=business --chown=container:container /opt/gauzy-web-pristine/ /opt/gauzy-web-pristine/
 COPY --from=business --chown=container:container /opt/documenso/ /opt/documenso/
 COPY --from=business /usr/local/bin/mailpit /usr/local/bin/mailpit
+
+# Carry the exact browser/RoomFlow payload that the standalone Business Suite
+# egg normally installs into the Pterodactyl volume. The unified server has no
+# separate egg install phase, so it initializes this verified payload itself.
+RUN set -eux; \
+    mkdir -p /opt/floodman/unified/assets; \
+    curl --fail --location --retry 4 --connect-timeout 20 --max-time 300 \
+      "${BUSINESS_RUNTIME_URL}" \
+      -o /opt/floodman/unified/assets/floodman-operations-runtime-v4.7.2.zip; \
+    printf '%s  %s\n' "${BUSINESS_RUNTIME_SHA256}" \
+      /opt/floodman/unified/assets/floodman-operations-runtime-v4.7.2.zip \
+      | sha256sum -c -; \
+    curl --fail --location --retry 4 --connect-timeout 20 --max-time 300 \
+      "${BUSINESS_LAUNCHER_URL}" -o /tmp/mobile-start-v4.7.2.sh; \
+    printf '%s  %s\n' "${BUSINESS_LAUNCHER_SHA256}" /tmp/mobile-start-v4.7.2.sh \
+      | sha256sum -c -; \
+    awk '/^cat > .*floodman-boot-guard.js.*BOOT_GUARD/{copy=1;next} /^BOOT_GUARD$/{copy=0} copy' \
+      /tmp/mobile-start-v4.7.2.sh > /opt/floodman/unified/assets/floodman-boot-guard.js; \
+    awk '/^cat > .*floodman-status.html.*STATUS_PAGE/{copy=1;next} /^STATUS_PAGE$/{copy=0} copy' \
+      /tmp/mobile-start-v4.7.2.sh > /opt/floodman/unified/assets/floodman-status.html; \
+    test -s /opt/floodman/unified/assets/floodman-boot-guard.js; \
+    test -s /opt/floodman/unified/assets/floodman-status.html; \
+    rm -f /tmp/mobile-start-v4.7.2.sh
 
 COPY pyproject.toml /tmp/voice-source/pyproject.toml
 COPY app /tmp/voice-source/app

@@ -7,6 +7,10 @@ test -s /srv/gauzy/main.js
 test -s /opt/documenso/apps/remix/start.sh
 test -s /opt/floodman/aio/supervisord.conf
 test -s /opt/floodman/unified/gateway-nginx.conf
+test -s /opt/floodman/unified/assets/floodman-operations-runtime-v4.7.2.zip
+test -s /opt/floodman/unified/assets/floodman-boot-guard.js
+test -s /opt/floodman/unified/assets/floodman-status.html
+unzip -tq /opt/floodman/unified/assets/floodman-operations-runtime-v4.7.2.zip >/dev/null
 grep -q 'server_name floodman.oninetwork.com' /opt/floodman/unified/gateway-nginx.conf
 test "$(readlink /srv/gauzy/apps/api/public)" = "/home/container/data/business/gauzy-files"
 test "$(readlink /import)" = "/home/container/data/business/gauzy-import"

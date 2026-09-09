@@ -41,6 +41,12 @@ def test_unified_mutable_paths_resolve_under_data_dir(project_root: Path):
     assert 'for business_path in config run logs runtime backups diagnostics tmp' in entrypoint
     assert 'ln -s "data/business/${business_path}" "${compatibility_path}"' in entrypoint
     assert "Refusing to replace unexpected persistent path" in entrypoint
+    assert "BUSINESS_RUNTIME_SHA256=f8d3d07ff885ecde57703abba1567d151ecc4419c5afb4a73bcb5f91a054f177" in dockerfile
+    assert 'sha256sum -c -' in dockerfile
+    assert 'unzip -q "${business_runtime_zip}" -d "${business_overlay_next}"' in entrypoint
+    assert 'sha256sum -c MANIFEST.sha256' in entrypoint
+    assert 'prepare-roomflow.py' in entrypoint
+    assert '${DATA_DIR}/roomflow/current/index.html' in entrypoint
 
 
 def test_unified_health_requires_both_product_surfaces(project_root: Path):

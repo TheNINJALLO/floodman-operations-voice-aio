@@ -85,6 +85,38 @@ for business_path in config run logs runtime backups diagnostics tmp; do
   fi
 done
 
+# Initialize the immutable Business Suite browser overlay and RoomFlow payload
+# that the standalone Suite egg would otherwise install. Verify the complete
+# payload before replacing the prior derived copy; customer and database data
+# are never part of this refresh.
+business_runtime_zip="/opt/floodman/unified/assets/floodman-operations-runtime-v4.7.2.zip"
+business_runtime_dir="${DATA_DIR}/business/runtime/floodman-v4.7.2"
+business_overlay="${business_runtime_dir}/app-overlay"
+business_overlay_next="${business_runtime_dir}/app-overlay.next"
+business_overlay_root="${business_overlay_next}/floodman-operations-v4.7.2"
+mkdir -p "${business_runtime_dir}"
+rm -rf "${business_overlay_next}"
+mkdir -p "${business_overlay_next}"
+unzip -q "${business_runtime_zip}" -d "${business_overlay_next}"
+[[ "$(cat "${business_overlay_root}/VERSION")" == "4.7.2" ]]
+(cd "${business_overlay_root}" && sha256sum -c MANIFEST.sha256 >/dev/null)
+rm -rf "${business_overlay}"
+mv "${business_overlay_next}" "${business_overlay}"
+business_overlay_root="${business_overlay}/floodman-operations-v4.7.2"
+
+# Serve the current Hub source from the pinned Business image so its AI Call
+# Center link stays synchronized with this unified release.
+cp -a /opt/floodman/hub/. "${business_overlay_root}/hub/"
+cp /opt/floodman/unified/assets/floodman-boot-guard.js \
+  "${business_runtime_dir}/floodman-boot-guard.js"
+cp /opt/floodman/unified/assets/floodman-status.html \
+  "${business_runtime_dir}/floodman-status.html"
+python3 "${business_overlay_root}/roomflow/prepare-roomflow.py" \
+  --target "${DATA_DIR}/roomflow/current" \
+  --overlay "${business_overlay_root}/roomflow"
+[[ -s "${DATA_DIR}/roomflow/current/index.html" ]]
+printf '%s\n' '4.7.2' > "${FM_CONFIG}/floodman-active-runtime.txt"
+
 mkdir -p "${FM_RUN}" "${FM_LOGS}" "${DATA_DIR}/business/tmp/gateway-client" \
   "${DATA_DIR}/business/tmp/gateway-proxy" "${DATA_DIR}/business/tmp/gateway-fastcgi" \
   "${DATA_DIR}/business/tmp/gateway-uwsgi" "${DATA_DIR}/business/tmp/gateway-scgi"
