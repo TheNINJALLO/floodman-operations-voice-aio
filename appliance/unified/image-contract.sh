@@ -8,6 +8,8 @@ test -s /opt/documenso/apps/remix/start.sh
 test -s /opt/floodman/aio/supervisord.conf
 test -s /opt/floodman/unified/gateway-nginx.conf
 grep -q 'server_name floodman.oninetwork.com' /opt/floodman/unified/gateway-nginx.conf
+test "$(readlink /srv/gauzy/apps/api/public)" = "/home/container/data/business/gauzy-files"
+test "$(readlink /import)" = "/home/container/data/business/gauzy-import"
 /opt/voice-venv/bin/python -c 'import app, httpx, yaml' 
 PYTHONPATH=/opt/pydeps/orchestrator:/opt/floodman/orchestrator python3 -c 'import app.ai_calling'
 /opt/node24/bin/node --check /srv/gauzy/main.js

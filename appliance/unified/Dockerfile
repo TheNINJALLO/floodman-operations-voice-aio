@@ -116,6 +116,9 @@ COPY unified/voice-supervisor.conf /opt/floodman/aio/voice-supervisor.conf
 RUN set -eux; \
     cat /opt/floodman/aio/voice-supervisor.conf >> /opt/floodman/aio/supervisord.conf; \
     mkdir -p /usr/share/asterisk/sounds/en /home/container/data/business; \
+    rm -f /srv/gauzy/apps/api/public /import; \
+    ln -s /home/container/data/business/gauzy-files /srv/gauzy/apps/api/public; \
+    ln -s /home/container/data/business/gauzy-import /import; \
     espeak-ng -s 155 -v en-us -w /tmp/floodman-technical-failure-source.wav \
       "We're having a temporary technical issue. I've alerted the Floodman team. Please expect a callback as soon as possible."; \
     ffmpeg -hide_banner -loglevel error -y \

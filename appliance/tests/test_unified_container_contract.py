@@ -34,6 +34,8 @@ def test_unified_mutable_paths_resolve_under_data_dir(project_root: Path):
 
     for name in ("config", "run", "logs", "runtime", "backups", "diagnostics", "tmp"):
         assert f"ln -s data/business/{name} /home/container/{name}" in dockerfile
+    assert "ln -s /home/container/data/business/gauzy-files /srv/gauzy/apps/api/public" in dockerfile
+    assert "ln -s /home/container/data/business/gauzy-import /import" in dockerfile
     assert 'FM_DATA="${DATA_DIR}/business"' in entrypoint
     assert 'owner_file="${FM_CONFIG}/unified-owner.env"' in entrypoint
 
