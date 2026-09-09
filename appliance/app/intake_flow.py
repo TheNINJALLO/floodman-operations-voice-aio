@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.intake import spoken_email, spoken_phone
+from app.intake import spoken_address, spoken_email, spoken_phone
 from app.models import IntakeState
 
 CONTACT_ORDER = ("name", "email", "phone", "address")
@@ -12,6 +12,8 @@ def collection_question(state: IntakeState) -> str:
         return "How can I help?"
     if stage == "property_context":
         return "Is this a home or a business?"
+    if stage == "affected_area":
+        return "Where on the property is the problem, and which rooms or materials are affected?"
     if stage == "timing_summary":
         if state.service_key == "mold_remediation":
             return "When did you first notice the mold or musty conditions?"
@@ -24,6 +26,8 @@ def collection_question(state: IntakeState) -> str:
         return "When did this start?"
     if stage == "safety_summary":
         return "Any electrical, sewage, or other safety concerns?"
+    if stage == "source_summary":
+        return "What do you think caused it, and how far has it spread?"
     if stage == "name":
         return "What name should I put this under?"
     if stage == "email":
@@ -36,18 +40,25 @@ def collection_question(state: IntakeState) -> str:
 
 
 def confirmation_question(state: IntakeState, field: str) -> str:
+    readback, question = confirmation_parts(state, field)
+    if not readback:
+        return question
+    return f"{readback}. {question}"
+
+
+def confirmation_parts(state: IntakeState, field: str) -> tuple[str, str]:
     value = getattr(state, field)
     if field == "name":
-        return f"{value}, right?"
+        return f"I heard {value}", "Is that correct?"
     if field == "email":
-        return "No email, right?" if state.email_status in {"declined", "unavailable"} else f"{spoken_email(value)}, right?"
+        if state.email_status in {"declined", "unavailable"}:
+            return "I have no email address for you", "Is that correct?"
+        return f"I heard {spoken_email(value)}", "Is that correct?"
     if field == "phone":
-        if state.caller_number and state.phone == state.caller_number:
-            return "Is this the best number to call you back on?"
-        return f"{spoken_phone(value)}, right?"
+        return f"I have {spoken_phone(value)} as your callback number", "Is that correct?"
     if field == "address":
-        return f"{value}, right?"
-    return ""
+        return f"I heard {spoken_address(value)}", "Is that correct?"
+    return "", ""
 
 
 def next_stage_after_confirmation(field: str) -> str:

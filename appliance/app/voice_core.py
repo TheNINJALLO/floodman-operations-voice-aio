@@ -19,7 +19,7 @@ from app.intake import (
     normalize_phone,
     normalized,
 )
-from app.intake_flow import collection_question, confirmation_question
+from app.intake_flow import collection_question, confirmation_parts, confirmation_question
 from app.knowledge import KnowledgeBase
 from app.llm import LocalLLM
 from app.models import IntakeState, VoiceReply
@@ -72,7 +72,11 @@ class VoiceCore:
     async def call_started(self, session: CallSession) -> None:
         if self.suite_bridge is not None:
             self.suite_bridge.queue(session.call_id, session.state, "call-started")
-        await self.notifier.call_started(session.call_id, session.state)
+        try:
+            await self.notifier.call_started(session.call_id, session.state)
+        except Exception:
+            # A notification outage cannot delay or terminate the greeting.
+            logger.exception("Unable to queue call-started notification for call %s", session.state.call_uuid)
 
     @staticmethod
     def greeting() -> str:
@@ -93,7 +97,16 @@ class VoiceCore:
                 phrases.append(text)
 
         add(self.greeting())
-        for stage in ("property_context", "safety_summary", "email", "phone", "address"):
+        for stage in (
+            "property_context",
+            "affected_area",
+            "timing_summary",
+            "source_summary",
+            "safety_summary",
+            "email",
+            "phone",
+            "address",
+        ):
             add(collection_question(IntakeState(call_uuid="warm", stage=stage)))
         for service_key in (
             "",
@@ -104,7 +117,7 @@ class VoiceCore:
         ):
             add(collection_question(IntakeState(call_uuid="warm", stage="timing_summary", service_key=service_key)))
         add("I can get these details to the right team. What name should I put this under?")
-        add("Is this the best number to call you back on?")
+        add("Is that correct?")
         add("Are you still there? I can wait a moment.")
         add("I'm still here. Say hello when you're ready.")
         add(f"You're all set. The team has your information and will call you within {self.settings.callback_sla_hours} hours. Thanks for calling Floodman.")
@@ -113,14 +126,34 @@ class VoiceCore:
     def _save(self, session: CallSession) -> None:
         self.database.save_intake(session.call_id, session.state)
 
-    def _assistant(self, session: CallSession, text: str) -> VoiceReply:
+    def _assistant(
+        self,
+        session: CallSession,
+        text: str,
+        *,
+        speech_parts: tuple[str, ...] = (),
+        pause_between_parts_ms: int = 0,
+    ) -> VoiceReply:
         text = clean(text, 1200)
         self.database.add_message(session.call_id, "assistant", text)
         self.database.update_prompt(session.call_id, text)
         self._save(session)
         if self.suite_bridge is not None:
             self.suite_bridge.queue(session.call_id, session.state, "transcript-updated")
-        return VoiceReply(text=text)
+        return VoiceReply(
+            text=text,
+            speech_parts=speech_parts,
+            pause_between_parts_ms=max(0, pause_between_parts_ms),
+        )
+
+    def _confirmation(self, session: CallSession, field: str) -> VoiceReply:
+        parts = tuple(part for part in confirmation_parts(session.state, field) if part)
+        return self._assistant(
+            session,
+            confirmation_question(session.state, field),
+            speech_parts=parts,
+            pause_between_parts_ms=300,
+        )
 
     async def _extract(self, field: str, transcript: str, state: IntakeState) -> str:
         result = await self.llm.extract(field, transcript, state.to_dict())
@@ -167,7 +200,7 @@ class VoiceCore:
             state.service_status = service["service_status"]
             state.service_key = service["service_key"]
             state.property_context = classify_property_context(transcript)
-            state.stage = "timing_summary" if state.property_context else "property_context"
+            state.stage = "affected_area" if state.property_context else "property_context"
             prefix = ""
             if state.service_status == "unsupported":
                 state.unsupported_notice_spoken = True
@@ -181,11 +214,21 @@ class VoiceCore:
                 state.property_context = classify_property_context(extracted)
             if not state.property_context:
                 return self._assistant(session, "Was that a home or a business?")
+            state.stage = "affected_area"
+            return self._assistant(session, collection_question(state))
+
+        if state.stage == "affected_area":
+            state.affected_area = transcript
             state.stage = "timing_summary"
             return self._assistant(session, collection_question(state))
 
         if state.stage == "timing_summary":
             state.timing_summary = transcript
+            state.stage = "source_summary"
+            return self._assistant(session, collection_question(state))
+
+        if state.stage == "source_summary":
+            state.source_summary = transcript
             state.stage = "safety_summary"
             return self._assistant(session, collection_question(state))
 
@@ -207,7 +250,7 @@ class VoiceCore:
             if not state.name:
                 return self._assistant(session, "What name should I put this under?")
             state.stage = "confirm_name"
-            return self._assistant(session, confirmation_question(state, "name"))
+            return self._confirmation(session, "name")
 
         if state.stage == "confirm_name":
             decision = normalize_confirmation(transcript)
@@ -219,7 +262,7 @@ class VoiceCore:
                 state.stage = "name"
                 state.name = ""
                 return self._assistant(session, "What's the correct name?")
-            return self._assistant(session, f"I heard {state.name}. Is that right?")
+            return self._confirmation(session, "name")
 
         if state.stage == "email":
             text = normalized(transcript)
@@ -232,20 +275,22 @@ class VoiceCore:
                     return self._assistant(session, "I only heard part of that email. Please say the part before at, then the domain, or say skip.")
                 state.email_status = "provided"
             state.stage = "confirm_email"
-            return self._assistant(session, confirmation_question(state, "email"))
+            return self._confirmation(session, "email")
 
         if state.stage == "confirm_email":
             decision = normalize_confirmation(transcript)
             if decision == "yes":
                 state.confirmations["email"] = state.email or state.email_status
                 question = self._advance_to_contact(state, "phone")
+                if state.stage == "confirm_phone":
+                    return self._confirmation(session, "phone")
                 return self._assistant(session, question)
             if decision == "no":
                 state.stage = "email"
                 state.email = ""
                 state.email_status = ""
                 return self._assistant(session, "What's the correct email? You can say skip.")
-            return self._assistant(session, confirmation_question(state, "email"))
+            return self._confirmation(session, "email")
 
         if state.stage == "phone":
             state.phone = normalize_phone(transcript)
@@ -255,7 +300,7 @@ class VoiceCore:
             if not state.phone:
                 return self._assistant(session, "I didn't get a complete callback number. Please say the ten digits again.")
             state.stage = "confirm_phone"
-            return self._assistant(session, confirmation_question(state, "phone"))
+            return self._confirmation(session, "phone")
 
         if state.stage == "confirm_phone":
             decision = normalize_confirmation(transcript)
@@ -267,7 +312,7 @@ class VoiceCore:
                 state.stage = "phone"
                 state.phone = ""
                 return self._assistant(session, "What's the correct callback number?")
-            return self._assistant(session, confirmation_question(state, "phone"))
+            return self._confirmation(session, "phone")
 
         if state.stage == "address":
             state.address = transcript
@@ -275,7 +320,7 @@ class VoiceCore:
             state.service_area_status = area.status
             state.service_area_city = area.city
             state.stage = "confirm_address"
-            return self._assistant(session, confirmation_question(state, "address"))
+            return self._confirmation(session, "address")
 
         if state.stage == "confirm_address":
             decision = normalize_confirmation(transcript)
@@ -293,7 +338,7 @@ class VoiceCore:
                 state.stage = "address"
                 state.address = ""
                 return self._assistant(session, "What's the correct service address?")
-            return self._assistant(session, confirmation_question(state, "address"))
+            return self._confirmation(session, "address")
 
         if state.stage == "done":
             reply = self._assistant(session, "The team has your information. Thanks for calling Floodman.")
@@ -304,7 +349,15 @@ class VoiceCore:
         return self._assistant(session, collection_question(state))
 
     async def _notify(self, session: CallSession, *, kind: str, partial: bool) -> None:
-        count = await self.notifier.send(session.call_id, session.state, kind=kind, partial=partial)
+        try:
+            count = await self.notifier.send(session.call_id, session.state, kind=kind, partial=partial)
+        except Exception:
+            # Notification integrations are deliberately fail-open. The intake is
+            # already local, so an email/SMS/push outage must never turn a
+            # successful caller conversation into Asterisk's technical fallback.
+            logger.exception("Unable to queue team notification for call %s", session.state.call_uuid)
+            self.database.save_intake(session.call_id, session.state, "delivery_error")
+            return
         session.notification_sent = session.notification_sent or count > 0
         self.database.save_intake(session.call_id, session.state, "queued" if count else "not_configured_or_duplicate")
 

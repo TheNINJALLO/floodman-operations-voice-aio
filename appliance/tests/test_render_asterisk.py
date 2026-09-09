@@ -57,6 +57,12 @@ def test_asterisk_renderer(
     assert "FLOODMAN_ACTION=missing_action" in extensions
     assert "Playback(floodman-technical-failure)" in extensions
     assert "stage=audiosocket_return" in extensions
+    audio_return = extensions.index("stage=audiosocket_return")
+    finish = extensions.index("agi_finish.py", audio_return)
+    fallback = extensions.index("stage=technical_fallback", finish)
+    assert audio_return < finish < fallback
+    assert 'FLOODMAN_ACTION}"="completed"' in extensions
+    assert 'FLOODMAN_AUDIO_TRYSTATUS}"="SUCCESS"' not in extensions
     assert "stage=hangup" in extensions
     assert f"{tmp_path / 'logs' / 'asterisk-full.log'} => notice,warning,error" in logger
     assert "full =>" not in logger

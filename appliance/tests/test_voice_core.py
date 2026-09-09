@@ -27,6 +27,10 @@ class StubNotifier:
     def __init__(self): self.calls=[]
     async def send(self,call_id,state,kind="lead",partial=False): self.calls.append((kind,partial,state.to_dict())); return 1
 
+class FailingNotifier(StubNotifier):
+    async def call_started(self,call_id,state): raise RuntimeError("notification unavailable")
+    async def send(self,call_id,state,kind="lead",partial=False): raise RuntimeError("notification unavailable")
+
 def settings(tmp_path,project_root,monkeypatch):
     monkeypatch.setenv("DATA_DIR",str(tmp_path));monkeypatch.setenv("SERVICE_AREA_PATH",str(project_root/"config/service_area.yaml"));monkeypatch.setenv("FLOODMAN_CALLBACK_SLA_HOURS","24")
     return Settings.from_env()
@@ -35,7 +39,7 @@ def settings(tmp_path,project_root,monkeypatch):
 async def test_complete_intake(tmp_path,project_root,monkeypatch):
     s=settings(tmp_path,project_root,monkeypatch);db=Database(s.database_path);notifier=StubNotifier();core=VoiceCore(s,db,BusinessDirectory(s.service_area_path),KnowledgeBase(project_root/"knowledge"),StubLLM(),notifier)
     session=core.create_session("full-call","+12318840943","+12319354921")
-    turns=["Water is coming into my basement","home","this morning","no safety concerns","Josh Aldrich","yes","josh at example dot com","yes","yes","8805 East Melendy Street Ludington Michigan","yes"]
+    turns=["Water is coming into my basement","home","the basement floor and drywall","this morning and it is still active","a supply line broke and it reached two rooms","no safety concerns","Josh Aldrich","yes","josh at example dot com","yes","yes","8805 East Melendy Street Ludington Michigan 49431","yes"]
     reply=None;replies=[]
     for turn in turns:
         reply=await core.process(session,turn);replies.append(reply.text)
@@ -43,6 +47,8 @@ async def test_complete_intake(tmp_path,project_root,monkeypatch):
     assert session.state.completed
     assert session.state.service_area_status=="published"
     assert notifier.calls[-1][0]=="completed_intake"
+    assert session.state.affected_area=="the basement floor and drywall"
+    assert session.state.source_summary=="a supply line broke and it reached two rooms"
     assert "within 24 hours" in reply.text
     assert not any(text.startswith(("Got it.", "Understood.", "Thanks.", "Great.", "Perfect.")) for text in replies)
 
@@ -56,7 +62,9 @@ async def test_unsupported_and_emergency(tmp_path,project_root,monkeypatch):
     e=core.create_session("emergency")
     await core.process(e,"Water is rising by the electrical panel")
     await core.process(e,"home")
+    await core.process(e,"the utility room")
     await core.process(e,"right now")
+    await core.process(e,"a pipe broke and water is spreading")
     reply=await core.process(e,"There are sparks and standing water")
     assert reply.transfer_number=="+12315550001"
     assert any(kind=="emergency" for kind,_,_ in notifier.calls)
@@ -78,6 +86,9 @@ async def test_spelled_email_confirmation_does_not_say_dash(tmp_path,project_roo
     reply=await core.process(session,"J-O-A-C-H, S-H at gmail.com.")
     assert session.state.email=="joachsh@gmail.com"
     assert "dash" not in reply.text.lower()
+    assert "j, o, a, c, h, s, h, at, g, m, a, i, l, dot, c, o, m" in reply.text.lower()
+    assert reply.speech_parts[-1]=="Is that correct?"
+    assert reply.pause_between_parts_ms==300
 
 
 def test_greeting_uses_concise_floodman_introduction():
@@ -92,10 +103,10 @@ async def test_volunteered_home_context_skips_redundant_question(tmp_path,projec
     reply=await core.process(session,"I have mold in my house")
 
     assert session.state.property_context=="Residential property"
-    assert session.state.stage=="timing_summary"
+    assert session.state.stage=="affected_area"
     assert "home or a business" not in reply.text.lower()
     assert not reply.text.startswith("Got it.")
-    assert "mold or musty conditions" in reply.text
+    assert "where on the property" in reply.text.lower()
 
 
 @pytest.mark.asyncio
@@ -106,7 +117,7 @@ async def test_home_misheard_as_hope_advances_without_repeating_question(tmp_pat
     reply=await core.process(session,"hope")
 
     assert session.state.property_context=="Residential property"
-    assert session.state.stage=="timing_summary"
+    assert session.state.stage=="affected_area"
     assert "home or a business" not in reply.text.lower()
 
 
@@ -134,6 +145,10 @@ async def test_verbatim_intake_fields_do_not_wait_for_llm_extraction(tmp_path,pr
 
     session.state.stage="timing_summary"
     await core.process(session,"A couple of weeks ago")
+    session.state.stage="affected_area"
+    await core.process(session,"The basement floor and south wall")
+    session.state.stage="source_summary"
+    await core.process(session,"A wall leak spread under the flooring")
     session.state.stage="safety_summary"
     await core.process(session,"No safety concerns")
     session.state.stage="address"
@@ -141,6 +156,8 @@ async def test_verbatim_intake_fields_do_not_wait_for_llm_extraction(tmp_path,pr
 
     assert llm.fields==[]
     assert session.state.timing_summary=="A couple of weeks ago"
+    assert session.state.affected_area=="The basement floor and south wall"
+    assert session.state.source_summary=="A wall leak spread under the flooring"
     assert session.state.safety_summary=="No safety concerns"
     assert session.state.address=="8805 East Melendy Street Ludington Michigan"
 
@@ -152,6 +169,8 @@ def test_normal_call_prompts_are_prepared_for_zero_generation_delay(tmp_path,pro
     assert VoiceCore.greeting() in phrases
     assert "Is this a home or a business?" in phrases
     assert "When did you first notice the mold or musty conditions?" in phrases
+    assert "Where on the property is the problem, and which rooms or materials are affected?" in phrases
+    assert "What do you think caused it, and how far has it spread?" in phrases
     assert "Any electrical, sewage, or other safety concerns?" in phrases
     assert "I can get these details to the right team. What name should I put this under?" in phrases
     assert "What's the best email for you? You can say skip." in phrases
@@ -171,3 +190,35 @@ async def test_no_input_waits_before_safe_callback_fallback(tmp_path,project_roo
     assert "say hello" in second.text.lower() and not second.end_call
     assert third.end_call
     assert notifier.calls[-1][0]=="partial_no_input"
+
+
+@pytest.mark.asyncio
+async def test_name_and_address_confirmations_use_a_real_brief_pause_and_digit_readback(tmp_path,project_root,monkeypatch):
+    s=settings(tmp_path,project_root,monkeypatch);db=Database(s.database_path);core=VoiceCore(s,db,BusinessDirectory(s.service_area_path),KnowledgeBase(project_root/"knowledge"),StubLLM(),StubNotifier())
+    session=core.create_session("confirmation-pause");session.state.stage="name"
+
+    name_reply=await core.process(session,"My name is Josh Aldrich")
+
+    assert name_reply.text=="I heard Josh Aldrich. Is that correct?"
+    assert name_reply.speech_parts==("I heard Josh Aldrich","Is that correct?")
+    assert name_reply.pause_between_parts_ms==300
+
+    session.state.stage="address"
+    address_reply=await core.process(session,"8805 Main Street Detroit Michigan 48207")
+    assert "eight, eight, zero, five, Main Street" in address_reply.text
+    assert "four, eight, two, zero, seven" in address_reply.text
+    assert not any(character.isdigit() for character in address_reply.text)
+
+
+@pytest.mark.asyncio
+async def test_notification_failure_does_not_trigger_technical_call_failure(tmp_path,project_root,monkeypatch):
+    s=settings(tmp_path,project_root,monkeypatch);db=Database(s.database_path);core=VoiceCore(s,db,BusinessDirectory(s.service_area_path),KnowledgeBase(project_root/"knowledge"),StubLLM(),FailingNotifier())
+    session=core.create_session("fail-open-notification");session.state.stage="confirm_address";session.state.address="1 Main Street";session.state.confirmations["address"]="pending"
+
+    await core.call_started(session)
+    reply=await core.process(session,"yes")
+
+    assert reply.end_call
+    assert session.state.completed
+    assert "all set" in reply.text.lower()
+    assert db.get_call(session.call_id)["notification_status"]=="delivery_error"

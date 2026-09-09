@@ -238,7 +238,6 @@ def main() -> int:
      same => n(audio),TryExec(AudioSocket(${{FLOODMAN_CALL_ID}},${{FLOODMAN_AUDIOSOCKET}}))
      same => n,Set(__FLOODMAN_AUDIO_TRYSTATUS=${{TRYSTATUS}})
      same => n,Log(NOTICE,FLOODMAN_CALL stage=audiosocket_return call_uuid=${{FLOODMAN_CALL_ID}} channel_id=${{FLOODMAN_CHANNEL_ID}} trystatus=${{FLOODMAN_AUDIO_TRYSTATUS}})
-     same => n,GotoIf($["${{FLOODMAN_AUDIO_TRYSTATUS}}"="SUCCESS"]?finish:fallback)
      same => n(finish),Set(FLOODMAN_ACTION=missing_action)
      same => n,AGI(/opt/floodman/scripts/agi_finish.py,${{FLOODMAN_CALL_ID}})
      same => n,Log(NOTICE,FLOODMAN_CALL stage=finish call_uuid=${{FLOODMAN_CALL_ID}} action=${{FLOODMAN_ACTION}} reason=${{FLOODMAN_ACTION_REASON}})

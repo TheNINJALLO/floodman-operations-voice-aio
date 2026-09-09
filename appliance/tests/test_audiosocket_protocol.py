@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.audiosocket import AudioSocketConnection, AudioSocketServer, TYPE_AUDIO, TYPE_HANGUP, TYPE_UUID
+from app.models import VoiceReply
 
 
 class FakeDatabase:
@@ -149,6 +150,26 @@ async def test_audiosocket_records_technical_failure_action() -> None:
     writer.close()
     await writer.wait_closed()
     await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_confirmation_audio_contains_exact_brief_pause() -> None:
+    class DistinctTTS:
+        async def synthesize(self, text: str) -> bytes:
+            return b"\x01\x00" * 2 if text == "I heard Josh Aldrich" else b"\x02\x00" * 2
+
+    server = AudioSocketServer(settings(), FakeCore(), SimpleNamespace(), DistinctTTS(), FakeRegistry())
+    reply = VoiceReply(
+        text="I heard Josh Aldrich. Is that correct?",
+        speech_parts=("I heard Josh Aldrich", "Is that correct?"),
+        pause_between_parts_ms=300,
+    )
+
+    audio = await server._synthesize_reply(reply)
+
+    assert audio[:4] == b"\x01\x00" * 2
+    assert audio[4:-4] == b"\x00\x00" * 2400
+    assert audio[-4:] == b"\x02\x00" * 2
 
 
 @pytest.mark.asyncio

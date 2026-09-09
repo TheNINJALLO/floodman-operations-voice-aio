@@ -37,6 +37,8 @@ def test_bridge_commits_ordered_canonical_events_before_delivery(monkeypatch, tm
         address="10 Main Street, Detroit, MI 48201",
         property_context="home",
         description="Water is coming through the basement wall",
+        affected_area="Basement wall, carpet, and drywall",
+        source_summary="Heavy rain through the wall, spreading under carpet",
         service_key="water_damage_restoration",
         service_status="supported",
         completed=True,
@@ -62,6 +64,9 @@ def test_bridge_commits_ordered_canonical_events_before_delivery(monkeypatch, tm
     assert events[0]["transcript_available"] is False
     assert events[-1]["event_type"] == "call-ended"
     assert events[-1]["transcript_available"] is True
+    assert events[-1]["property"]["postal_code"] == "48201"
+    assert "Affected area: Basement wall, carpet, and drywall" in events[-1]["summary"]
+    assert "Source/spread: Heavy rain through the wall" in events[-1]["summary"]
     assert database.business_event_counts() == {"pending": 0, "sending": 0, "sent": 3}
 
 
@@ -90,4 +95,3 @@ def test_business_suite_signature_matches_contract():
     assert headers["x-floodman-key-id"] == "call-v1"
     assert headers["x-floodman-timestamp"] == "1700000000"
     assert base64.b64decode(headers["x-floodman-signature"]) == expected
-

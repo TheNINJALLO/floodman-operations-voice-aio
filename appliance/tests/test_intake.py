@@ -1,4 +1,4 @@
-from app.intake import classify_property_context, classify_service, normalize_confirmation, normalize_email, normalize_name, normalize_phone
+from app.intake import classify_property_context, classify_service, normalize_confirmation, normalize_email, normalize_name, normalize_phone, spoken_address, spoken_email
 
 def test_service_classification():
     assert classify_service("water is flooding my basement")["service_status"] == "supported"
@@ -22,6 +22,20 @@ def test_real_email_hyphens_are_preserved():
     assert normalize_email("mary-jane at example dot com") == "mary-jane@example.com"
     assert normalize_email("mary dash jane at example dot com") == "mary-jane@example.com"
     assert normalize_email("mary hyphen jane at example dot com") == "mary-jane@example.com"
+
+
+def test_email_readback_spells_letters_and_only_speaks_real_hyphens():
+    assert spoken_email("j2@example.com") == "j, two, at, e, x, a, m, p, l, e, dot, c, o, m"
+    assert "hyphen" not in spoken_email("josh@example.com")
+    assert "hyphen" in spoken_email("mary-jane@example.com")
+    assert "dash" not in spoken_email("mary-jane@example.com")
+
+
+def test_address_readback_speaks_every_address_and_zip_digit_separately():
+    spoken = spoken_address("8805 East Melendy Street, Ludington, MI 49431")
+    assert spoken.startswith("eight, eight, zero, five, East Melendy Street")
+    assert spoken.endswith("four, nine, four, three, one")
+    assert not any(character.isdigit() for character in spoken)
 
 
 def test_property_context_is_reused_from_volunteered_details():

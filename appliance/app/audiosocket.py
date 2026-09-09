@@ -10,6 +10,7 @@ import uuid
 from app.audio import chunk_pcm, rms
 from app.config import Settings
 from app.intake_flow import contact_endpoint_stage
+from app.models import VoiceReply
 from app.registry import CallRegistry
 from app.stt import LocalSTT
 from app.tts import LocalTTS
@@ -241,6 +242,15 @@ class AudioSocketServer:
             self.server.close()
             await self.server.wait_closed()
 
+    async def _synthesize_reply(self, reply: VoiceReply) -> bytes:
+        parts = tuple(part for part in reply.speech_parts if str(part).strip())
+        if len(parts) < 2:
+            return await self.tts.synthesize(reply.text)
+        audio_parts = [await self.tts.synthesize(part) for part in parts]
+        pause_samples = max(0, int(8000 * reply.pause_between_parts_ms / 1000))
+        pause = b"\x00\x00" * pause_samples
+        return pause.join(audio_parts)
+
     async def handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         connection = AudioSocketConnection(reader, writer, self.settings)
         session = None
@@ -315,7 +325,7 @@ class AudioSocketServer:
                     )
                 started = time.monotonic()
                 logger.info("call_event call_uuid=%s stage=tts_started", call_uuid)
-                response_audio = await self.tts.synthesize(reply.text)
+                response_audio = await self._synthesize_reply(reply)
                 logger.info(
                     "call_event call_uuid=%s stage=tts_completed duration_ms=%d audio_bytes=%d",
                     call_uuid,

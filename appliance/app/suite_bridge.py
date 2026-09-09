@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -55,10 +56,17 @@ def _summary(state: IntakeState) -> str:
     parts = [
         state.description,
         f"Property: {state.property_context}" if state.property_context else "",
+        f"Affected area: {state.affected_area}" if state.affected_area else "",
         f"Started: {state.timing_summary}" if state.timing_summary else "",
+        f"Source/spread: {state.source_summary}" if state.source_summary else "",
         f"Safety: {state.safety_summary}" if state.safety_summary else "",
     ]
     return " | ".join(part for part in parts if part)[:5000]
+
+
+def _postal_code(value: str) -> str:
+    match = re.search(r"(?<!\d)(\d{5}(?:-\d{4})?)(?!\d)", value)
+    return match.group(1) if match else ""
 
 
 class BusinessSuiteBridge:
@@ -144,7 +152,7 @@ class BusinessSuiteBridge:
                 "street": state.address,
                 "city": state.service_area_city,
                 "state": "",
-                "postal_code": "",
+                "postal_code": _postal_code(state.address),
                 "country": "US",
                 "insurer": "",
                 "claim_number": "",

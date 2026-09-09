@@ -23,7 +23,9 @@ class IntakeState:
     service_area_status: str = "unknown"
     service_area_city: str = ""
     property_context: str = ""
+    affected_area: str = ""
     timing_summary: str = ""
+    source_summary: str = ""
     safety_summary: str = ""
     name: str = ""
     email: str = ""
@@ -57,3 +59,5 @@ class VoiceReply:
     transfer_number: str = ""
     notification_kind: str = ""
     notification_partial: bool = False
+    speech_parts: tuple[str, ...] = ()
+    pause_between_parts_ms: int = 0

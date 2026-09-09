@@ -138,13 +138,45 @@ def spoken_phone(value: str) -> str:
     digits = re.sub(r"\D", "", value)
     if len(digits) == 11 and digits.startswith("1"):
         digits = digits[1:]
-    if len(digits) == 10:
-        return ", ".join(" ".join(group) for group in (digits[:3], digits[3:6], digits[6:]))
-    return " ".join(digits)
+    return ", ".join(_spoken_character(character) for character in digits)
 
 
 def spoken_email(value: str) -> str:
-    return re.sub(r"\s+", " ", value.replace("_", " underscore ").replace("-", " dash ").replace("@", " at ").replace(".", " dot ")).strip()
+    """Spell an email without inventing separators between its characters."""
+    names = {
+        "@": "at",
+        ".": "dot",
+        "_": "underscore",
+        "-": "hyphen",
+        "+": "plus",
+    }
+    return ", ".join(names.get(character, _spoken_character(character)) for character in value.lower())
+
+
+def spoken_address(value: str) -> str:
+    """Read every address and ZIP digit separately while preserving the words."""
+    parts: list[str] = []
+    for character in clean(value, 500):
+        if character.isdigit():
+            parts.append(f" {_spoken_character(character)}, ")
+        else:
+            parts.append(character)
+    return re.sub(r"\s+", " ", "".join(parts)).strip(" ,")
+
+
+def _spoken_character(value: str) -> str:
+    return {
+        "0": "zero",
+        "1": "one",
+        "2": "two",
+        "3": "three",
+        "4": "four",
+        "5": "five",
+        "6": "six",
+        "7": "seven",
+        "8": "eight",
+        "9": "nine",
+    }.get(value, value)
 
 
 def detect_emergency(value: Any) -> bool:
