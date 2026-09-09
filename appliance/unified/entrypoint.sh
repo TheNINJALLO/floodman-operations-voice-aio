@@ -107,8 +107,12 @@ mv "${business_overlay_next}" "${business_overlay}"
 business_overlay_root="${business_overlay}/floodman-operations-v4.7.2"
 
 # Serve the current Hub source from the pinned Business image so its AI Call
-# Center link stays synchronized with this unified release.
-cp -a /opt/floodman/hub/. "${business_overlay_root}/hub/"
+# Center link stays synchronized with this unified release. Pterodactyl's bind
+# volume permits content writes but may reject preserving image-layer metadata.
+rm -rf "${business_overlay_root}/hub"
+mkdir -p "${business_overlay_root}/hub"
+cp -R --no-preserve=mode,ownership,timestamps /opt/floodman/hub/. \
+  "${business_overlay_root}/hub/"
 cp /opt/floodman/unified/assets/floodman-boot-guard.js \
   "${business_runtime_dir}/floodman-boot-guard.js"
 cp /opt/floodman/unified/assets/floodman-status.html \

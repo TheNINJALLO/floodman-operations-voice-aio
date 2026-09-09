@@ -16,6 +16,8 @@ def test_unified_image_runs_voice_and_business_suite_on_distinct_ports(project_r
     assert "readonly PYTHON_BIN=/opt/voice-venv/bin/python" in entrypoint
     assert "/opt/python312/bin" in entrypoint
     assert 'VIRTUAL_ENV="${VIRTUAL_ENV:-/opt/voice-venv}"' not in entrypoint
+    assert "cp -R --no-preserve=mode,ownership,timestamps /opt/floodman/hub/." in entrypoint
+    assert "cp -a /opt/floodman/hub/." not in entrypoint
     assert "PUBLIC_BASE_URL=\"${VOICE_PUBLIC_BASE_URL" in (project_root / "unified" / "start-voice-control.sh").read_text(encoding="utf-8")
     assert "program:voice-llama" in supervisor
     assert "program:voice-control" in supervisor
