@@ -19,6 +19,9 @@ def test_unified_image_runs_voice_and_business_suite_on_distinct_ports(project_r
     assert "cp -R --no-preserve=mode,ownership,timestamps /opt/floodman/hub/." in entrypoint
     assert "cp -a /opt/floodman/hub/." not in entrypoint
     assert 'export APP_LOGO="${APP_LOGO:-${FLOODMAN_PUBLIC_URL}/floodman-brand/floodman-wordmark.svg}"' in entrypoint
+    assert 'if [[ "$(id -u)" == "0" ]]' in entrypoint
+    assert "runuser --user container --preserve-environment" in entrypoint
+    assert entrypoint.index("runuser --user container") < entrypoint.index('mkdir -p "${DATA_DIR}"')
     assert "PUBLIC_BASE_URL=\"${VOICE_PUBLIC_BASE_URL" in (project_root / "unified" / "start-voice-control.sh").read_text(encoding="utf-8")
     assert "program:voice-llama" in supervisor
     assert "program:voice-control" in supervisor

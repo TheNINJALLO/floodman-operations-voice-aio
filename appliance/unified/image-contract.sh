@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 test -x /opt/voice-venv/bin/python
+command -v runuser >/dev/null
+grep -Fq 'runuser --user container --preserve-environment' /opt/floodman/scripts/entrypoint.sh
 grep -Fq 'export VIRTUAL_ENV=/opt/voice-venv' /opt/floodman/scripts/entrypoint.sh
 grep -Fq 'readonly PYTHON_BIN=/opt/voice-venv/bin/python' /opt/floodman/scripts/entrypoint.sh
 grep -Fq '/opt/python312/bin' /opt/floodman/scripts/entrypoint.sh

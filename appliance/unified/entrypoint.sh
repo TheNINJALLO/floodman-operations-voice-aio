@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Wings can override the image USER and launch the process as namespace root.
+# Re-enter as the account baked into the image before touching persistent data;
+# PostgreSQL intentionally refuses to initialize as root.
+if [[ "$(id -u)" == "0" ]]; then
+  exec runuser --user container --preserve-environment -- \
+    env HOME=/home/container USER=container LOGNAME=container "$0" "$@"
+fi
+
 export DATA_DIR="${DATA_DIR:-/home/container/data}"
 # The legacy Pterodactyl egg injects VIRTUAL_ENV=/opt/venv. That path belonged
 # to the old voice-only image and must not override the unified image runtime.
