@@ -66,6 +66,7 @@ export FLOODMAN_MAILPIT_URL="${FLOODMAN_MAILPIT_URL:-http://127.0.0.1:9002}"
 export FLOODMAN_ENGINEERING_URL="${FLOODMAN_ENGINEERING_URL:-https://lab.oninetwork.com}"
 export FLOODMAN_API_PUBLIC_URL="${FLOODMAN_API_PUBLIC_URL:-https://api.oninetwork.com}"
 export FLOODMAN_VOICE_URL="${FLOODMAN_VOICE_URL:-${VOICE_PUBLIC_BASE_URL}}"
+export APP_LOGO="${APP_LOGO:-${FLOODMAN_PUBLIC_URL}/floodman-brand/floodman-wordmark.svg}"
 
 # Pterodactyl mounts its persistent server volume over /home/container, which
 # hides links created in the image layer. Recreate only the known Suite
