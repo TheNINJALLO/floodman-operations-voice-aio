@@ -189,4 +189,12 @@ for shared_store in \
   share_panel_directory "${shared_store}"
 done
 
+# These files describe processes in the current boot, not durable business
+# state. Clear them before Supervisor starts so dependants cannot race ahead on
+# a marker left by the previous container instance.
+rm -f \
+  "${FM_RUN}/databases-ready" \
+  "${FM_RUN}/gauzy-finalized" \
+  "${FM_RUN}/owner-linked"
+
 exec /opt/floodman/aio/start-suite.sh

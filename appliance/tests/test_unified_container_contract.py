@@ -27,6 +27,8 @@ def test_unified_image_runs_voice_and_business_suite_on_distinct_ports(project_r
     assert '"${FM_DATA}/documenso"' in entrypoint
     assert '"${FM_DATA}/office"' in entrypoint
     assert '"${FM_DATA}/runtime"' in entrypoint
+    assert '"${FM_RUN}/gauzy-finalized"' in entrypoint
+    assert '"${FM_RUN}/owner-linked"' in entrypoint
     assert 'share_panel_directory "${FM_CONFIG}"' not in entrypoint
     assert 'share_panel_directory "${FM_DATA}/postgres"' not in entrypoint
 

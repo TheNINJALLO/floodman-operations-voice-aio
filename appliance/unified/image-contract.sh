@@ -16,6 +16,8 @@ grep -Fq '/opt/floodman/unified/bin:/opt/node24/bin' /opt/floodman/scripts/entry
 grep -Fq 'share_panel_directory()' /opt/floodman/scripts/entrypoint.sh
 grep -Fq 'setpriv --reuid="${owner}" --regid="${group}"' /opt/floodman/scripts/entrypoint.sh
 grep -Fq '"${FM_DATA}/gauzy-files"' /opt/floodman/scripts/entrypoint.sh
+grep -Fq '"${FM_RUN}/gauzy-finalized"' /opt/floodman/scripts/entrypoint.sh
+grep -Fq '"${FM_RUN}/owner-linked"' /opt/floodman/scripts/entrypoint.sh
 ! grep -Fq 'share_panel_directory "${FM_CONFIG}"' /opt/floodman/scripts/entrypoint.sh
 grep -Fq 'cp -R --no-preserve=mode,ownership,timestamps /opt/floodman/gauzy-public-seed/.' /opt/floodman/aio/start-suite.sh
 ! grep -Fq 'cp -a /opt/floodman/gauzy-public-seed/.' /opt/floodman/aio/start-suite.sh
