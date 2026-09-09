@@ -21,6 +21,8 @@ grep -Fq 'cp -R --no-preserve=mode,ownership,timestamps /opt/floodman/gauzy-publ
 ! grep -Fq 'cp -a /opt/floodman/gauzy-public-seed/.' /opt/floodman/aio/start-suite.sh
 grep -Fq -- '--encoding=UTF8 --locale=C.UTF-8' /opt/floodman/aio/start-suite.sh
 test "$(grep -Fc 'floodman?client_encoding=utf8' /opt/floodman/aio/start-suite.sh)" -eq 2
+grep -Fq 'export FLOODMAN_COMPANY_NAME' /opt/floodman/aio/start-suite.sh
+! grep -Fq 'nginx -e ' /opt/floodman/aio/start-hub.sh
 grep -Fq 'NoNewPrivs:[[:space:]]*1' /opt/floodman/unified/bin/initdb
 grep -Fq 'FLOODMAN_PTERODACTYL_ROOTLESS=1' /opt/floodman/unified/bin/postgres
 grep -Fq 'export VIRTUAL_ENV=/opt/voice-venv' /opt/floodman/scripts/entrypoint.sh
@@ -40,6 +42,7 @@ grep -Fq '20260302223702_optimize_recipient_indexes' /opt/floodman/unified/start
 grep -Fq '.floodman-recovered-$failed_migration' /opt/floodman/unified/start-documenso.sh
 grep -Fq 'GRANT USAGE, CREATE ON SCHEMA public TO floodman' /opt/floodman/aio/bootstrap-databases.sh
 test "$(readlink /var/log/nginx/error.log)" = "/home/container/data/business/logs/gateway-nginx-bootstrap.log"
+test "$(readlink /opt/documenso/apps/remix/.documenso-license.json)" = "/home/container/data/business/documenso/license.json"
 test -s /opt/floodman/aio/supervisord.conf
 ! grep -Fq '/usr/sbin/nginx -e ' /opt/floodman/aio/supervisord.conf
 test -s /opt/floodman/unified/gateway-nginx.conf

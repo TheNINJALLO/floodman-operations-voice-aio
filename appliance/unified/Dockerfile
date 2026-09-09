@@ -148,7 +148,14 @@ RUN set -eux; \
       /opt/floodman/aio/start-suite.sh; \
     sed -i 's#@127.0.0.1:5432/floodman"#@127.0.0.1:5432/floodman?client_encoding=utf8"#g' \
       /opt/floodman/aio/start-suite.sh; \
-    grep -Fq 'floodman?client_encoding=utf8' /opt/floodman/aio/start-suite.sh
+    sed -i '/^: "${FLOODMAN_COMPANY_NAME:=Floodman}"$/a export FLOODMAN_COMPANY_NAME' \
+      /opt/floodman/aio/start-suite.sh; \
+    grep -Fq 'floodman?client_encoding=utf8' /opt/floodman/aio/start-suite.sh; \
+    grep -Fq 'export FLOODMAN_COMPANY_NAME' /opt/floodman/aio/start-suite.sh; \
+    grep -Fq 'exec nginx -e "$FM_LOGS/nginx-bootstrap.log" -c' /opt/floodman/aio/start-hub.sh; \
+    sed -i 's#exec nginx -e "$FM_LOGS/nginx-bootstrap.log" -c#exec nginx -c#' \
+      /opt/floodman/aio/start-hub.sh; \
+    ! grep -Fq 'nginx -e ' /opt/floodman/aio/start-hub.sh
 
 # Carry the exact browser/RoomFlow payload that the standalone Business Suite
 # egg normally installs into the Pterodactyl volume. The unified server has no
@@ -237,6 +244,9 @@ RUN set -eux; \
     ln -s /home/container/data/business/gauzy-files /srv/gauzy/apps/api/public; \
     ln -s /home/container/data/business/gauzy-import /import; \
     ln -s /opt/floodman/unified/start-documenso.sh /opt/floodman/aio/start-documenso.sh; \
+    rm -f /opt/documenso/apps/remix/.documenso-license.json; \
+    ln -s /home/container/data/business/documenso/license.json \
+      /opt/documenso/apps/remix/.documenso-license.json; \
     rm -f /var/log/nginx/error.log; \
     ln -s /home/container/data/business/logs/gateway-nginx-bootstrap.log /var/log/nginx/error.log; \
     espeak-ng -s 155 -v en-us -w /tmp/floodman-technical-failure-source.wav \
