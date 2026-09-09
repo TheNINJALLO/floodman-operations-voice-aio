@@ -2,10 +2,12 @@
 set -euo pipefail
 
 export DATA_DIR="${DATA_DIR:-/home/container/data}"
-export VIRTUAL_ENV="${VIRTUAL_ENV:-/opt/voice-venv}"
-export PATH="/opt/node24/bin:/usr/lib/postgresql/14/bin:${VIRTUAL_ENV}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+# The legacy Pterodactyl egg injects VIRTUAL_ENV=/opt/venv. That path belonged
+# to the old voice-only image and must not override the unified image runtime.
+export VIRTUAL_ENV=/opt/voice-venv
+export PATH="/opt/node24/bin:/opt/python312/bin:/usr/lib/postgresql/14/bin:${VIRTUAL_ENV}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 export PYTHONPATH="/opt/voice"
-PYTHON_BIN="${VIRTUAL_ENV}/bin/python"
+readonly PYTHON_BIN=/opt/voice-venv/bin/python
 RUNTIME_ENV="${RUNTIME_ENV:-${DATA_DIR}/runtime.env}"
 
 mkdir -p "${DATA_DIR}" "${DATA_DIR}/logs" "${DATA_DIR}/runtime" "${DATA_DIR}/models" \

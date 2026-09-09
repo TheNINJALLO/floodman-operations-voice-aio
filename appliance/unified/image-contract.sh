@@ -1,6 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 test -x /opt/voice-venv/bin/python
+grep -Fq 'export VIRTUAL_ENV=/opt/voice-venv' /opt/floodman/scripts/entrypoint.sh
+grep -Fq 'readonly PYTHON_BIN=/opt/voice-venv/bin/python' /opt/floodman/scripts/entrypoint.sh
+grep -Fq '/opt/python312/bin' /opt/floodman/scripts/entrypoint.sh
 test -x /opt/llama/llama-server
 test -x /usr/local/bin/mailpit
 test -s /srv/gauzy/main.js

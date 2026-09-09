@@ -12,6 +12,10 @@ def test_unified_image_runs_voice_and_business_suite_on_distinct_ports(project_r
     assert "AUDIOSOCKET_PORT=8091" in entrypoint
     assert "WEB_PORT=8802" in entrypoint
     assert "BUSINESS_SUITE_EVENTS_URL=\"http://127.0.0.1:9004/" in entrypoint
+    assert "export VIRTUAL_ENV=/opt/voice-venv" in entrypoint
+    assert "readonly PYTHON_BIN=/opt/voice-venv/bin/python" in entrypoint
+    assert "/opt/python312/bin" in entrypoint
+    assert 'VIRTUAL_ENV="${VIRTUAL_ENV:-/opt/voice-venv}"' not in entrypoint
     assert "PUBLIC_BASE_URL=\"${VOICE_PUBLIC_BASE_URL" in (project_root / "unified" / "start-voice-control.sh").read_text(encoding="utf-8")
     assert "program:voice-llama" in supervisor
     assert "program:voice-control" in supervisor
