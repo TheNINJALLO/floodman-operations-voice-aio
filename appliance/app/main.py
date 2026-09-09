@@ -31,6 +31,7 @@ from app.llm import LocalLLM
 from app.notifications import TeamNotifier
 from app.registry import CallRegistry
 from app.stt import LocalSTT
+from app.suite_bridge import BusinessSuiteBridge
 from app.tts import LocalTTS
 from app.voice_core import CallSession, VoiceCore
 
@@ -71,7 +72,16 @@ class Runtime:
         self.tts = LocalTTS(settings)
         self.registry = CallRegistry(settings.runtime_dir)
         self.notifier = TeamNotifier(settings, self.database)
-        self.core = VoiceCore(settings, self.database, self.business, self.knowledge, self.llm, self.notifier)
+        self.suite_bridge = BusinessSuiteBridge(settings, self.database)
+        self.core = VoiceCore(
+            settings,
+            self.database,
+            self.business,
+            self.knowledge,
+            self.llm,
+            self.notifier,
+            self.suite_bridge,
+        )
         self.audio = AudioSocketServer(settings, self.core, self.stt, self.tts, self.registry)
         self.simulators: dict[str, CallSession] = {}
         self.ready = False
@@ -83,11 +93,13 @@ class Runtime:
             raise RuntimeError("Local llama.cpp API is not ready")
         await self.tts.warm(self.core.warm_phrases())
         await self.audio.start()
+        await self.suite_bridge.start()
         self.ready = True
 
     async def stop(self) -> None:
         self.ready = False
         await self.audio.stop()
+        await self.suite_bridge.stop()
         await self.notifier.stop()
 
 
@@ -169,6 +181,7 @@ def _context(request: Request, principal: Principal, section: str, **values: Any
         "csrf_token": principal.csrf_token,
         "unread_notifications": unread,
         "public_base_url": settings.public_base_url,
+        "business_suite_public_url": settings.business_suite_public_url,
         **values,
     }
 

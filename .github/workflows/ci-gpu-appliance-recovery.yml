@@ -59,7 +59,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ./appliance
-          file: ./appliance/Dockerfile
+          file: ./appliance/unified/Dockerfile
           platforms: linux/amd64
           push: true
           tags: ${{ env.IMAGE }}:gpu-appliance-candidate-${{ github.sha }}

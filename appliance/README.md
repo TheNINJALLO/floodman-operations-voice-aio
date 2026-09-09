@@ -10,7 +10,13 @@ The image supervises three internal processes:
 2. **Floodman Voice Core** running Faster-Whisper, Kokoro, the deterministic intake state machine, transcripts, knowledge, team SMS, and the web panel.
 3. **Asterisk** handling SIP, RTP, transfers, and the AudioSocket bridge.
 
-Only the carrier remains external. Twilio or another SIP provider supplies the phone number, minutes, and SMS. No paid AI key is accepted or required.
+The production image also supervises the Floodman Business Suite on ports
+9000-9004. Voice records locally first and forwards signed, ordered call events
+over loopback so Office, RoomFlow, estimates, tasks, and staff notifications use
+the same call/customer workflow. Business services cannot delay or terminate a
+live call.
+
+Only the carrier remains external to the local voice path. Twilio or another SIP provider supplies the phone number, minutes, and SMS. No paid AI key is accepted or required for calling.
 
 ## Reliability design
 

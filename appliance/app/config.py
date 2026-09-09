@@ -250,6 +250,14 @@ class Settings:
     twilio_messaging_service_sid: str
     twilio_sms_from_number: str
 
+    business_suite_events_enabled: bool
+    business_suite_events_url: str
+    business_suite_public_url: str
+    business_suite_hmac_keys: str
+    business_suite_organization_id: str
+    business_suite_workspace_id: str
+    business_suite_timeout_seconds: float
+
     log_level: str
     app_name: str = "Floodman Voice Appliance"
     timezone: str = "America/Detroit"
@@ -361,6 +369,22 @@ class Settings:
             twilio_api_key_secret=os.getenv("TWILIO_API_KEY_SECRET", "").strip(),
             twilio_messaging_service_sid=os.getenv("TWILIO_MESSAGING_SERVICE_SID", "").strip(),
             twilio_sms_from_number=os.getenv("TWILIO_SMS_FROM_NUMBER", "").strip(),
+            business_suite_events_enabled=_bool("BUSINESS_SUITE_EVENTS_ENABLED", False),
+            business_suite_events_url=os.getenv(
+                "BUSINESS_SUITE_EVENTS_URL",
+                "http://127.0.0.1:9004/webhooks/ai-calling/deterministic",
+            ).strip(),
+            business_suite_public_url=os.getenv(
+                "BUSINESS_SUITE_PUBLIC_URL",
+                "https://floodman.oninetwork.com",
+            ).strip().rstrip("/"),
+            business_suite_hmac_keys=os.getenv("AI_CALLING_HMAC_KEYS", "").strip(),
+            business_suite_organization_id=os.getenv("BUSINESS_SUITE_ORGANIZATION_ID", "").strip(),
+            business_suite_workspace_id=os.getenv("BUSINESS_SUITE_WORKSPACE_ID", "").strip(),
+            business_suite_timeout_seconds=max(
+                1.0,
+                min(_float("BUSINESS_SUITE_TIMEOUT_SECONDS", 5.0), 20.0),
+            ),
             log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
         )
 

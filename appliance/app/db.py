@@ -5,6 +5,7 @@ import hashlib
 import secrets
 import sqlite3
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -131,11 +132,29 @@ class Database:
                     detail_json TEXT NOT NULL DEFAULT '{}',
                     created_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS business_event_outbox (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    call_id INTEGER NOT NULL REFERENCES calls(id) ON DELETE CASCADE,
+                    event_id TEXT NOT NULL UNIQUE,
+                    event_type TEXT NOT NULL,
+                    event_sequence INTEGER NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending'
+                        CHECK(status IN ('pending','sending','sent')),
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    next_attempt_at REAL NOT NULL DEFAULT 0,
+                    last_error TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    sent_at TEXT,
+                    UNIQUE(call_id, event_sequence)
+                );
                 CREATE INDEX IF NOT EXISTS idx_calls_started ON calls(started_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_messages_call ON messages(call_id, id);
                 CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON user_sessions(expires_at);
                 CREATE INDEX IF NOT EXISTS idx_user_notifications ON user_notifications(user_id, created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_events(created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_business_outbox_due
+                    ON business_event_outbox(status, next_attempt_at, id);
                 """
             )
             self._ensure_column(db, "users", "email", "TEXT NOT NULL DEFAULT ''")
@@ -143,6 +162,9 @@ class Database:
             self._ensure_column(db, "notifications", "channel", "TEXT NOT NULL DEFAULT 'sms'")
             db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users(email COLLATE NOCASE) WHERE email<>''")
             db.execute("CREATE INDEX IF NOT EXISTS idx_notifications_channel ON notifications(channel, status)")
+            # A process can stop after claiming an item but before recording its
+            # result. Return those durable local records to the retry queue.
+            db.execute("UPDATE business_event_outbox SET status='pending' WHERE status='sending'")
 
     @staticmethod
     def _ensure_column(db: sqlite3.Connection, table: str, column: str, definition: str) -> None:
@@ -199,6 +221,84 @@ class Database:
     def finish_call(self, call_id: int, outcome: str) -> None:
         with self.connect() as db:
             db.execute("UPDATE calls SET ended_at=?, status='completed', outcome=? WHERE id=?", (utcnow(), outcome, call_id))
+
+    # Business Suite event outbox ------------------------------------
+    def enqueue_business_event(
+        self,
+        call_id: int,
+        event_type: str,
+        payload_factory: Any,
+    ) -> dict[str, Any]:
+        """Commit the next ordered event locally before any network attempt."""
+        with self._lock, self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT COALESCE(MAX(event_sequence), -1) + 1 AS sequence FROM business_event_outbox WHERE call_id=?",
+                (call_id,),
+            ).fetchone()
+            sequence = int(row["sequence"])
+            payload = payload_factory(sequence)
+            event_id = str(payload["event_id"])
+            db.execute(
+                """INSERT INTO business_event_outbox(
+                       call_id,event_id,event_type,event_sequence,payload_json,status,
+                       attempts,next_attempt_at,last_error,created_at
+                   ) VALUES(?,?,?,?,?,'pending',0,0,'',?)""",
+                (
+                    call_id,
+                    event_id,
+                    event_type,
+                    sequence,
+                    json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True),
+                    utcnow(),
+                ),
+            )
+        return payload
+
+    def claim_business_event(self, now: float | None = None) -> dict[str, Any] | None:
+        due = time.time() if now is None else now
+        with self._lock, self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                """SELECT * FROM business_event_outbox
+                   WHERE status='pending' AND next_attempt_at<=?
+                   ORDER BY id LIMIT 1""",
+                (due,),
+            ).fetchone()
+            if row is None:
+                return None
+            db.execute(
+                "UPDATE business_event_outbox SET status='sending',attempts=attempts+1 WHERE id=?",
+                (row["id"],),
+            )
+            item = dict(row)
+            item["attempts"] = int(item["attempts"]) + 1
+            item["payload"] = json.loads(item.pop("payload_json"))
+            return item
+
+    def complete_business_event(self, outbox_id: int) -> None:
+        with self.connect() as db:
+            db.execute(
+                "UPDATE business_event_outbox SET status='sent',last_error='',sent_at=? WHERE id=?",
+                (utcnow(), outbox_id),
+            )
+
+    def retry_business_event(self, outbox_id: int, error: str, delay_seconds: float) -> None:
+        with self.connect() as db:
+            db.execute(
+                """UPDATE business_event_outbox
+                   SET status='pending',last_error=?,next_attempt_at=? WHERE id=?""",
+                (str(error or "delivery failed")[:1000], time.time() + max(0.0, delay_seconds), outbox_id),
+            )
+
+    def business_event_counts(self) -> dict[str, int]:
+        with self.connect() as db:
+            rows = db.execute(
+                "SELECT status,COUNT(*) AS count FROM business_event_outbox GROUP BY status"
+            ).fetchall()
+        counts = {"pending": 0, "sending": 0, "sent": 0}
+        counts.update({str(row["status"]): int(row["count"]) for row in rows})
+        return counts
 
     def record_notification(
         self,

@@ -24,6 +24,7 @@ from app.knowledge import KnowledgeBase
 from app.llm import LocalLLM
 from app.models import IntakeState, VoiceReply
 from app.notifications import TeamNotifier
+from app.suite_bridge import BusinessSuiteBridge
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,7 @@ class VoiceCore:
         knowledge: KnowledgeBase,
         llm: LocalLLM,
         notifier: TeamNotifier,
+        suite_bridge: BusinessSuiteBridge | None = None,
     ):
         self.settings = settings
         self.database = database
@@ -54,6 +56,7 @@ class VoiceCore:
         self.knowledge = knowledge
         self.llm = llm
         self.notifier = notifier
+        self.suite_bridge = suite_bridge
 
     def create_session(self, call_uuid: str, caller_number: str = "", called_number: str = "") -> CallSession:
         caller = normalize_phone(caller_number)
@@ -67,6 +70,8 @@ class VoiceCore:
         return CallSession(call_id=call_id, state=state)
 
     async def call_started(self, session: CallSession) -> None:
+        if self.suite_bridge is not None:
+            self.suite_bridge.queue(session.call_id, session.state, "call-started")
         await self.notifier.call_started(session.call_id, session.state)
 
     @staticmethod
@@ -113,6 +118,8 @@ class VoiceCore:
         self.database.add_message(session.call_id, "assistant", text)
         self.database.update_prompt(session.call_id, text)
         self._save(session)
+        if self.suite_bridge is not None:
+            self.suite_bridge.queue(session.call_id, session.state, "transcript-updated")
         return VoiceReply(text=text)
 
     async def _extract(self, field: str, transcript: str, state: IntakeState) -> str:
@@ -316,3 +323,12 @@ class VoiceCore:
         if not session.state.completed and not session.notification_sent:
             await self._notify(session, kind="partial_hangup", partial=True)
         self.database.finish_call(session.call_id, outcome)
+        if self.suite_bridge is not None:
+            event_type = "call-failed" if outcome == "error" else "call-ended"
+            failure_reason = "Voice processing failed; local partial intake retained" if event_type == "call-failed" else ""
+            self.suite_bridge.queue(
+                session.call_id,
+                session.state,
+                event_type,
+                failure_reason=failure_reason,
+            )

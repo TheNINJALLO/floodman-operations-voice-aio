@@ -20,6 +20,9 @@
       </a>
       <nav class="primary-nav" aria-label="Primary navigation">
         <a href="/" class="{{ 'active' if section == 'calls' else '' }}"><span aria-hidden="true">◫</span> Calls</a>
+        {% if business_suite_public_url %}
+        <a href="{{ business_suite_public_url }}" rel="noreferrer"><span aria-hidden="true">⌂</span> Business Suite</a>
+        {% endif %}
         <a href="/knowledge" class="{{ 'active' if section == 'knowledge' else '' }}"><span aria-hidden="true">◇</span> Knowledge</a>
         <a href="/service-area" class="{{ 'active' if section == 'service-area' else '' }}"><span aria-hidden="true">⌖</span> Service area</a>
         {% if principal.user_id %}
