@@ -110,6 +110,7 @@ RUN set -eux; \
 COPY unified/entrypoint.sh /opt/floodman/scripts/entrypoint.sh
 COPY unified/start-voice-control.sh unified/start-voice-llama.sh unified/start-voice-asterisk.sh \
      unified/healthcheck.sh unified/image-contract.sh /opt/floodman/unified/
+COPY unified/gateway-nginx.conf unified/proxy-headers.conf /opt/floodman/unified/
 COPY unified/voice-supervisor.conf /opt/floodman/aio/voice-supervisor.conf
 
 RUN set -eux; \

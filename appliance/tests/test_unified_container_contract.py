@@ -10,11 +10,22 @@ def test_unified_image_runs_voice_and_business_suite_on_distinct_ports(project_r
     assert "nvidia/cuda:12.4.1-runtime-ubuntu22.04@sha256:" in dockerfile
     assert "8002/tcp 9000/tcp 9001/tcp 9002/tcp 9003/tcp 9004/tcp" in dockerfile
     assert "AUDIOSOCKET_PORT=8091" in entrypoint
+    assert "WEB_PORT=8802" in entrypoint
     assert "BUSINESS_SUITE_EVENTS_URL=\"http://127.0.0.1:9004/" in entrypoint
     assert "PUBLIC_BASE_URL=\"${VOICE_PUBLIC_BASE_URL" in (project_root / "unified" / "start-voice-control.sh").read_text(encoding="utf-8")
     assert "program:voice-llama" in supervisor
     assert "program:voice-control" in supervisor
     assert "program:voice-asterisk" in supervisor
+    assert "program:unified-public-gateway" in supervisor
+
+    gateway = (project_root / "unified" / "gateway-nginx.conf").read_text(encoding="utf-8")
+    assert "server_name aicall.oninetwork.com" in gateway
+    assert "proxy_pass http://127.0.0.1:8802" in gateway
+    assert "server_name floodman.oninetwork.com" in gateway
+    assert "proxy_pass http://127.0.0.1:9000" in gateway
+    assert "server_name sign.oninetwork.com" in gateway
+    assert "server_name lab.oninetwork.com" in gateway
+    assert "server_name api.oninetwork.com" in gateway
 
 
 def test_unified_mutable_paths_resolve_under_data_dir(project_root: Path):
@@ -32,4 +43,3 @@ def test_unified_health_requires_both_product_surfaces(project_root: Path):
     assert "127.0.0.1:8002/ready" in health
     assert "127.0.0.1:9000/health/live" in health
     assert "127.0.0.1:9004/health/ready" in health
-

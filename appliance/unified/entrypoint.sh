@@ -21,6 +21,7 @@ export CONFIG_DIR="/opt/voice/config"
 export KNOWLEDGE_DIR="${KNOWLEDGE_DIR:-${DATA_DIR}/knowledge}"
 export SERVICE_AREA_PATH="${SERVICE_AREA_PATH:-${DATA_DIR}/service_area.yaml}"
 export AUDIOSOCKET_PORT=8091
+export WEB_PORT=8802
 export VOICE_PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-https://aicall.oninetwork.com}"
 export BUSINESS_SUITE_EVENTS_ENABLED=true
 export BUSINESS_SUITE_EVENTS_URL="http://127.0.0.1:9004/webhooks/ai-calling/deterministic"
@@ -64,6 +65,10 @@ export FLOODMAN_ENGINEERING_URL="${FLOODMAN_ENGINEERING_URL:-https://lab.oninetw
 export FLOODMAN_API_PUBLIC_URL="${FLOODMAN_API_PUBLIC_URL:-https://api.oninetwork.com}"
 export FLOODMAN_VOICE_URL="${FLOODMAN_VOICE_URL:-${VOICE_PUBLIC_BASE_URL}}"
 
+mkdir -p "${FM_RUN}" "${FM_LOGS}" "${DATA_DIR}/business/tmp/gateway-client" \
+  "${DATA_DIR}/business/tmp/gateway-proxy" "${DATA_DIR}/business/tmp/gateway-fastcgi" \
+  "${DATA_DIR}/business/tmp/gateway-uwsgi" "${DATA_DIR}/business/tmp/gateway-scgi"
+
 owner_file="${FM_CONFIG}/unified-owner.env"
 mkdir -p "${FM_CONFIG}"
 owner_first_override="${FLOODMAN_OWNER_FIRST_NAME:-}"
@@ -91,4 +96,3 @@ export FLOODMAN_OWNER_PASSWORD="${FLOODMAN_OWNER_PASSWORD:-$(openssl rand -hex 1
 chmod 0600 "${owner_file}"
 
 exec /opt/floodman/aio/start-suite.sh
-

@@ -14,5 +14,4 @@ export BUSINESS_SUITE_EVENTS_URL=http://127.0.0.1:9004/webhooks/ai-calling/deter
 exec /opt/floodman/scripts/wait-for-ready.sh \
   http://127.0.0.1:8081/health 600 \
   /opt/voice-venv/bin/uvicorn app.main:app --app-dir /opt/voice \
-    --host 0.0.0.0 --port 8002 --workers 1 --no-access-log
-
+    --host 127.0.0.1 --port 8802 --workers 1 --no-access-log

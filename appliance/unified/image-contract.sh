@@ -6,6 +6,8 @@ test -x /usr/local/bin/mailpit
 test -s /srv/gauzy/main.js
 test -s /opt/documenso/apps/remix/start.sh
 test -s /opt/floodman/aio/supervisord.conf
+test -s /opt/floodman/unified/gateway-nginx.conf
+grep -q 'server_name floodman.oninetwork.com' /opt/floodman/unified/gateway-nginx.conf
 /opt/voice-venv/bin/python -c 'import app, httpx, yaml' 
 PYTHONPATH=/opt/pydeps/orchestrator:/opt/floodman/orchestrator python3 -c 'import app.ai_calling'
 /opt/node24/bin/node --check /srv/gauzy/main.js
