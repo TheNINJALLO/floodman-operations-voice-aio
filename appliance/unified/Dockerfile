@@ -140,7 +140,13 @@ RUN set -eux; \
     sed -i 's#cp -a /opt/floodman/gauzy-public-seed/\. "\$FM_DATA/gauzy-files/" 2>/dev/null || true#cp -R --no-preserve=mode,ownership,timestamps /opt/floodman/gauzy-public-seed/. "\$FM_DATA/gauzy-files/" 2>/dev/null || true#' \
       /opt/floodman/aio/start-suite.sh; \
     grep -Fq 'cp -R --no-preserve=mode,ownership,timestamps /opt/floodman/gauzy-public-seed/.' \
-      /opt/floodman/aio/start-suite.sh
+      /opt/floodman/aio/start-suite.sh; \
+    grep -Fq 'initdb -D "$PGDATA" -U postgres --pwfile="$pwfile"' /opt/floodman/aio/start-suite.sh; \
+    sed -i 's#initdb -D "$PGDATA" -U postgres #initdb -D "$PGDATA" -U postgres --encoding=UTF8 --locale=C.UTF-8 #' \
+      /opt/floodman/aio/start-suite.sh; \
+    sed -i 's#@127.0.0.1:5432/floodman"#@127.0.0.1:5432/floodman?client_encoding=utf8"#g' \
+      /opt/floodman/aio/start-suite.sh; \
+    grep -Fq 'floodman?client_encoding=utf8' /opt/floodman/aio/start-suite.sh
 
 # Carry the exact browser/RoomFlow payload that the standalone Business Suite
 # egg normally installs into the Pterodactyl volume. The unified server has no

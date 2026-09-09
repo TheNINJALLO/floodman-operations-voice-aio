@@ -56,6 +56,8 @@ def test_unified_image_runs_voice_and_business_suite_on_distinct_ports(project_r
     assert "gateway-nginx-bootstrap.log /var/log/nginx/error.log" in dockerfile
     assert "cp -R --no-preserve=mode,ownership,timestamps /opt/floodman/gauzy-public-seed/." in dockerfile
     assert "cp -a /opt/floodman/gauzy-public-seed/\\." in dockerfile
+    assert '--encoding=UTF8 --locale=C.UTF-8' in dockerfile
+    assert 'floodman?client_encoding=utf8' in dockerfile
     assert "PUBLIC_BASE_URL=\"${VOICE_PUBLIC_BASE_URL" in (project_root / "unified" / "start-voice-control.sh").read_text(encoding="utf-8")
     assert "program:voice-llama" in supervisor
     assert "program:voice-control" in supervisor
