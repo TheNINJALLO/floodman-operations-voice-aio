@@ -8,6 +8,8 @@ test -x /opt/floodman/postgresql14-panel/bin/initdb
 test -x /opt/floodman/postgresql14-panel/bin/postgres
 test -s /opt/floodman/postgresql14-panel/share/extension/pgcrypto.control
 test -s /opt/floodman/postgresql14-panel/lib/pgcrypto.so
+test -s /opt/floodman/postgresql14-panel/share/extension/pg_trgm.control
+test -s /opt/floodman/postgresql14-panel/lib/pg_trgm.so
 grep -Fq '/opt/floodman/unified/bin:/opt/node24/bin' /opt/floodman/scripts/entrypoint.sh
 grep -Fq 'share_panel_directory()' /opt/floodman/scripts/entrypoint.sh
 grep -Fq 'setpriv --reuid="${owner}" --regid="${group}"' /opt/floodman/scripts/entrypoint.sh
@@ -27,6 +29,11 @@ test -x /opt/llama/llama-server
 test -x /usr/local/bin/mailpit
 test -s /srv/gauzy/main.js
 test -s /opt/documenso/apps/remix/start.sh
+test -x /opt/floodman/unified/start-documenso.sh
+test -x /opt/floodman/aio/start-documenso-upstream.sh
+test "$(readlink /opt/floodman/aio/start-documenso.sh)" = "/opt/floodman/unified/start-documenso.sh"
+grep -Fq '20260302223702_optimize_recipient_indexes' /opt/floodman/unified/start-documenso.sh
+test "$(readlink /var/log/nginx/error.log)" = "/home/container/data/business/logs/gateway-nginx-bootstrap.log"
 test -s /opt/floodman/aio/supervisord.conf
 ! grep -Fq '/usr/sbin/nginx -e ' /opt/floodman/aio/supervisord.conf
 test -s /opt/floodman/unified/gateway-nginx.conf
@@ -41,6 +48,8 @@ test "$(readlink /import)" = "/home/container/data/business/gauzy-import"
 /opt/voice-venv/bin/python -c 'import app, httpx, yaml' 
 PYTHONPATH=/opt/pydeps/orchestrator:/opt/floodman/orchestrator python3 -c 'import app.ai_calling'
 /opt/node24/bin/node --check /srv/gauzy/main.js
+/opt/node24/bin/node -e "require('/srv/gauzy/node_modules/bcrypt')"
+/opt/node22/bin/node -e "require('/opt/documenso/node_modules/skia-canvas')"
 /opt/node24/bin/node --version
 /opt/node22/bin/node --version
 postgres --version

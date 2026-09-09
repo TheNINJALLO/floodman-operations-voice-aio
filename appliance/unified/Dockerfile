@@ -81,7 +81,9 @@ RUN curl --fail --location --retry 4 --connect-timeout 20 --max-time 300 \
       --without-readline --without-zlib --without-icu && \
     make -j"$(nproc)" && make install && \
     make -C contrib/pgcrypto -j"$(nproc)" && \
-    make -C contrib/pgcrypto install
+    make -C contrib/pgcrypto install && \
+    make -C contrib/pg_trgm -j"$(nproc)" && \
+    make -C contrib/pg_trgm install
 
 FROM ${CUDA_RUNTIME_IMAGE}
 ARG CONTAINER_UID=988
@@ -195,12 +197,20 @@ RUN set -eux; \
 # upstream application was published with.
 RUN set -eux; \
     cd /srv/gauzy; PATH=/opt/node24/bin:$PATH npm rebuild --omit=dev --foreground-scripts; \
+    find /srv/gauzy/node_modules/bcrypt -type f -name '*.node' -delete; \
+    cd /srv/gauzy; PATH=/opt/node24/bin:$PATH npm_config_build_from_source=true \
+      npm rebuild bcrypt --omit=dev --foreground-scripts; \
+    PATH=/opt/node24/bin:$PATH node -e "require('bcrypt')"; \
     cd /opt/documenso; PATH=/opt/node22/bin:$PATH npm rebuild --omit=dev --foreground-scripts; \
-    sed -i 's#/opt/documenso-runtime/usr/local/bin#/opt/node22/bin#' /opt/floodman/aio/start-documenso.sh
+    find /opt/documenso/node_modules/skia-canvas -type f -name '*.node' -delete; \
+    cd /opt/documenso; PATH=/opt/node22/bin:$PATH \
+      npm rebuild skia-canvas --omit=dev --foreground-scripts; \
+    PATH=/opt/node22/bin:$PATH node -e "require('skia-canvas')"; \
+    mv /opt/floodman/aio/start-documenso.sh /opt/floodman/aio/start-documenso-upstream.sh
 
 COPY unified/entrypoint.sh /opt/floodman/scripts/entrypoint.sh
 COPY unified/start-voice-control.sh unified/start-voice-llama.sh unified/start-voice-asterisk.sh \
-     unified/healthcheck.sh unified/image-contract.sh /opt/floodman/unified/
+     unified/start-documenso.sh unified/healthcheck.sh unified/image-contract.sh /opt/floodman/unified/
 COPY unified/postgres-init-wrapper.sh /opt/floodman/unified/bin/initdb
 COPY unified/postgres-server-wrapper.sh /opt/floodman/unified/bin/postgres
 COPY unified/gateway-nginx.conf unified/proxy-headers.conf /opt/floodman/unified/
@@ -212,6 +222,9 @@ RUN set -eux; \
     rm -f /srv/gauzy/apps/api/public /import; \
     ln -s /home/container/data/business/gauzy-files /srv/gauzy/apps/api/public; \
     ln -s /home/container/data/business/gauzy-import /import; \
+    ln -s /opt/floodman/unified/start-documenso.sh /opt/floodman/aio/start-documenso.sh; \
+    rm -f /var/log/nginx/error.log; \
+    ln -s /home/container/data/business/logs/gateway-nginx-bootstrap.log /var/log/nginx/error.log; \
     espeak-ng -s 155 -v en-us -w /tmp/floodman-technical-failure-source.wav \
       "We're having a temporary technical issue. I've alerted the Floodman team. Please expect a callback as soon as possible."; \
     ffmpeg -hide_banner -loglevel error -y \
