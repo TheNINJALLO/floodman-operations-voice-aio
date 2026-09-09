@@ -230,7 +230,8 @@ RUN set -eux; \
 
 COPY unified/entrypoint.sh /opt/floodman/scripts/entrypoint.sh
 COPY unified/start-voice-control.sh unified/start-voice-llama.sh unified/start-voice-asterisk.sh \
-     unified/start-documenso.sh unified/healthcheck.sh unified/image-contract.sh /opt/floodman/unified/
+     unified/start-documenso.sh unified/start-hub.sh unified/healthcheck.sh \
+     unified/image-contract.sh /opt/floodman/unified/
 COPY unified/postgres-init-wrapper.sh /opt/floodman/unified/bin/initdb
 COPY unified/postgres-server-wrapper.sh /opt/floodman/unified/bin/postgres
 COPY unified/bootstrap-databases.sh /opt/floodman/aio/bootstrap-databases.sh
@@ -244,6 +245,10 @@ RUN set -eux; \
     ln -s /home/container/data/business/gauzy-files /srv/gauzy/apps/api/public; \
     ln -s /home/container/data/business/gauzy-import /import; \
     ln -s /opt/floodman/unified/start-documenso.sh /opt/floodman/aio/start-documenso.sh; \
+    rm -f /opt/floodman/aio/start-hub.sh; \
+    ln -s /opt/floodman/unified/start-hub.sh /opt/floodman/aio/start-hub.sh; \
+    sed -i 's#root /home/container/runtime/gauzy-web;#root /home/container/runtime/gauzy-web-active;#' \
+      /opt/floodman/aio/nginx.conf.template; \
     rm -f /opt/documenso/apps/remix/.documenso-license.json; \
     ln -s /home/container/data/business/documenso/license.json \
       /opt/documenso/apps/remix/.documenso-license.json; \

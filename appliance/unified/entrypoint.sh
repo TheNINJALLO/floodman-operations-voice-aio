@@ -179,7 +179,7 @@ for shared_store in \
   "${FM_DATA}/documenso" "${FM_DATA}/documents" \
   "${FM_DATA}/gauzy-files" "${FM_DATA}/gauzy-import" \
   "${FM_DATA}/lab-state" "${FM_DATA}/logs" "${FM_DATA}/mailpit" \
-  "${FM_DATA}/office" "${FM_DATA}/run" "${FM_DATA}/tmp" \
+  "${FM_DATA}/office" "${FM_DATA}/run" "${FM_DATA}/runtime" "${FM_DATA}/tmp" \
   "${FM_DATA}/tmp/gateway-client" "${FM_DATA}/tmp/gateway-fastcgi" \
   "${FM_DATA}/tmp/gateway-proxy" "${FM_DATA}/tmp/gateway-scgi" \
   "${FM_DATA}/tmp/gateway-uwsgi" "${FM_DATA}/tmp/nginx" \

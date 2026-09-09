@@ -26,6 +26,7 @@ def test_unified_image_runs_voice_and_business_suite_on_distinct_ports(project_r
     assert '"${FM_DATA}/gauzy-files"' in entrypoint
     assert '"${FM_DATA}/documenso"' in entrypoint
     assert '"${FM_DATA}/office"' in entrypoint
+    assert '"${FM_DATA}/runtime"' in entrypoint
     assert 'share_panel_directory "${FM_CONFIG}"' not in entrypoint
     assert 'share_panel_directory "${FM_DATA}/postgres"' not in entrypoint
 
@@ -63,6 +64,8 @@ def test_unified_image_runs_voice_and_business_suite_on_distinct_ports(project_r
     assert '--encoding=UTF8 --locale=C.UTF-8' in dockerfile
     assert 'floodman?client_encoding=utf8' in dockerfile
     assert "export FLOODMAN_COMPANY_NAME" in dockerfile
+    assert "unified/start-hub.sh" in dockerfile
+    assert "gauzy-web-active" in dockerfile
     assert 'nginx -e "$FM_LOGS/nginx-bootstrap.log" -c' in dockerfile
     assert "! grep -Fq 'nginx -e ' /opt/floodman/aio/start-hub.sh" in dockerfile
     assert "documenso/license.json" in dockerfile
