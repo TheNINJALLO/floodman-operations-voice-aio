@@ -68,6 +68,11 @@ def test_unified_image_runs_voice_and_business_suite_on_distinct_ports(project_r
     assert "export FLOODMAN_COMPANY_NAME" in dockerfile
     assert "unified/start-hub.sh" in dockerfile
     assert "gauzy-web-active" in dockerfile
+    assert "runtime_root=/tmp/floodman-business-runtime/floodman-operations-v4.7.2" in dockerfile
+    assert "orchestrator messaging-ai competitor-intel office-console local-lab" in dockerfile
+    assert "sha256sum -c MANIFEST.sha256" in dockerfile
+    assert "FLOODMAN_MOBILE_TOKEN_SECRET" in entrypoint
+    assert "FLOODMAN_MOBILE_API_PUBLIC_URL" in entrypoint
     assert 'nginx -e "$FM_LOGS/nginx-bootstrap.log" -c' in dockerfile
     assert "! grep -Fq 'nginx -e ' /opt/floodman/aio/start-hub.sh" in dockerfile
     assert "documenso/license.json" in dockerfile

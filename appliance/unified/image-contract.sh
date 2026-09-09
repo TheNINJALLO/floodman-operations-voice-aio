@@ -57,12 +57,17 @@ test -s /opt/floodman/unified/assets/floodman-operations-runtime-v4.7.2.zip
 test -s /opt/floodman/unified/assets/floodman-boot-guard.js
 test -s /opt/floodman/unified/assets/floodman-status.html
 unzip -tq /opt/floodman/unified/assets/floodman-operations-runtime-v4.7.2.zip >/dev/null
+grep -Fq 'API_PREFIX = "/mobile-api/v1"' /opt/floodman/office-console/app/mobile_api.py
+grep -Fq '@app.get("/office/members")' /opt/floodman/office-console/app/main.py
+grep -Fq '@router.post("/push-tokens")' /opt/floodman/office-console/app/mobile_operations.py
+grep -Fq 'class AiCallingProvider' /opt/floodman/orchestrator/app/ai_calling.py
 grep -q 'server_name floodman.oninetwork.com' /opt/floodman/unified/gateway-nginx.conf
 python3 -c 'from datetime import UTC; assert str(UTC) == "UTC"'
 test "$(readlink /srv/gauzy/apps/api/public)" = "/home/container/data/business/gauzy-files"
 test "$(readlink /import)" = "/home/container/data/business/gauzy-import"
 /opt/voice-venv/bin/python -c 'import app, httpx, yaml' 
 PYTHONPATH=/opt/pydeps/orchestrator:/opt/floodman/orchestrator python3 -c 'import app.ai_calling'
+python3 -m py_compile /opt/floodman/office-console/app/*.py
 /opt/node24/bin/node --check /srv/gauzy/main.js
 /opt/node24/bin/node -e "require('/srv/gauzy/node_modules/bcrypt')"
 /opt/node22/bin/node -e "require('/opt/documenso/node_modules/skia-canvas')"

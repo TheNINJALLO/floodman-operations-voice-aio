@@ -178,6 +178,19 @@ RUN set -eux; \
       /tmp/mobile-start-v4.7.2.sh > /opt/floodman/unified/assets/floodman-status.html; \
     test -s /opt/floodman/unified/assets/floodman-boot-guard.js; \
     test -s /opt/floodman/unified/assets/floodman-status.html; \
+    mkdir -p /tmp/floodman-business-runtime; \
+    unzip -q /opt/floodman/unified/assets/floodman-operations-runtime-v4.7.2.zip \
+      -d /tmp/floodman-business-runtime; \
+    runtime_root=/tmp/floodman-business-runtime/floodman-operations-v4.7.2; \
+    test "$(cat "$runtime_root/VERSION")" = '4.7.2'; \
+    (cd "$runtime_root" && sha256sum -c MANIFEST.sha256 >/dev/null); \
+    for service in orchestrator messaging-ai competitor-intel office-console local-lab hub database public-signing resources; do \
+      test -d "$runtime_root/$service"; \
+      rm -rf "/opt/floodman/$service"; \
+      mkdir -p "/opt/floodman/$service"; \
+      cp -R --no-preserve=mode,ownership,timestamps "$runtime_root/$service/." "/opt/floodman/$service/"; \
+    done; \
+    rm -rf /tmp/floodman-business-runtime; \
     rm -f /tmp/mobile-start-v4.7.2.sh
 
 COPY pyproject.toml /tmp/voice-source/pyproject.toml

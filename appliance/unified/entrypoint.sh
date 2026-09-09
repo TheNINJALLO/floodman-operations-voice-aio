@@ -65,6 +65,8 @@ export FLOODMAN_DOCUMENSO_URL="${FLOODMAN_DOCUMENSO_URL:-https://sign.oninetwork
 export FLOODMAN_MAILPIT_URL="${FLOODMAN_MAILPIT_URL:-http://127.0.0.1:9002}"
 export FLOODMAN_ENGINEERING_URL="${FLOODMAN_ENGINEERING_URL:-https://lab.oninetwork.com}"
 export FLOODMAN_API_PUBLIC_URL="${FLOODMAN_API_PUBLIC_URL:-https://api.oninetwork.com}"
+export FLOODMAN_CUSTOMER_PUBLIC_URL="${FLOODMAN_CUSTOMER_PUBLIC_URL:-${FLOODMAN_PUBLIC_URL}/customer}"
+export FLOODMAN_MOBILE_API_PUBLIC_URL="${FLOODMAN_MOBILE_API_PUBLIC_URL:-https://api.oninetwork.com/mobile-api}"
 export FLOODMAN_VOICE_URL="${FLOODMAN_VOICE_URL:-${VOICE_PUBLIC_BASE_URL}}"
 export APP_LOGO="${APP_LOGO:-${FLOODMAN_PUBLIC_URL}/floodman-brand/floodman-wordmark.svg}"
 
@@ -153,6 +155,26 @@ export FLOODMAN_OWNER_PASSWORD="${FLOODMAN_OWNER_PASSWORD:-$(openssl rand -hex 1
   printf 'export FLOODMAN_OWNER_PASSWORD=%q\n' "${FLOODMAN_OWNER_PASSWORD}"
 } > "${owner_file}"
 chmod 0600 "${owner_file}"
+
+# Mobile access and push-token enrollment use their own persistent signing key.
+# Generate it locally once; never derive it from a browser- or client-supplied
+# value and never put it in the immutable image.
+mobile_env="${FM_CONFIG}/floodman-mobile.env"
+if [[ ! -s "${mobile_env}" ]]; then
+  mobile_secret="$(openssl rand -base64 48 | tr -d '\r\n')"
+  {
+    printf 'FLOODMAN_MOBILE_TOKEN_SECRET=%s\n' "${mobile_secret}"
+    printf 'FLOODMAN_MOBILE_ACCESS_TTL_SECONDS=900\n'
+    printf 'FLOODMAN_MOBILE_REFRESH_TTL_DAYS=30\n'
+  } > "${mobile_env}"
+  chmod 0600 "${mobile_env}"
+fi
+set -a
+# shellcheck disable=SC1090
+source "${mobile_env}"
+set +a
+export FLOODMAN_MOBILE_TOKEN_SECRET FLOODMAN_MOBILE_ACCESS_TTL_SECONDS \
+  FLOODMAN_MOBILE_REFRESH_TTL_DAYS FLOODMAN_MOBILE_API_PUBLIC_URL
 
 # Wings can mount files owned by a numeric UID that its generated passwd file
 # does not expose to the root-launched process.  Make only the non-secret Suite
