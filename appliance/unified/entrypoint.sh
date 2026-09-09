@@ -2,12 +2,20 @@
 set -euo pipefail
 
 # Wings can override the image USER and launch the process as namespace root.
-# Re-enter as the account baked into the image before touching persistent data;
-# PostgreSQL intentionally refuses to initialize as root.
+# Drop to the image's numeric account before touching persistent data;
+# PostgreSQL intentionally refuses to initialize as root.  Use setpriv instead
+# of runuser: a failed identity handoff must stop, never recurse into an
+# unbounded process tree on a panel-managed container.
 if [[ "$(id -u)" == "0" ]]; then
-  exec runuser --user container --preserve-environment -- \
-    env HOME=/home/container USER=container LOGNAME=container "$0" "$@"
+  if [[ "${FLOODMAN_PRIVILEGE_DROP_ATTEMPTED:-}" == "1" ]]; then
+    echo "Floodman refused a repeated root privilege handoff." >&2
+    exit 1
+  fi
+  exec setpriv --reuid=988 --regid=988 --clear-groups -- \
+    env FLOODMAN_PRIVILEGE_DROP_ATTEMPTED=1 HOME=/home/container \
+      USER=container LOGNAME=container "$0" "$@"
 fi
+unset FLOODMAN_PRIVILEGE_DROP_ATTEMPTED
 
 export DATA_DIR="${DATA_DIR:-/home/container/data}"
 # The legacy Pterodactyl egg injects VIRTUAL_ENV=/opt/venv. That path belonged
