@@ -65,6 +65,26 @@ export FLOODMAN_ENGINEERING_URL="${FLOODMAN_ENGINEERING_URL:-https://lab.oninetw
 export FLOODMAN_API_PUBLIC_URL="${FLOODMAN_API_PUBLIC_URL:-https://api.oninetwork.com}"
 export FLOODMAN_VOICE_URL="${FLOODMAN_VOICE_URL:-${VOICE_PUBLIC_BASE_URL}}"
 
+# Pterodactyl mounts its persistent server volume over /home/container, which
+# hides links created in the image layer. Recreate only the known Suite
+# compatibility links at runtime, and refuse to replace unexpected data.
+for business_path in config run logs runtime backups diagnostics tmp; do
+  business_target="${DATA_DIR}/business/${business_path}"
+  compatibility_path="/home/container/${business_path}"
+  mkdir -p "${business_target}"
+  if [[ -L "${compatibility_path}" ]]; then
+    [[ "$(readlink "${compatibility_path}")" == "data/business/${business_path}" ]] || {
+      echo "Refusing to replace unexpected compatibility link: ${compatibility_path}" >&2
+      exit 1
+    }
+  elif [[ -e "${compatibility_path}" ]]; then
+    echo "Refusing to replace unexpected persistent path: ${compatibility_path}" >&2
+    exit 1
+  else
+    ln -s "data/business/${business_path}" "${compatibility_path}"
+  fi
+done
+
 mkdir -p "${FM_RUN}" "${FM_LOGS}" "${DATA_DIR}/business/tmp/gateway-client" \
   "${DATA_DIR}/business/tmp/gateway-proxy" "${DATA_DIR}/business/tmp/gateway-fastcgi" \
   "${DATA_DIR}/business/tmp/gateway-uwsgi" "${DATA_DIR}/business/tmp/gateway-scgi"

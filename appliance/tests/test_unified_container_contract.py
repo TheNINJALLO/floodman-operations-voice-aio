@@ -38,6 +38,9 @@ def test_unified_mutable_paths_resolve_under_data_dir(project_root: Path):
     assert "ln -s /home/container/data/business/gauzy-import /import" in dockerfile
     assert 'FM_DATA="${DATA_DIR}/business"' in entrypoint
     assert 'owner_file="${FM_CONFIG}/unified-owner.env"' in entrypoint
+    assert 'for business_path in config run logs runtime backups diagnostics tmp' in entrypoint
+    assert 'ln -s "data/business/${business_path}" "${compatibility_path}"' in entrypoint
+    assert "Refusing to replace unexpected persistent path" in entrypoint
 
 
 def test_unified_health_requires_both_product_surfaces(project_root: Path):
