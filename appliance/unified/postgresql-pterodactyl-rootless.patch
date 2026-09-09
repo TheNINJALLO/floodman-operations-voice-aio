@@ -1,0 +1,26 @@
+diff --git a/src/backend/main/main.c b/src/backend/main/main.c
+--- a/src/backend/main/main.c
++++ b/src/backend/main/main.c
+@@ -370,6 +370,7 @@ check_root(const char *progname)
+ {
+ #ifndef WIN32
+-	if (geteuid() == 0)
++	if (geteuid() == 0 &&
++		getenv("FLOODMAN_PTERODACTYL_ROOTLESS") == NULL)
+ 	{
+ 		write_stderr("\"root\" execution of the PostgreSQL server is not permitted.\n"
+ 					 "The server must be started under an unprivileged user ID to prevent\n"
+diff --git a/src/bin/initdb/initdb.c b/src/bin/initdb/initdb.c
+--- a/src/bin/initdb/initdb.c
++++ b/src/bin/initdb/initdb.c
+@@ -603,8 +603,9 @@ get_id(void)
+ {
+ 	const char *username;
+ 
+ #ifndef WIN32
+-	if (geteuid() == 0)			/* 0 is root's uid */
++	if (geteuid() == 0 &&			/* 0 is root's uid */
++		getenv("FLOODMAN_PTERODACTYL_ROOTLESS") == NULL)
+	{
+		pg_log_error("cannot be run as root");
+		fprintf(stderr,

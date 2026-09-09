@@ -6,6 +6,8 @@ ARG CUDA_RUNTIME_IMAGE=nvidia/cuda:12.4.1-runtime-ubuntu22.04@sha256:517da2300c1
 ARG LLAMA_CPP_COMMIT=6d05498314db1b57f81c271080018aa2d0b89be9
 ARG PYTHON_VERSION=3.12.11
 ARG PYTHON_SOURCE_SHA256=c30bb24b7f1e9a19b11b55a546434f74e739bb4c271a3e3a80ff4380d49f7adb
+ARG POSTGRESQL_VERSION=14.18
+ARG POSTGRESQL_SOURCE_SHA256=83ab29d6bfc3dc58b2ed3c664114fdfbeb6a0450c4b8d7fa69aee91e3ca14f8e
 ARG BUSINESS_RUNTIME_URL=https://raw.githubusercontent.com/TheNINJALLO/floodman-business-suite-aio/b81f9db3bbfa221dd2e439ad28624b3066fe8b0e/deployment/releases/floodman-operations-runtime-v4.7.2.zip
 ARG BUSINESS_RUNTIME_SHA256=f8d3d07ff885ecde57703abba1567d151ecc4419c5afb4a73bcb5f91a054f177
 ARG BUSINESS_LAUNCHER_URL=https://raw.githubusercontent.com/TheNINJALLO/floodman-business-suite-aio/b81f9db3bbfa221dd2e439ad28624b3066fe8b0e/deployment/releases/mobile-start-v4.7.2.sh
@@ -59,6 +61,26 @@ RUN git clone https://github.com/ggml-org/llama.cpp.git && \
     cp build/bin/llama-server /out/bin/ && \
     find build -name '*.so*' -exec cp -P {} /out/lib/ \;
 
+FROM ${CUDA_DEVEL_IMAGE} AS postgres-build
+ARG POSTGRESQL_VERSION
+ARG POSTGRESQL_SOURCE_SHA256
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential bzip2 ca-certificates curl patch && \
+    rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+COPY unified/postgresql-pterodactyl-rootless.patch /tmp/postgresql-pterodactyl-rootless.patch
+RUN curl --fail --location --retry 4 --connect-timeout 20 --max-time 300 \
+      "https://ftp.postgresql.org/pub/source/v${POSTGRESQL_VERSION}/postgresql-${POSTGRESQL_VERSION}.tar.bz2" \
+      -o postgresql.tar.bz2 && \
+    printf '%s  %s\n' "${POSTGRESQL_SOURCE_SHA256}" postgresql.tar.bz2 | sha256sum -c - && \
+    tar -xjf postgresql.tar.bz2 && \
+    cd "postgresql-${POSTGRESQL_VERSION}" && \
+    patch -p1 < /tmp/postgresql-pterodactyl-rootless.patch && \
+    ./configure --prefix=/opt/floodman/postgresql14-panel \
+      --without-readline --without-zlib --without-icu && \
+    make -j"$(nproc)" && make install
+
 FROM ${CUDA_RUNTIME_IMAGE}
 ARG CONTAINER_UID=988
 ARG CONTAINER_GID=988
@@ -95,6 +117,7 @@ COPY --from=node22 /usr/local/ /opt/node22/
 COPY --from=python-build /opt/python312/ /opt/python312/
 COPY --from=llama-build /out/bin/llama-server /opt/llama/llama-server
 COPY --from=llama-build /out/lib/ /opt/llama/
+COPY --from=postgres-build /opt/floodman/postgresql14-panel/ /opt/floodman/postgresql14-panel/
 
 # Business Suite application source and upstream application payloads. Python
 # and Node native dependencies are rebuilt for Ubuntu/glibc below; Alpine

@@ -154,47 +154,4 @@ export FLOODMAN_OWNER_PASSWORD="${FLOODMAN_OWNER_PASSWORD:-$(openssl rand -hex 1
 } > "${owner_file}"
 chmod 0600 "${owner_file}"
 
-# Pterodactyl runs this image as namespace root and removes CAP_CHOWN.  The
-# Suite's files remain usable that way, but PostgreSQL correctly refuses to run
-# as root.  Give only its data and socket directories to uid 988 by creating
-# them as that uid.  A pre-existing non-empty database is never moved.
-prepare_postgres_directory() {
-  local target="$1" mode="$2" label="$3" owner backup suffix parent parent_mode
-  if [[ -e "${target}" && ! -d "${target}" ]]; then
-    echo "Floodman refused unexpected ${label} path: ${target}" >&2
-    exit 1
-  fi
-  if [[ -d "${target}" ]]; then
-    owner="$(stat -c '%u' "${target}")"
-    if [[ "${owner}" == "988" ]]; then
-      return
-    fi
-    if [[ -n "$(find "${target}" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
-      echo "Floodman refused to move non-empty ${label}: ${target}" >&2
-      exit 1
-    fi
-    backup="${target}.pre-unified-root"
-    suffix=1
-    while [[ -e "${backup}" ]]; do
-      backup="${target}.pre-unified-root-${suffix}"
-      suffix=$((suffix + 1))
-    done
-    mv "${target}" "${backup}"
-    echo "Preserved empty ${label} at ${backup}."
-  fi
-  parent="$(dirname "${target}")"
-  mkdir -p "${parent}"
-  parent_mode="$(stat -c '%a' "${parent}")"
-  chmod g+rwx "${parent}"
-  if ! setpriv --reuid=988 --regid=0 --clear-groups -- \
-    mkdir -m "${mode}" "${target}"; then
-    chmod "${parent_mode}" "${parent}"
-    return 1
-  fi
-  chmod "${parent_mode}" "${parent}"
-}
-
-prepare_postgres_directory "${FM_DATA}/postgres" 0750 "PostgreSQL data directory"
-prepare_postgres_directory "${FM_RUN}/postgres" 0770 "PostgreSQL socket directory"
-
 exec /opt/floodman/aio/start-suite.sh

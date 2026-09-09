@@ -20,20 +20,23 @@ def test_unified_image_runs_voice_and_business_suite_on_distinct_ports(project_r
     assert "cp -a /opt/floodman/hub/." not in entrypoint
     assert 'export APP_LOGO="${APP_LOGO:-${FLOODMAN_PUBLIC_URL}/floodman-brand/floodman-wordmark.svg}"' in entrypoint
     assert "/opt/floodman/unified/bin:/opt/node24/bin" in entrypoint
-    assert 'prepare_postgres_directory "${FM_DATA}/postgres"' in entrypoint
-    assert 'prepare_postgres_directory "${FM_RUN}/postgres"' in entrypoint
-    assert "refused to move non-empty ${label}" in entrypoint
-    assert "mv \"${target}\" \"${backup}\"" in entrypoint
-    assert "setpriv --reuid=988 --regid=0 --clear-groups" in entrypoint
-    assert entrypoint.index("prepare_postgres_directory") < entrypoint.index("exec /opt/floodman/aio/start-suite.sh")
     assert "unbounded process tree" not in entrypoint
 
     init_wrapper = (project_root / "unified" / "postgres-init-wrapper.sh").read_text(encoding="utf-8")
     server_wrapper = (project_root / "unified" / "postgres-server-wrapper.sh").read_text(encoding="utf-8")
-    assert "--pwfile=/dev/stdin" in init_wrapper
-    assert "setpriv --reuid=988 --regid=0 --clear-groups" in init_wrapper
-    assert "setpriv --reuid=988 --regid=0 --clear-groups" in server_wrapper
-    assert "/usr/lib/postgresql/14/bin/postgres" in server_wrapper
+    pg_patch = (project_root / "unified" / "postgresql-pterodactyl-rootless.patch").read_text(encoding="utf-8")
+    assert "NoNewPrivs:[[:space:]]*1" in init_wrapper
+    assert "NoNewPrivs:[[:space:]]*1" in server_wrapper
+    assert "P_SERVER_UUID" in init_wrapper
+    assert "FLOODMAN_PTERODACTYL_ROOTLESS=1" in init_wrapper
+    assert "FLOODMAN_PTERODACTYL_ROOTLESS=1" in server_wrapper
+    assert "/opt/floodman/postgresql14-panel/bin/initdb" in init_wrapper
+    assert "/opt/floodman/postgresql14-panel/bin/postgres" in server_wrapper
+    assert pg_patch.count('getenv("FLOODMAN_PTERODACTYL_ROOTLESS") == NULL') == 2
+
+    assert "ARG POSTGRESQL_VERSION=14.18" in dockerfile
+    assert "83ab29d6bfc3dc58b2ed3c664114fdfbeb6a0450c4b8d7fa69aee91e3ca14f8e" in dockerfile
+    assert "postgresql-pterodactyl-rootless.patch" in dockerfile
     assert "PUBLIC_BASE_URL=\"${VOICE_PUBLIC_BASE_URL" in (project_root / "unified" / "start-voice-control.sh").read_text(encoding="utf-8")
     assert "program:voice-llama" in supervisor
     assert "program:voice-control" in supervisor
