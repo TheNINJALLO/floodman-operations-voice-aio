@@ -27,6 +27,8 @@ grep -Fq 'export FLOODMAN_COMPANY_NAME' /opt/floodman/aio/start-suite.sh
 test "$(readlink /opt/floodman/aio/start-hub.sh)" = "/opt/floodman/unified/start-hub.sh"
 grep -Fq 'runtime/gauzy-web-active' /opt/floodman/aio/start-hub.sh
 grep -Fq 'root /home/container/runtime/gauzy-web-active;' /opt/floodman/aio/nginx.conf.template
+grep -Fq 'location ^~ /mobile-api/' /opt/floodman/unified/gateway-nginx.conf
+grep -Fq 'proxy_pass http://127.0.0.1:8700;' /opt/floodman/unified/gateway-nginx.conf
 ! grep -Fq 'nginx -e ' /opt/floodman/aio/start-hub.sh
 grep -Fq 'NoNewPrivs:[[:space:]]*1' /opt/floodman/unified/bin/initdb
 grep -Fq 'FLOODMAN_PTERODACTYL_ROOTLESS=1' /opt/floodman/unified/bin/postgres

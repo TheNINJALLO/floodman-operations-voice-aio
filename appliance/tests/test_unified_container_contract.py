@@ -99,6 +99,8 @@ def test_unified_image_runs_voice_and_business_suite_on_distinct_ports(project_r
     assert "server_name sign.oninetwork.com" in gateway
     assert "server_name lab.oninetwork.com" in gateway
     assert "server_name api.oninetwork.com" in gateway
+    assert "location ^~ /mobile-api/" in gateway
+    assert "proxy_pass http://127.0.0.1:8700" in gateway
 
 
 def test_unified_mutable_paths_resolve_under_data_dir(project_root: Path):
