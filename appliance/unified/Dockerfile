@@ -122,7 +122,13 @@ RUN python3 -m venv /opt/voice-venv && \
     cp -a /tmp/voice-source/scripts/. /opt/floodman/scripts/ && \
     rm -rf /tmp/voice-source
 
+# The CUDA Ubuntu 22.04 base supplies Python 3.10. Business Suite locks were
+# generated on Python 3.12 and select websockets 17, whose Linux wheels require
+# a newer interpreter. Websockets 16 supports CPython 3.10 and remains within
+# Uvicorn's declared >=10.4 range.
 RUN set -eux; \
+    sed -i 's/^websockets==17\.0\.1$/websockets==16.0/' \
+      /opt/floodman/requirements/constraints/*.txt; \
     for service in orchestrator messaging-ai competitor-intel office-console local-lab; do \
       rm -rf "/opt/pydeps/${service}"; \
       python3 -m pip install --no-cache-dir \
