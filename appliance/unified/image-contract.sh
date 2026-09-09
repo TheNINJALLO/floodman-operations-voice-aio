@@ -10,6 +10,8 @@ test -s /opt/floodman/postgresql14-panel/share/extension/pgcrypto.control
 test -s /opt/floodman/postgresql14-panel/lib/pgcrypto.so
 test -s /opt/floodman/postgresql14-panel/share/extension/pg_trgm.control
 test -s /opt/floodman/postgresql14-panel/lib/pg_trgm.so
+test -s /opt/floodman/postgresql14-panel/share/extension/uuid-ossp.control
+test -s /opt/floodman/postgresql14-panel/lib/uuid-ossp.so
 grep -Fq '/opt/floodman/unified/bin:/opt/node24/bin' /opt/floodman/scripts/entrypoint.sh
 grep -Fq 'share_panel_directory()' /opt/floodman/scripts/entrypoint.sh
 grep -Fq 'setpriv --reuid="${owner}" --regid="${group}"' /opt/floodman/scripts/entrypoint.sh
@@ -35,6 +37,8 @@ test -x /opt/floodman/unified/start-documenso.sh
 test -x /opt/floodman/aio/start-documenso-upstream.sh
 test "$(readlink /opt/floodman/aio/start-documenso.sh)" = "/opt/floodman/unified/start-documenso.sh"
 grep -Fq '20260302223702_optimize_recipient_indexes' /opt/floodman/unified/start-documenso.sh
+grep -Fq '.floodman-recovered-$failed_migration' /opt/floodman/unified/start-documenso.sh
+grep -Fq 'GRANT USAGE, CREATE ON SCHEMA public TO floodman' /opt/floodman/aio/bootstrap-databases.sh
 test "$(readlink /var/log/nginx/error.log)" = "/home/container/data/business/logs/gateway-nginx-bootstrap.log"
 test -s /opt/floodman/aio/supervisord.conf
 ! grep -Fq '/usr/sbin/nginx -e ' /opt/floodman/aio/supervisord.conf
@@ -52,6 +56,8 @@ PYTHONPATH=/opt/pydeps/orchestrator:/opt/floodman/orchestrator python3 -c 'impor
 /opt/node24/bin/node --check /srv/gauzy/main.js
 /opt/node24/bin/node -e "require('/srv/gauzy/node_modules/bcrypt')"
 /opt/node22/bin/node -e "require('/opt/documenso/node_modules/skia-canvas')"
+find /opt/documenso/node_modules/.prisma/client -maxdepth 1 -type f \
+  -name '*debian-openssl-3.0.x*' -print -quit | grep -q .
 /opt/node24/bin/node --version
 /opt/node22/bin/node --version
 postgres --version

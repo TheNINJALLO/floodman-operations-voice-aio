@@ -16,9 +16,11 @@ done
 cd /opt/documenso/apps/remix
 export PATH="/opt/node22/bin:$PATH"
 failed_migration="20260302223702_optimize_recipient_indexes"
-if npx --no-install prisma migrate resolve \
-  --rolled-back "$failed_migration" \
-  --schema ../../packages/prisma/schema.prisma >/dev/null 2>&1; then
+recovery_marker="$FM_DATA/documenso/.floodman-recovered-$failed_migration"
+if [ ! -f "$recovery_marker" ] && npx --no-install prisma migrate resolve \
+    --rolled-back "$failed_migration" \
+    --schema ../../packages/prisma/schema.prisma >/dev/null 2>&1; then
+  : > "$recovery_marker"
   fm_log "Recovered interrupted Documenso migration $failed_migration for an idempotent retry."
 fi
 

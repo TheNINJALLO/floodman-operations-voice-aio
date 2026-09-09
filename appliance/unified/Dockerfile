@@ -66,7 +66,7 @@ ARG POSTGRESQL_VERSION
 ARG POSTGRESQL_SOURCE_SHA256
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      build-essential bzip2 ca-certificates curl patch && \
+      build-essential bzip2 ca-certificates curl patch uuid-dev && \
     rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY unified/postgresql-pterodactyl-rootless.patch /tmp/postgresql-pterodactyl-rootless.patch
@@ -78,12 +78,14 @@ RUN curl --fail --location --retry 4 --connect-timeout 20 --max-time 300 \
     cd "postgresql-${POSTGRESQL_VERSION}" && \
     patch -p1 < /tmp/postgresql-pterodactyl-rootless.patch && \
     ./configure --prefix=/opt/floodman/postgresql14-panel \
-      --without-readline --without-zlib --without-icu && \
+      --without-readline --without-zlib --without-icu --with-uuid=e2fs && \
     make -j"$(nproc)" && make install && \
     make -C contrib/pgcrypto -j"$(nproc)" && \
     make -C contrib/pgcrypto install && \
     make -C contrib/pg_trgm -j"$(nproc)" && \
-    make -C contrib/pg_trgm install
+    make -C contrib/pg_trgm install && \
+    make -C contrib/uuid-ossp -j"$(nproc)" && \
+    make -C contrib/uuid-ossp install
 
 FROM ${CUDA_RUNTIME_IMAGE}
 ARG CONTAINER_UID=988
@@ -211,6 +213,11 @@ RUN set -eux; \
     find /opt/documenso/node_modules/skia-canvas -type f -name '*.node' -delete; \
     cd /opt/documenso; PATH=/opt/node22/bin:$PATH \
       npm rebuild skia-canvas --omit=dev --foreground-scripts; \
+    cd /opt/documenso/apps/remix; \
+      NEXT_PRIVATE_DATABASE_URL=postgresql://documenso:build-only@127.0.0.1:5432/documenso \
+      NEXT_PRIVATE_DIRECT_DATABASE_URL=postgresql://documenso:build-only@127.0.0.1:5432/documenso \
+      PATH=/opt/node22/bin:$PATH npx --no-install prisma generate \
+        --schema ../../packages/prisma/schema.prisma; \
     PATH=/opt/node22/bin:$PATH node -e "require('skia-canvas')"; \
     mv /opt/floodman/aio/start-documenso.sh /opt/floodman/aio/start-documenso-upstream.sh
 
@@ -219,6 +226,7 @@ COPY unified/start-voice-control.sh unified/start-voice-llama.sh unified/start-v
      unified/start-documenso.sh unified/healthcheck.sh unified/image-contract.sh /opt/floodman/unified/
 COPY unified/postgres-init-wrapper.sh /opt/floodman/unified/bin/initdb
 COPY unified/postgres-server-wrapper.sh /opt/floodman/unified/bin/postgres
+COPY unified/bootstrap-databases.sh /opt/floodman/aio/bootstrap-databases.sh
 COPY unified/gateway-nginx.conf unified/proxy-headers.conf /opt/floodman/unified/
 COPY unified/voice-supervisor.conf /opt/floodman/aio/voice-supervisor.conf
 
