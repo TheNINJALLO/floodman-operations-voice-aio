@@ -7,6 +7,10 @@ test -x /opt/floodman/unified/bin/postgres
 test -x /opt/floodman/postgresql14-panel/bin/initdb
 test -x /opt/floodman/postgresql14-panel/bin/postgres
 grep -Fq '/opt/floodman/unified/bin:/opt/node24/bin' /opt/floodman/scripts/entrypoint.sh
+grep -Fq 'share_panel_directory()' /opt/floodman/scripts/entrypoint.sh
+grep -Fq 'setpriv --reuid="${owner}" --regid="${group}"' /opt/floodman/scripts/entrypoint.sh
+grep -Fq '"${FM_DATA}/gauzy-files"' /opt/floodman/scripts/entrypoint.sh
+! grep -Fq 'share_panel_directory "${FM_CONFIG}"' /opt/floodman/scripts/entrypoint.sh
 grep -Fq 'NoNewPrivs:[[:space:]]*1' /opt/floodman/unified/bin/initdb
 grep -Fq 'FLOODMAN_PTERODACTYL_ROOTLESS=1' /opt/floodman/unified/bin/postgres
 grep -Fq 'export VIRTUAL_ENV=/opt/voice-venv' /opt/floodman/scripts/entrypoint.sh

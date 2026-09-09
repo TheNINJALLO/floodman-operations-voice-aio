@@ -154,4 +154,39 @@ export FLOODMAN_OWNER_PASSWORD="${FLOODMAN_OWNER_PASSWORD:-$(openssl rand -hex 1
 } > "${owner_file}"
 chmod 0600 "${owner_file}"
 
+# Wings can mount files owned by a numeric UID that its generated passwd file
+# does not expose to the root-launched process.  Make only the non-secret Suite
+# application stores shared inside this one container.  Run chmod as each
+# directory's existing owner because Wings removes CAP_FOWNER.
+share_panel_directory() {
+  local target="$1" owner group
+  [[ -d "${target}" ]] || return
+  owner="$(stat -c '%u' "${target}")"
+  group="$(stat -c '%g' "${target}")"
+  if [[ "$(id -u)" == "${owner}" ]]; then
+    chmod 0777 "${target}"
+  else
+    setpriv --reuid="${owner}" --regid="${group}" --clear-groups -- \
+      chmod 0777 "${target}"
+  fi
+  [[ -w "${target}" ]] || {
+    echo "Floodman application store is not writable: ${target}" >&2
+    exit 1
+  }
+}
+
+for shared_store in \
+  "${FM_DATA}/documenso" "${FM_DATA}/documents" \
+  "${FM_DATA}/gauzy-files" "${FM_DATA}/gauzy-import" \
+  "${FM_DATA}/lab-state" "${FM_DATA}/logs" "${FM_DATA}/mailpit" \
+  "${FM_DATA}/office" "${FM_DATA}/run" "${FM_DATA}/tmp" \
+  "${FM_DATA}/tmp/gateway-client" "${FM_DATA}/tmp/gateway-fastcgi" \
+  "${FM_DATA}/tmp/gateway-proxy" "${FM_DATA}/tmp/gateway-scgi" \
+  "${FM_DATA}/tmp/gateway-uwsgi" "${FM_DATA}/tmp/nginx" \
+  "${FM_DATA}/tmp/nginx/client" "${FM_DATA}/tmp/nginx/fastcgi" \
+  "${FM_DATA}/tmp/nginx/proxy" "${FM_DATA}/tmp/nginx/scgi" \
+  "${FM_DATA}/tmp/nginx/uwsgi"; do
+  share_panel_directory "${shared_store}"
+done
+
 exec /opt/floodman/aio/start-suite.sh

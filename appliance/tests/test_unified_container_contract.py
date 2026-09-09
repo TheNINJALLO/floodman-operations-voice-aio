@@ -21,6 +21,13 @@ def test_unified_image_runs_voice_and_business_suite_on_distinct_ports(project_r
     assert 'export APP_LOGO="${APP_LOGO:-${FLOODMAN_PUBLIC_URL}/floodman-brand/floodman-wordmark.svg}"' in entrypoint
     assert "/opt/floodman/unified/bin:/opt/node24/bin" in entrypoint
     assert "unbounded process tree" not in entrypoint
+    assert "share_panel_directory()" in entrypoint
+    assert 'setpriv --reuid="${owner}" --regid="${group}"' in entrypoint
+    assert '"${FM_DATA}/gauzy-files"' in entrypoint
+    assert '"${FM_DATA}/documenso"' in entrypoint
+    assert '"${FM_DATA}/office"' in entrypoint
+    assert 'share_panel_directory "${FM_CONFIG}"' not in entrypoint
+    assert 'share_panel_directory "${FM_DATA}/postgres"' not in entrypoint
 
     init_wrapper = (project_root / "unified" / "postgres-init-wrapper.sh").read_text(encoding="utf-8")
     server_wrapper = (project_root / "unified" / "postgres-server-wrapper.sh").read_text(encoding="utf-8")
