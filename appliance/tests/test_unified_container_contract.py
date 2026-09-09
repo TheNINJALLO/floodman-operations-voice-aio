@@ -43,7 +43,9 @@ def test_unified_mutable_paths_resolve_under_data_dir(project_root: Path):
     assert "Refusing to replace unexpected persistent path" in entrypoint
     assert "BUSINESS_RUNTIME_SHA256=f8d3d07ff885ecde57703abba1567d151ecc4419c5afb4a73bcb5f91a054f177" in dockerfile
     assert 'sha256sum -c -' in dockerfile
-    assert "websockets==16.0" in dockerfile
+    assert "PYTHON_VERSION=3.12.11" in dockerfile
+    assert "PYTHON_SOURCE_SHA256=c30bb24b7f1e9a19b11b55a546434f74e739bb4c271a3e3a80ff4380d49f7adb" in dockerfile
+    assert "COPY --from=python-build /opt/python312/ /opt/python312/" in dockerfile
     assert 'unzip -q "${business_runtime_zip}" -d "${business_overlay_next}"' in entrypoint
     assert 'sha256sum -c MANIFEST.sha256' in entrypoint
     assert 'prepare-roomflow.py' in entrypoint

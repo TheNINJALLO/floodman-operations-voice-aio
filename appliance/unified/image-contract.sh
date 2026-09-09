@@ -12,6 +12,7 @@ test -s /opt/floodman/unified/assets/floodman-boot-guard.js
 test -s /opt/floodman/unified/assets/floodman-status.html
 unzip -tq /opt/floodman/unified/assets/floodman-operations-runtime-v4.7.2.zip >/dev/null
 grep -q 'server_name floodman.oninetwork.com' /opt/floodman/unified/gateway-nginx.conf
+python3 -c 'from datetime import UTC; assert str(UTC) == "UTC"'
 test "$(readlink /srv/gauzy/apps/api/public)" = "/home/container/data/business/gauzy-files"
 test "$(readlink /import)" = "/home/container/data/business/gauzy-import"
 /opt/voice-venv/bin/python -c 'import app, httpx, yaml' 

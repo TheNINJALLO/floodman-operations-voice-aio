@@ -4,6 +4,8 @@ ARG NODE22_IMAGE=node:22.22.2-bookworm-slim@sha256:9f6d5975c7dca860947d3915877f8
 ARG CUDA_DEVEL_IMAGE=nvidia/cuda:12.4.1-devel-ubuntu22.04@sha256:da6791294b0b04d7e65d87b7451d6f2390b4d36225ab0701ee7dfec5769829f5
 ARG CUDA_RUNTIME_IMAGE=nvidia/cuda:12.4.1-runtime-ubuntu22.04@sha256:517da2300c184c9999ec203c2665244bdebd3578d12fcc7065e83667932643d9
 ARG LLAMA_CPP_COMMIT=6d05498314db1b57f81c271080018aa2d0b89be9
+ARG PYTHON_VERSION=3.12.11
+ARG PYTHON_SOURCE_SHA256=c30bb24b7f1e9a19b11b55a546434f74e739bb4c271a3e3a80ff4380d49f7adb
 ARG BUSINESS_RUNTIME_URL=https://raw.githubusercontent.com/TheNINJALLO/floodman-business-suite-aio/b81f9db3bbfa221dd2e439ad28624b3066fe8b0e/deployment/releases/floodman-operations-runtime-v4.7.2.zip
 ARG BUSINESS_RUNTIME_SHA256=f8d3d07ff885ecde57703abba1567d151ecc4419c5afb4a73bcb5f91a054f177
 ARG BUSINESS_LAUNCHER_URL=https://raw.githubusercontent.com/TheNINJALLO/floodman-business-suite-aio/b81f9db3bbfa221dd2e439ad28624b3066fe8b0e/deployment/releases/mobile-start-v4.7.2.sh
@@ -12,6 +14,27 @@ ARG BUSINESS_LAUNCHER_SHA256=f8169ed1d039ec94db8d8fecaf8708e3d322d1dea489dff09af
 FROM ${BUSINESS_SUITE_IMAGE} AS business
 FROM ${NODE24_IMAGE} AS node24
 FROM ${NODE22_IMAGE} AS node22
+
+FROM ${CUDA_DEVEL_IMAGE} AS python-build
+ARG PYTHON_VERSION
+ARG PYTHON_SOURCE_SHA256
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential ca-certificates curl libbz2-dev libexpat1-dev libffi-dev \
+      libgdbm-dev liblzma-dev libncursesw5-dev libreadline-dev libsqlite3-dev \
+      libssl-dev tk-dev uuid-dev xz-utils zlib1g-dev && \
+    rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+RUN curl --fail --location --retry 4 --connect-timeout 20 --max-time 300 \
+      "https://www.python.org/ftp/python/${PYTHON_VERSION}/Python-${PYTHON_VERSION}.tar.xz" \
+      -o python.tar.xz && \
+    printf '%s  %s\n' "${PYTHON_SOURCE_SHA256}" python.tar.xz | sha256sum -c - && \
+    tar -xJf python.tar.xz && \
+    cd "Python-${PYTHON_VERSION}" && \
+    ./configure --prefix=/opt/python312 --enable-shared --with-ensurepip=install \
+      LDFLAGS="-Wl,-rpath,/opt/python312/lib" && \
+    make -j"$(nproc)" && make install && \
+    /opt/python312/bin/python3 -c 'from datetime import UTC; print(UTC)'
 
 FROM ${CUDA_DEVEL_IMAGE} AS llama-build
 ARG LLAMA_CPP_COMMIT
@@ -45,7 +68,7 @@ ARG BUSINESS_LAUNCHER_URL
 ARG BUSINESS_LAUNCHER_SHA256
 ENV DEBIAN_FRONTEND=noninteractive \
     VIRTUAL_ENV=/opt/voice-venv \
-    PATH=/opt/node24/bin:/usr/lib/postgresql/14/bin:/opt/voice-venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    PATH=/opt/node24/bin:/opt/python312/bin:/usr/lib/postgresql/14/bin:/opt/voice-venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     WEB_PORT=8002 \
     DATA_DIR=/home/container/data \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -53,11 +76,12 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
     NVIDIA_VISIBLE_DEVICES=all \
     NVIDIA_DRIVER_CAPABILITIES=compute,utility \
-    LD_LIBRARY_PATH=/opt/llama:/usr/local/cuda/lib64:${LD_LIBRARY_PATH}
+    LD_LIBRARY_PATH=/opt/python312/lib:/opt/llama:/usr/local/cuda/lib64:${LD_LIBRARY_PATH}
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       asterisk bash build-essential ca-certificates cargo coreutils curl espeak-ng ffmpeg \
       gettext-base git jq libffi-dev libgomp1 libsndfile1 libssl-dev netcat-openbsd \
+      libbz2-1.0 libexpat1 libgdbm6 liblzma5 libncursesw6 libreadline8 libsqlite3-0 libuuid1 zlib1g \
       nginx openssl postgresql-14 postgresql-client-14 postgresql-contrib python3 \
       python3-dev python3-pip python3-venv supervisor tzdata unzip && \
     rm -rf /var/lib/apt/lists/*
@@ -68,6 +92,7 @@ RUN groupadd --gid "${CONTAINER_GID}" container && \
 
 COPY --from=node24 /usr/local/ /opt/node24/
 COPY --from=node22 /usr/local/ /opt/node22/
+COPY --from=python-build /opt/python312/ /opt/python312/
 COPY --from=llama-build /out/bin/llama-server /opt/llama/llama-server
 COPY --from=llama-build /out/lib/ /opt/llama/
 
@@ -122,13 +147,7 @@ RUN python3 -m venv /opt/voice-venv && \
     cp -a /tmp/voice-source/scripts/. /opt/floodman/scripts/ && \
     rm -rf /tmp/voice-source
 
-# The CUDA Ubuntu 22.04 base supplies Python 3.10. Business Suite locks were
-# generated on Python 3.12 and select websockets 17, whose Linux wheels require
-# a newer interpreter. Websockets 16 supports CPython 3.10 and remains within
-# Uvicorn's declared >=10.4 range.
 RUN set -eux; \
-    sed -i 's/^websockets==17\.0\.1$/websockets==16.0/' \
-      /opt/floodman/requirements/constraints/*.txt; \
     for service in orchestrator messaging-ai competitor-intel office-console local-lab; do \
       rm -rf "/opt/pydeps/${service}"; \
       python3 -m pip install --no-cache-dir \
