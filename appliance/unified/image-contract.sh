@@ -6,6 +6,8 @@ test -x /opt/floodman/unified/bin/initdb
 test -x /opt/floodman/unified/bin/postgres
 test -x /opt/floodman/postgresql14-panel/bin/initdb
 test -x /opt/floodman/postgresql14-panel/bin/postgres
+test -s /opt/floodman/postgresql14-panel/share/extension/pgcrypto.control
+test -s /opt/floodman/postgresql14-panel/lib/pgcrypto.so
 grep -Fq '/opt/floodman/unified/bin:/opt/node24/bin' /opt/floodman/scripts/entrypoint.sh
 grep -Fq 'share_panel_directory()' /opt/floodman/scripts/entrypoint.sh
 grep -Fq 'setpriv --reuid="${owner}" --regid="${group}"' /opt/floodman/scripts/entrypoint.sh
@@ -26,6 +28,7 @@ test -x /usr/local/bin/mailpit
 test -s /srv/gauzy/main.js
 test -s /opt/documenso/apps/remix/start.sh
 test -s /opt/floodman/aio/supervisord.conf
+! grep -Fq '/usr/sbin/nginx -e ' /opt/floodman/aio/supervisord.conf
 test -s /opt/floodman/unified/gateway-nginx.conf
 test -s /opt/floodman/unified/assets/floodman-operations-runtime-v4.7.2.zip
 test -s /opt/floodman/unified/assets/floodman-boot-guard.js

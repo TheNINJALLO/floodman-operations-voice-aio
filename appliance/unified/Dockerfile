@@ -79,7 +79,9 @@ RUN curl --fail --location --retry 4 --connect-timeout 20 --max-time 300 \
     patch -p1 < /tmp/postgresql-pterodactyl-rootless.patch && \
     ./configure --prefix=/opt/floodman/postgresql14-panel \
       --without-readline --without-zlib --without-icu && \
-    make -j"$(nproc)" && make install
+    make -j"$(nproc)" && make install && \
+    make -C contrib/pgcrypto -j"$(nproc)" && \
+    make -C contrib/pgcrypto install
 
 FROM ${CUDA_RUNTIME_IMAGE}
 ARG CONTAINER_UID=988
