@@ -22,6 +22,10 @@ def test_unified_image_runs_voice_and_business_suite_on_distinct_ports(project_r
     assert 'if [[ "$(id -u)" == "0" ]]' in entrypoint
     assert "setpriv --reuid=988 --regid=988 --clear-groups" in entrypoint
     assert "FLOODMAN_PRIVILEGE_DROP_ATTEMPTED" in entrypoint
+    assert 'root_data_dir="${DATA_DIR:-/home/container/data}"' in entrypoint
+    assert 'find -P "${root_data_dir}" -xdev' in entrypoint
+    assert "refused ownership repair outside /home/container/data" in entrypoint
+    assert entrypoint.index('find -P "${root_data_dir}"') < entrypoint.index("setpriv --reuid=988")
     assert entrypoint.index("setpriv --reuid=988") < entrypoint.index('mkdir -p "${DATA_DIR}"')
     assert "PUBLIC_BASE_URL=\"${VOICE_PUBLIC_BASE_URL" in (project_root / "unified" / "start-voice-control.sh").read_text(encoding="utf-8")
     assert "program:voice-llama" in supervisor

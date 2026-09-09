@@ -11,6 +11,16 @@ if [[ "$(id -u)" == "0" ]]; then
     echo "Floodman refused a repeated root privilege handoff." >&2
     exit 1
   fi
+  root_data_dir="${DATA_DIR:-/home/container/data}"
+  if [[ "${root_data_dir}" != "/home/container/data" ]]; then
+    echo "Floodman refused ownership repair outside /home/container/data." >&2
+    exit 1
+  fi
+  mkdir -p "${root_data_dir}"
+  # Older panel images ran as root. Repair only mismatched ownership inside the
+  # dedicated data mount, without following links or rewriting file contents.
+  find -P "${root_data_dir}" -xdev \( ! -uid 988 -o ! -gid 988 \) \
+    -exec chown -h 988:988 {} +
   exec setpriv --reuid=988 --regid=988 --clear-groups -- \
     env FLOODMAN_PRIVILEGE_DROP_ATTEMPTED=1 HOME=/home/container \
       USER=container LOGNAME=container "$0" "$@"
