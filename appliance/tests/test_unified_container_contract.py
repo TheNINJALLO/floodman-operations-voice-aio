@@ -44,6 +44,8 @@ def test_unified_image_runs_voice_and_business_suite_on_distinct_ports(project_r
     assert "ARG POSTGRESQL_VERSION=14.18" in dockerfile
     assert "83ab29d6bfc3dc58b2ed3c664114fdfbeb6a0450c4b8d7fa69aee91e3ca14f8e" in dockerfile
     assert "postgresql-pterodactyl-rootless.patch" in dockerfile
+    assert "cp -R --no-preserve=mode,ownership,timestamps /opt/floodman/gauzy-public-seed/." in dockerfile
+    assert "cp -a /opt/floodman/gauzy-public-seed/\\." in dockerfile
     assert "PUBLIC_BASE_URL=\"${VOICE_PUBLIC_BASE_URL" in (project_root / "unified" / "start-voice-control.sh").read_text(encoding="utf-8")
     assert "program:voice-llama" in supervisor
     assert "program:voice-control" in supervisor

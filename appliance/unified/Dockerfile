@@ -128,6 +128,16 @@ COPY --from=business --chown=container:container /opt/gauzy-web-pristine/ /opt/g
 COPY --from=business --chown=container:container /opt/documenso/ /opt/documenso/
 COPY --from=business /usr/local/bin/mailpit /usr/local/bin/mailpit
 
+# The pinned Suite image uses archive-copy semantics for Gauzy's public seed.
+# On a Wings bind mount that can replace the destination metadata and make the
+# following marker write fail. Keep the payload, never the image-layer owner.
+RUN set -eux; \
+    grep -Fq 'cp -a /opt/floodman/gauzy-public-seed/.' /opt/floodman/aio/start-suite.sh; \
+    sed -i 's#cp -a /opt/floodman/gauzy-public-seed/\. "\$FM_DATA/gauzy-files/" 2>/dev/null || true#cp -R --no-preserve=mode,ownership,timestamps /opt/floodman/gauzy-public-seed/. "\$FM_DATA/gauzy-files/" 2>/dev/null || true#' \
+      /opt/floodman/aio/start-suite.sh; \
+    grep -Fq 'cp -R --no-preserve=mode,ownership,timestamps /opt/floodman/gauzy-public-seed/.' \
+      /opt/floodman/aio/start-suite.sh
+
 # Carry the exact browser/RoomFlow payload that the standalone Business Suite
 # egg normally installs into the Pterodactyl volume. The unified server has no
 # separate egg install phase, so it initializes this verified payload itself.
