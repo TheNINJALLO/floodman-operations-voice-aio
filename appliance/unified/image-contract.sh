@@ -61,10 +61,10 @@ test "$(readlink /opt/documenso/apps/remix/.documenso-license.json)" = "/home/co
 test -s /opt/floodman/aio/supervisord.conf
 ! grep -Fq '/usr/sbin/nginx -e ' /opt/floodman/aio/supervisord.conf
 test -s /opt/floodman/unified/gateway-nginx.conf
-test -s /opt/floodman/unified/assets/floodman-operations-runtime-v4.7.2.zip
+test -s /opt/floodman/unified/assets/floodman-operations-runtime-v4.7.3.zip
 test -s /opt/floodman/unified/assets/floodman-boot-guard.js
 test -s /opt/floodman/unified/assets/floodman-status.html
-unzip -tq /opt/floodman/unified/assets/floodman-operations-runtime-v4.7.2.zip >/dev/null
+unzip -tq /opt/floodman/unified/assets/floodman-operations-runtime-v4.7.3.zip >/dev/null
 grep -Fq 'API_PREFIX = "/mobile-api/v1"' /opt/floodman/office-console/app/mobile_api.py
 grep -Fq '@app.get("/office/members")' /opt/floodman/office-console/app/main.py
 grep -Fq '@router.post("/push-tokens")' /opt/floodman/office-console/app/mobile_operations.py

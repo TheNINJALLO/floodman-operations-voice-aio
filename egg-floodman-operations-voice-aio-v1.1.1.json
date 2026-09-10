@@ -702,6 +702,26 @@
       "field_type": "text"
     },
     {
+      "name": "Email End-of-Speech Delay",
+      "description": "Milliseconds allowed between spelled email characters before finalizing the answer.",
+      "env_variable": "EMAIL_ENDPOINT_SILENCE_MS",
+      "default_value": "1600",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|numeric|min:1000|max:3000",
+      "field_type": "text"
+    },
+    {
+      "name": "Email Readback Speed",
+      "description": "Slower local TTS speed used only while spelling an email back to the caller.",
+      "env_variable": "EMAIL_READBACK_SPEED",
+      "default_value": "0.78",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|numeric|min:0.75|max:1.0",
+      "field_type": "text"
+    },
+    {
       "name": "Local LLM Context",
       "description": "Qwen context window. 2048 fits the managed Floodman prompt and tool schemas more reliably than 768.",
       "env_variable": "LOCAL_LLM_CONTEXT",

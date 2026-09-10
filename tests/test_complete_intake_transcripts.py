@@ -312,7 +312,8 @@ def test_call_intake_api_exposes_full_transcript(settings) -> None:
 def test_voice_web_app_has_intake_history_and_transcript_dialog(project_root) -> None:
     html = (project_root / "web/index.html").read_text(encoding="utf-8")
     javascript = (project_root / "web/app.js").read_text(encoding="utf-8")
-    assert "Customer calls and recovered intake" in html
+    assert 'id="intakesTable"' in html
+    assert "Select a call to see its full intake and transcript." in html
     assert "callDetailDialog" in html
     assert "/api/v1/call-intakes?limit=200" in javascript
     assert "/api/v1/call-intakes/" in javascript

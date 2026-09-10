@@ -1,4 +1,4 @@
-ARG BUSINESS_SUITE_IMAGE=ghcr.io/theninjallo/floodman-operations:4.7.2@sha256:17e91a3743f7affd6bd2a211a91b082c0db917c27c1258d7298cebb6ec28638c
+ARG BUSINESS_SUITE_IMAGE=ghcr.io/theninjallo/floodman-operations:4.7.3@sha256:ebe4732d8720cf6d64c5186f3074038ae04426670910721f1636afcf7ba59472
 ARG NODE24_IMAGE=node:24.16.0-bookworm-slim@sha256:2c87ef9bd3c6a3bd4b472b4bec2ce9d16354b0c574f736c476489d09f560a203
 ARG NODE22_IMAGE=node:22.22.2-bookworm-slim@sha256:9f6d5975c7dca860947d3915877f85607946403fc55349f39b4bc3688448bb6e
 ARG CUDA_DEVEL_IMAGE=nvidia/cuda:12.4.1-devel-ubuntu22.04@sha256:da6791294b0b04d7e65d87b7451d6f2390b4d36225ab0701ee7dfec5769829f5
@@ -8,10 +8,10 @@ ARG PYTHON_VERSION=3.12.11
 ARG PYTHON_SOURCE_SHA256=c30bb24b7f1e9a19b11b55a546434f74e739bb4c271a3e3a80ff4380d49f7adb
 ARG POSTGRESQL_VERSION=14.18
 ARG POSTGRESQL_SOURCE_SHA256=83ab29d6bfc3dc58b2ed3c664114fdfbeb6a0450c4b8d7fa69aee91e3ca14f8e
-ARG BUSINESS_RUNTIME_URL=https://raw.githubusercontent.com/TheNINJALLO/floodman-business-suite-aio/b81f9db3bbfa221dd2e439ad28624b3066fe8b0e/deployment/releases/floodman-operations-runtime-v4.7.2.zip
-ARG BUSINESS_RUNTIME_SHA256=f8d3d07ff885ecde57703abba1567d151ecc4419c5afb4a73bcb5f91a054f177
-ARG BUSINESS_LAUNCHER_URL=https://raw.githubusercontent.com/TheNINJALLO/floodman-business-suite-aio/b81f9db3bbfa221dd2e439ad28624b3066fe8b0e/deployment/releases/mobile-start-v4.7.2.sh
-ARG BUSINESS_LAUNCHER_SHA256=f8169ed1d039ec94db8d8fecaf8708e3d322d1dea489dff09afd2766f81c3c96
+ARG BUSINESS_RUNTIME_URL=https://raw.githubusercontent.com/TheNINJALLO/floodman-business-suite-aio/0f9bc8553d776270267d7f2b7df6f857f6011bfe/deployment/releases/floodman-operations-runtime-v4.7.3.zip
+ARG BUSINESS_RUNTIME_SHA256=f72e0894ddeb90665d04de878a59502b2d4ab81863f00c0409bbe46acbdd0839
+ARG BUSINESS_LAUNCHER_URL=https://raw.githubusercontent.com/TheNINJALLO/floodman-business-suite-aio/0f9bc8553d776270267d7f2b7df6f857f6011bfe/deployment/releases/mobile-start-v4.7.3.sh
+ARG BUSINESS_LAUNCHER_SHA256=511a87e9b771ef733c6937000db577a18c5313438495533db5fcb6add2855124
 
 FROM ${BUSINESS_SUITE_IMAGE} AS business
 FROM ${NODE24_IMAGE} AS node24
@@ -164,25 +164,25 @@ RUN set -eux; \
     mkdir -p /opt/floodman/unified/assets; \
     curl --fail --location --retry 4 --connect-timeout 20 --max-time 300 \
       "${BUSINESS_RUNTIME_URL}" \
-      -o /opt/floodman/unified/assets/floodman-operations-runtime-v4.7.2.zip; \
+      -o /opt/floodman/unified/assets/floodman-operations-runtime-v4.7.3.zip; \
     printf '%s  %s\n' "${BUSINESS_RUNTIME_SHA256}" \
-      /opt/floodman/unified/assets/floodman-operations-runtime-v4.7.2.zip \
+      /opt/floodman/unified/assets/floodman-operations-runtime-v4.7.3.zip \
       | sha256sum -c -; \
     curl --fail --location --retry 4 --connect-timeout 20 --max-time 300 \
-      "${BUSINESS_LAUNCHER_URL}" -o /tmp/mobile-start-v4.7.2.sh; \
-    printf '%s  %s\n' "${BUSINESS_LAUNCHER_SHA256}" /tmp/mobile-start-v4.7.2.sh \
+      "${BUSINESS_LAUNCHER_URL}" -o /tmp/mobile-start-v4.7.3.sh; \
+    printf '%s  %s\n' "${BUSINESS_LAUNCHER_SHA256}" /tmp/mobile-start-v4.7.3.sh \
       | sha256sum -c -; \
     awk '/^cat > .*floodman-boot-guard.js.*BOOT_GUARD/{copy=1;next} /^BOOT_GUARD$/{copy=0} copy' \
-      /tmp/mobile-start-v4.7.2.sh > /opt/floodman/unified/assets/floodman-boot-guard.js; \
+      /tmp/mobile-start-v4.7.3.sh > /opt/floodman/unified/assets/floodman-boot-guard.js; \
     awk '/^cat > .*floodman-status.html.*STATUS_PAGE/{copy=1;next} /^STATUS_PAGE$/{copy=0} copy' \
-      /tmp/mobile-start-v4.7.2.sh > /opt/floodman/unified/assets/floodman-status.html; \
+      /tmp/mobile-start-v4.7.3.sh > /opt/floodman/unified/assets/floodman-status.html; \
     test -s /opt/floodman/unified/assets/floodman-boot-guard.js; \
     test -s /opt/floodman/unified/assets/floodman-status.html; \
     mkdir -p /tmp/floodman-business-runtime; \
-    unzip -q /opt/floodman/unified/assets/floodman-operations-runtime-v4.7.2.zip \
+    unzip -q /opt/floodman/unified/assets/floodman-operations-runtime-v4.7.3.zip \
       -d /tmp/floodman-business-runtime; \
-    runtime_root=/tmp/floodman-business-runtime/floodman-operations-v4.7.2; \
-    test "$(cat "$runtime_root/VERSION")" = '4.7.2'; \
+    runtime_root=/tmp/floodman-business-runtime/floodman-operations-v4.7.3; \
+    test "$(cat "$runtime_root/VERSION")" = '4.7.3'; \
     (cd "$runtime_root" && sha256sum -c MANIFEST.sha256 >/dev/null); \
     for service in orchestrator messaging-ai competitor-intel office-console local-lab hub database public-signing resources; do \
       test -d "$runtime_root/$service"; \
@@ -191,7 +191,7 @@ RUN set -eux; \
       cp -R --no-preserve=mode,ownership,timestamps "$runtime_root/$service/." "/opt/floodman/$service/"; \
     done; \
     rm -rf /tmp/floodman-business-runtime; \
-    rm -f /tmp/mobile-start-v4.7.2.sh
+    rm -f /tmp/mobile-start-v4.7.3.sh
 
 COPY pyproject.toml /tmp/voice-source/pyproject.toml
 COPY app /tmp/voice-source/app
@@ -295,7 +295,7 @@ RUN /opt/floodman/unified/image-contract.sh
 
 LABEL org.opencontainers.image.title="Floodman Unified Voice AIO and Business Suite" \
       org.opencontainers.image.description="One Pterodactyl runtime for local GPU voice, Office, RoomFlow, ERP, signing, notifications, and API." \
-      org.opencontainers.image.version="4.7.2-unified"
+      org.opencontainers.image.version="4.7.3-unified"
 
 USER container
 WORKDIR /home/container

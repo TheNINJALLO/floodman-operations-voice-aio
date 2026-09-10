@@ -4,16 +4,17 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#071421">
-  <title>Floodman Operations Voice AIO</title>
+  <title>Floodman Business Suite</title>
   <link rel="stylesheet" href="/assets/styles.css">
+  <link rel="stylesheet" href="/assets/business-suite.css">
 </head>
 <body>
   <div id="login" class="login-shell">
     <section class="login-card">
       <div class="brand-mark">FM</div>
       <p class="eyebrow">FLOODMAN OPERATIONS</p>
-      <h1>Voice AIO</h1>
-      <p class="muted">Never Miss A Call Again With Floodman’s 24/7 AI Receptionist</p>
+      <h1>Business Suite</h1>
+      <p class="muted">Calls, customers, properties, and billing in one place.</p>
       <label for="token">Admin token</label>
       <input id="token" type="password" autocomplete="current-password" placeholder="Paste ADMIN_TOKEN from data/runtime.env or your deployment secret">
       <button id="loginButton" class="primary">Open operations</button>
@@ -25,18 +26,23 @@
     <aside class="sidebar">
       <div class="sidebar-brand">
         <div class="brand-mark small">FM</div>
-        <div><strong>Floodman</strong><span>Voice Operations</span></div>
+        <div><strong>Floodman</strong><span>Business Suite</span></div>
       </div>
       <nav id="nav">
         <button data-view="dashboard" class="active">Overview</button>
-        <button data-view="calls">Call Gate</button>
-        <button data-view="outbound">Outbound</button>
-        <button data-view="campaigns">Campaigns</button>
+        <button data-view="calls">Calls</button>
         <button data-view="crm">Customers</button>
         <button data-view="billing">Billing</button>
-        <button data-view="compliance">Compliance</button>
-        <button data-view="outbox">Roomflow Outbox</button>
-        <button data-view="system">System</button>
+        <details id="moreToolsNav" class="nav-more">
+          <summary>More tools</summary>
+          <div>
+            <button data-view="outbound">Outbound calls</button>
+            <button data-view="campaigns">Campaigns</button>
+            <button data-view="compliance">Consent &amp; suppression</button>
+            <button data-view="outbox">Roomflow sync</button>
+            <button data-view="system">System</button>
+          </div>
+        </details>
       </nav>
       <div class="sidebar-foot">
         <span id="healthDot" class="status-dot"></span><span id="healthText">Checking system</span>
@@ -47,7 +53,7 @@
     <main class="main">
       <header class="topbar">
         <div>
-          <p class="eyebrow">FLOODMAN OPERATIONS VOICE AIO</p>
+          <p class="eyebrow">FLOODMAN BUSINESS SUITE</p>
           <h2 id="pageTitle">Overview</h2>
         </div>
         <div class="top-actions">
@@ -58,41 +64,46 @@
 
       <section id="view-dashboard" class="view active">
         <div id="metrics" class="metric-grid"></div>
-        <div class="two-column">
-          <article class="panel"><div class="panel-head"><h3>System health</h3></div><div id="componentHealth" class="health-list"></div></article>
-          <article class="panel"><div class="panel-head"><h3>Recent activity</h3></div><div id="recentEvents" class="timeline"></div></article>
-        </div>
-        <article class="panel"><div class="panel-head"><h3>Recent calls</h3><span>Google-aware opening decisions</span></div><div id="recentCalls"></div></article>
+        <article class="panel"><div class="panel-head"><h3>Recent calls</h3><button class="ghost tiny" type="button" data-view-link="calls">View all calls</button></div><div id="recentCalls"></div></article>
+        <details class="advanced-panel">
+          <summary>System activity</summary>
+          <div class="two-column advanced-panel-body">
+            <article class="panel flat-panel"><div class="panel-head"><h3>System health</h3></div><div id="componentHealth" class="health-list"></div></article>
+            <article class="panel flat-panel"><div class="panel-head"><h3>Recent activity</h3></div><div id="recentEvents" class="timeline"></div></article>
+          </div>
+        </details>
       </section>
 
       <section id="view-calls" class="view">
         <article class="panel">
           <div class="panel-head">
             <div>
-              <h3>Customer calls and recovered intake</h3>
-              <span>Complete, unsupported, and interrupted calls are preserved here with their full transcript.</span>
+              <h3>Calls</h3>
+              <span>Select a call to see its full intake and transcript.</span>
             </div>
-            <input id="callSearch" class="compact" placeholder="Search name, phone, email, address, or issue">
+            <input id="callSearch" class="compact" placeholder="Search calls">
           </div>
           <div id="intakesTable"></div>
         </article>
-        <article class="panel">
-          <div class="panel-head">
-            <h3>Call gate diagnostics</h3>
-            <span>Opening classification and routing details</span>
+        <details class="advanced-panel">
+          <summary>Call diagnostics and testing</summary>
+          <div class="advanced-panel-body">
+            <article class="panel flat-panel">
+              <div class="panel-head"><h3>Call routing</h3></div>
+              <div id="gateDiagnosticsTable"></div>
+            </article>
+            <article class="panel flat-panel form-panel">
+              <div class="panel-head"><h3>Test call routing</h3></div>
+              <form id="classifierForm" class="form-grid">
+                <label class="wide">Opening transcript<textarea name="transcript" rows="4" placeholder="This call may be recorded. Call from Google..."></textarea></label>
+                <label>Source<input name="source_hint" placeholder="google_lsa"></label>
+                <label>Seconds<input name="elapsed_seconds" type="number" step="0.1" value="5"></label>
+                <button class="primary" type="submit">Run test</button>
+              </form>
+              <pre id="classifierResult" class="result"></pre>
+            </article>
           </div>
-          <div id="gateDiagnosticsTable"></div>
-        </article>
-        <article class="panel form-panel">
-          <div class="panel-head"><h3>Test the classifier</h3></div>
-          <form id="classifierForm" class="form-grid">
-            <label class="wide">Opening transcript<textarea name="transcript" rows="4" placeholder="This call may be recorded. Call from Google..."></textarea></label>
-            <label>Source hint<input name="source_hint" placeholder="google_lsa"></label>
-            <label>Elapsed seconds<input name="elapsed_seconds" type="number" step="0.1" value="5"></label>
-            <button class="primary" type="submit">Classify sample</button>
-          </form>
-          <pre id="classifierResult" class="result"></pre>
-        </article>
+        </details>
         <dialog id="callDetailDialog" class="call-dialog">
           <div class="dialog-head">
             <div>
@@ -118,29 +129,30 @@
 
       <section id="view-outbound" class="view">
         <article class="panel form-panel">
-          <div class="panel-head"><h3>Run a two-way audio test</h3><span>Restricted to TEST_CALL_ALLOWLIST and disabled until explicitly enabled</span></div>
-          <form id="testCallForm" class="form-grid">
-            <label>Allowlisted phone<input name="phone" placeholder="+12315551234" required></label>
-            <label>Test label<input name="label" value="production_audio_test" maxlength="80"></label>
-            <button class="primary" type="submit">Place echo test call</button>
-          </form>
-          <p class="muted">Answer the call, follow the prompt, and confirm that your voice is returned. This proves signaling and both audio directions.</p>
-          <pre id="testCallResult" class="result"></pre>
-        </article>
-        <article class="panel form-panel">
-          <div class="panel-head"><h3>Queue an outbound call</h3><span>Eligibility is checked again immediately before dialing</span></div>
+          <div class="panel-head"><h3>Schedule a call</h3></div>
           <form id="outboundForm" class="form-grid">
-            <label>Phone<input name="phone" placeholder="+12315551234" required></label>
-            <label>Purpose<select name="purpose"><option>requested_callback</option><option>missed_call_callback</option><option>billing_reminder</option><option>payment_followup</option><option>estimate_followup</option><option>canceled_inspection</option><option>winback</option><option>maintenance</option></select></label>
-            <label>Customer ID<input name="customer_id"></label>
-            <label>Scheduled time<input name="scheduled_for" type="datetime-local"></label>
-            <label>Requested time<input name="requested_at" type="datetime-local"></label>
-            <label>Timezone<input name="timezone" value="America/Detroit"></label>
-            <button class="primary" type="submit">Queue call</button>
+            <label>Customer<select id="outboundCustomerSelect" name="customer_id"><option value="">Select a customer</option></select></label>
+            <label>Phone<input id="outboundPhone" name="phone" placeholder="(231) 555-1234" required></label>
+            <label>Reason<select name="purpose"><option value="requested_callback">Requested callback</option><option value="missed_call_callback">Missed call</option><option value="billing_reminder">Billing reminder</option><option value="payment_followup">Payment follow-up</option><option value="estimate_followup">Estimate follow-up</option><option value="canceled_inspection">Canceled inspection</option><option value="winback">Customer follow-up</option><option value="maintenance">Maintenance</option></select></label>
+            <label>Call at<input name="scheduled_for" type="datetime-local"></label>
+            <button class="primary" type="submit">Schedule call</button>
           </form>
           <pre id="outboundResult" class="result"></pre>
         </article>
-        <article class="panel"><div class="panel-head"><h3>Outbound jobs</h3></div><div id="outboundTable"></div></article>
+        <article class="panel"><div class="panel-head"><h3>Scheduled calls</h3></div><div id="outboundTable"></div></article>
+        <details class="advanced-panel">
+          <summary>Audio test</summary>
+          <div class="advanced-panel-body">
+            <article class="panel flat-panel form-panel">
+              <form id="testCallForm" class="form-grid">
+                <label>Allowlisted phone<input name="phone" placeholder="+12315551234" required></label>
+                <label>Test label<input name="label" value="production_audio_test" maxlength="80"></label>
+                <button class="primary" type="submit">Place test call</button>
+              </form>
+              <pre id="testCallResult" class="result"></pre>
+            </article>
+          </div>
+        </details>
       </section>
 
       <section id="view-campaigns" class="view">
@@ -172,39 +184,85 @@
       </section>
 
       <section id="view-crm" class="view">
-        <article class="panel form-panel">
-          <div class="panel-head"><h3>Add or update customer</h3><span>Local-first ledger with optional Roomflow synchronization</span></div>
-          <form id="customerForm" class="form-grid">
-            <label>Name<input name="name" required></label><label>Phone<input name="phone"></label>
-            <label>Email<input name="email" type="email"></label><label>External ID<input name="external_id"></label>
-            <button class="primary" type="submit">Save customer</button>
-          </form>
+        <article id="customerPickerPanel" class="panel">
+          <div class="panel-head">
+            <div><h3>Select a customer</h3><span>Open one customer to see only their information.</span></div>
+            <button class="primary" type="button" data-new-customer>Add customer</button>
+          </div>
+          <input id="customerSearch" class="compact customer-search" placeholder="Search by name, phone, or email">
+          <div id="customersTable"></div>
         </article>
-        <article class="panel"><div class="panel-head"><h3>Customers</h3><input id="customerSearch" class="compact" placeholder="Search name, phone, or address"></div><div id="customersTable"></div></article>
-        <div class="two-column">
-          <article class="panel"><div class="panel-head"><h3>Appointments</h3></div><div id="appointmentsTable"></div></article>
-          <article class="panel"><div class="panel-head"><h3>Callback tasks</h3></div><div id="callbacksTable"></div></article>
+
+        <details id="customerEditor" class="advanced-panel editor-panel">
+          <summary id="customerEditorLabel">Add customer</summary>
+          <div class="advanced-panel-body">
+          <article class="panel flat-panel form-panel">
+          <form id="customerForm" class="form-grid">
+            <input name="id" type="hidden">
+            <label>Name<input name="name" required></label><label>Phone<input name="phone"></label>
+            <label>Email<input name="email" type="email"></label>
+            <button class="primary" type="submit">Save customer</button>
+            <button class="ghost" type="button" data-cancel-customer-edit>Cancel</button>
+          </form>
+          </article>
+          </div>
+        </details>
+
+        <div id="customerWorkspace" class="customer-workspace hidden">
+          <article class="customer-hero">
+            <div id="selectedCustomerSummary"></div>
+            <div class="row-actions">
+              <button class="ghost" type="button" data-edit-customer>Edit customer</button>
+              <button class="ghost" type="button" data-change-customer>Change customer</button>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head"><div><h3>Properties</h3><span>Only properties belonging to this customer are shown.</span></div><button class="primary" type="button" data-new-property>Add property</button></div>
+            <div id="propertiesTable"></div>
+          </article>
+
+          <details id="propertyEditor" class="advanced-panel editor-panel">
+            <summary id="propertyEditorLabel">Add property</summary>
+            <div class="advanced-panel-body">
+              <article class="panel flat-panel form-panel">
+                <form id="propertyForm" class="form-grid">
+                  <input name="id" type="hidden"><input name="customer_id" type="hidden">
+                  <label class="wide">Street address<input name="address" required></label>
+                  <label>City<input name="city"></label><label>State<input name="state" value="MI" maxlength="2"></label><label>ZIP code<input name="zip" inputmode="numeric"></label>
+                  <label class="wide">Notes<textarea name="notes" rows="3"></textarea></label>
+                  <button class="primary" type="submit">Save property</button>
+                  <button class="ghost" type="button" data-cancel-property-edit>Cancel</button>
+                </form>
+              </article>
+            </div>
+          </details>
+
+          <div class="two-column">
+            <article class="panel"><div class="panel-head"><h3>Appointments</h3></div><div id="appointmentsTable"></div></article>
+            <article class="panel"><div class="panel-head"><h3>Callbacks</h3></div><div id="callbacksTable"></div></article>
+          </div>
         </div>
       </section>
 
       <section id="view-billing" class="view">
         <article class="panel form-panel">
-          <div class="panel-head"><h3>Import an invoice</h3><span>The AI only exposes billing after deterministic identity verification</span></div>
+          <div class="panel-head"><h3>Add an invoice</h3></div>
           <form id="invoiceForm" class="form-grid">
-            <label>Customer ID<input name="customer_id" required></label><label>Invoice number<input name="invoice_number"></label>
+            <label>Customer<select id="billingCustomerSelect" name="customer_id" required><option value="">Select a customer</option></select></label><label>Invoice number<input name="invoice_number"></label>
             <label>Amount due<input name="amount_due" type="number" step="0.01" required></label><label>Status<input name="status" value="open"></label>
             <label>Due date<input name="due_date" type="date"></label><label>Secure payment URL<input name="payment_url" type="url"></label>
             <button class="primary" type="submit">Save invoice</button>
           </form>
         </article>
-        <article class="panel"><div class="panel-head"><h3>Invoices</h3></div><div id="invoicesTable"></div></article>
+        <article class="panel"><div class="panel-head"><div><h3>Invoices</h3><span id="billingCustomerHint">Select a customer to view invoices.</span></div></div><div id="invoicesTable"></div></article>
       </section>
 
       <section id="view-compliance" class="view">
         <div class="two-column">
           <article class="panel form-panel"><div class="panel-head"><h3>Record consent</h3></div>
             <form id="consentForm" class="stack-form">
-              <label>Phone<input name="phone" required></label><label>Customer ID<input name="customer_id"></label>
+              <label>Customer<select id="consentCustomerSelect" name="customer_id"><option value="">Select a customer</option></select></label><label>Phone<input id="consentPhone" name="phone" required></label>
               <label class="check"><input name="transactional_voice" type="checkbox"> Transactional artificial-voice calls</label>
               <label class="check"><input name="marketing_voice_written" type="checkbox"> Written automated-marketing consent</label>
               <label class="check"><input name="sms" type="checkbox"> SMS consent</label>

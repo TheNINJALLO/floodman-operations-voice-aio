@@ -7,7 +7,7 @@ def test_unified_image_runs_voice_and_business_suite_on_distinct_ports(project_r
     start_hub = (project_root / "unified" / "start-hub.sh").read_text(encoding="utf-8")
     supervisor = (project_root / "unified" / "voice-supervisor.conf").read_text(encoding="utf-8")
 
-    assert "floodman-operations:4.7.2@sha256:" in dockerfile
+    assert "floodman-operations:4.7.3@sha256:ebe4732d8720cf6d64c5186f3074038ae04426670910721f1636afcf7ba59472" in dockerfile
     assert "nvidia/cuda:12.4.1-runtime-ubuntu22.04@sha256:" in dockerfile
     assert "8002/tcp 9000/tcp 9001/tcp 9002/tcp 9003/tcp 9004/tcp" in dockerfile
     assert "AUDIOSOCKET_PORT=8091" in entrypoint
@@ -74,7 +74,7 @@ def test_unified_image_runs_voice_and_business_suite_on_distinct_ports(project_r
     assert "gauzy-web-active" in dockerfile
     assert 'chmod -R a+rX "$runtime_web"' in start_hub
     assert 'chmod 0644 "$FM_HOME/runtime/hub/floodman-hub-config.js"' in start_hub
-    assert "runtime_root=/tmp/floodman-business-runtime/floodman-operations-v4.7.2" in dockerfile
+    assert "runtime_root=/tmp/floodman-business-runtime/floodman-operations-v4.7.3" in dockerfile
     assert "orchestrator messaging-ai competitor-intel office-console local-lab" in dockerfile
     assert "sha256sum -c MANIFEST.sha256" in dockerfile
     assert "FLOODMAN_MOBILE_TOKEN_SECRET" in entrypoint
@@ -135,7 +135,7 @@ def test_unified_mutable_paths_resolve_under_data_dir(project_root: Path):
     assert 'for business_path in config run logs runtime backups diagnostics tmp' in entrypoint
     assert 'ln -s "data/business/${business_path}" "${compatibility_path}"' in entrypoint
     assert "Refusing to replace unexpected persistent path" in entrypoint
-    assert "BUSINESS_RUNTIME_SHA256=f8d3d07ff885ecde57703abba1567d151ecc4419c5afb4a73bcb5f91a054f177" in dockerfile
+    assert "BUSINESS_RUNTIME_SHA256=f72e0894ddeb90665d04de878a59502b2d4ab81863f00c0409bbe46acbdd0839" in dockerfile
     assert 'sha256sum -c -' in dockerfile
     assert "PYTHON_VERSION=3.12.11" in dockerfile
     assert "PYTHON_SOURCE_SHA256=c30bb24b7f1e9a19b11b55a546434f74e739bb4c271a3e3a80ff4380d49f7adb" in dockerfile
@@ -143,7 +143,8 @@ def test_unified_mutable_paths_resolve_under_data_dir(project_root: Path):
     assert 'unzip -q "${business_runtime_zip}" -d "${business_overlay_next}"' in entrypoint
     assert 'sha256sum -c MANIFEST.sha256' in entrypoint
     assert 'prepare-roomflow.py' in entrypoint
-    assert "const RELEASE = '4.7.2-unified.1';" in entrypoint
+    assert "const RELEASE = '4.7.2-unified.1';" not in entrypoint
+    assert "floodman-operations-v4.7.3" in entrypoint
     assert '${DATA_DIR}/roomflow/current/index.html' in entrypoint
 
 

@@ -4,6 +4,11 @@ The production `gpu-appliance` tag is now built from `unified/Dockerfile`. One
 Pterodactyl server runs the CUDA voice appliance and the complete Floodman
 Business Suite as one supervised runtime.
 
+The current unified release embeds Business Suite `4.7.3` from immutable source
+commit `0f9bc8553d776270267d7f2b7df6f857f6011bfe`. Its daily workspace uses six
+primary navigation choices, and Properties remains empty until a customer is
+selected so records from different customers are never mixed in the list.
+
 ## Public product surfaces
 
 - `https://aicall.oninetwork.com` -> Voice AIO on port 8002

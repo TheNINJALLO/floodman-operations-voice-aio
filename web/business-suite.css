@@ -1,0 +1,327 @@
+/* Focused layout overrides for the customer-first Business Suite. */
+.app-shell {
+  grid-template-columns: 224px minmax(0, 1fr);
+}
+
+.sidebar {
+  padding: 18px 12px;
+  background: #07131ef5;
+}
+
+.sidebar-brand {
+  padding-bottom: 18px;
+}
+
+nav {
+  gap: 3px;
+}
+
+nav button {
+  width: 100%;
+  padding: 10px 12px;
+}
+
+.nav-more {
+  margin-top: 6px;
+  border-top: 1px solid #19364a;
+  padding-top: 8px;
+}
+
+.nav-more summary {
+  padding: 10px 12px;
+  border-radius: 10px;
+  color: #8ea8b5;
+  cursor: pointer;
+  font-size: .78rem;
+  font-weight: 850;
+  letter-spacing: .08em;
+  list-style: none;
+  text-transform: uppercase;
+}
+
+.nav-more summary::-webkit-details-marker,
+.advanced-panel > summary::-webkit-details-marker {
+  display: none;
+}
+
+.nav-more summary::after {
+  content: '+';
+  float: right;
+  font-size: 1rem;
+  line-height: .8;
+}
+
+.nav-more[open] summary::after {
+  content: '−';
+}
+
+.nav-more > div {
+  display: grid;
+  gap: 3px;
+  padding: 3px 0 0 8px;
+}
+
+.nav-more > div button {
+  padding: 9px 11px;
+  font-size: .82rem;
+}
+
+.main {
+  width: 100%;
+  max-width: 1600px;
+  margin: 0 auto;
+  padding-top: 24px;
+}
+
+.topbar {
+  margin-bottom: 20px;
+}
+
+.topbar h2 {
+  font-size: clamp(1.7rem, 3vw, 2.35rem);
+}
+
+.view.active {
+  gap: 15px;
+}
+
+.metric-grid {
+  grid-template-columns: repeat(5, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.metric {
+  min-height: 92px;
+  padding: 15px;
+  border-radius: 14px;
+  background: #0b1d2a;
+  box-shadow: none;
+}
+
+.metric strong {
+  margin-top: 11px;
+  font-size: 1.75rem;
+}
+
+.metric small {
+  display: none;
+}
+
+.panel {
+  padding: 16px;
+  border-radius: 15px;
+  background: #0a1b28;
+  box-shadow: none;
+}
+
+.panel-head {
+  margin-bottom: 13px;
+}
+
+.flat-panel {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.advanced-panel {
+  overflow: hidden;
+  border: 1px solid #1d3a4e;
+  border-radius: 14px;
+  background: #081722;
+}
+
+.advanced-panel > summary {
+  padding: 14px 16px;
+  color: #b8ced8;
+  cursor: pointer;
+  font-size: .84rem;
+  font-weight: 850;
+  list-style: none;
+}
+
+.advanced-panel > summary::after {
+  content: 'Show';
+  float: right;
+  color: #76cde7;
+  font-size: .7rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.advanced-panel[open] > summary {
+  border-bottom: 1px solid #1d3a4e;
+}
+
+.advanced-panel[open] > summary::after {
+  content: 'Hide';
+}
+
+.advanced-panel-body {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+}
+
+.editor-panel {
+  border-color: #28546c;
+}
+
+.customer-search {
+  width: min(480px, 100%);
+  margin-bottom: 14px;
+}
+
+.customer-workspace {
+  display: grid;
+  gap: 15px;
+}
+
+.customer-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px;
+  border: 1px solid #2b5369;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #0e2d40, #0a1c29);
+}
+
+.customer-hero .eyebrow {
+  margin: 0 0 7px;
+}
+
+.customer-hero h3 {
+  margin: 0 0 9px;
+  font-size: 1.55rem;
+}
+
+.customer-contact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  color: #a9c0ca;
+  font-size: .82rem;
+}
+
+.customer-contact span {
+  position: relative;
+}
+
+.customer-contact span + span::before {
+  position: absolute;
+  left: -11px;
+  color: #4b7185;
+  content: '·';
+}
+
+.table-wrap {
+  border-radius: 10px;
+}
+
+table {
+  min-width: 620px;
+}
+
+th,
+td {
+  padding: 10px 11px;
+}
+
+.empty {
+  padding: 22px;
+}
+
+.form-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.row-actions {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 1100px) {
+  .metric-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 850px) {
+  .app-shell {
+    display: block;
+  }
+
+  .nav-more {
+    min-width: max-content;
+    margin: 0 0 0 5px;
+    padding: 0 0 0 5px;
+    border-top: 0;
+    border-left: 1px solid #19364a;
+  }
+
+  nav {
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+
+  nav > button {
+    width: auto;
+  }
+
+  .nav-more > summary {
+    white-space: nowrap;
+  }
+
+  .nav-more[open] > div {
+    position: absolute;
+    z-index: 10;
+    padding: 7px;
+    border: 1px solid #27495d;
+    border-radius: 12px;
+    background: #091a27;
+    box-shadow: var(--shadow);
+  }
+
+  .customer-hero {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .metric-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .metric-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .metric {
+    min-height: 82px;
+  }
+
+  .customer-contact {
+    display: grid;
+    gap: 5px;
+  }
+
+  .customer-contact span + span::before {
+    display: none;
+  }
+
+  .customer-hero {
+    padding: 16px;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .advanced-panel-body {
+    padding: 13px;
+  }
+}

@@ -96,28 +96,21 @@ done
 # that the standalone Suite egg would otherwise install. Verify the complete
 # payload before replacing the prior derived copy; customer and database data
 # are never part of this refresh.
-business_runtime_zip="/opt/floodman/unified/assets/floodman-operations-runtime-v4.7.2.zip"
-business_runtime_dir="${DATA_DIR}/business/runtime/floodman-v4.7.2"
+business_runtime_zip="/opt/floodman/unified/assets/floodman-operations-runtime-v4.7.3.zip"
+business_runtime_dir="${DATA_DIR}/business/runtime/floodman-v4.7.3"
 business_overlay="${business_runtime_dir}/app-overlay"
 business_overlay_next="${business_runtime_dir}/app-overlay.next"
-business_overlay_root="${business_overlay_next}/floodman-operations-v4.7.2"
+business_overlay_root="${business_overlay_next}/floodman-operations-v4.7.3"
 mkdir -p "${business_runtime_dir}"
 rm -rf "${business_overlay_next}"
 mkdir -p "${business_overlay_next}"
 unzip -q "${business_runtime_zip}" -d "${business_overlay_next}"
-[[ "$(cat "${business_overlay_root}/VERSION")" == "4.7.2" ]]
+[[ "$(cat "${business_overlay_root}/VERSION")" == "4.7.3" ]]
 (cd "${business_overlay_root}" && sha256sum -c MANIFEST.sha256 >/dev/null)
 
-# Rotate the managed browser caches for this unified repair even though the
-# pinned Business Suite version remains 4.7.2. This makes installed PWAs discard
-# any same-version navigation assets that predate the unified sidebar routes.
-pwa_service_worker="${business_overlay_root}/pwa/floodman-sw.js"
-grep -Fq "const RELEASE = '4.7.2';" "${pwa_service_worker}"
-sed -i "s/const RELEASE = '4.7.2';/const RELEASE = '4.7.2-unified.1';/" \
-  "${pwa_service_worker}"
 rm -rf "${business_overlay}"
 mv "${business_overlay_next}" "${business_overlay}"
-business_overlay_root="${business_overlay}/floodman-operations-v4.7.2"
+business_overlay_root="${business_overlay}/floodman-operations-v4.7.3"
 
 # Serve the current Hub source from the pinned Business image so its AI Call
 # Center link stays synchronized with this unified release. Pterodactyl's bind
@@ -134,7 +127,7 @@ python3 "${business_overlay_root}/roomflow/prepare-roomflow.py" \
   --target "${DATA_DIR}/roomflow/current" \
   --overlay "${business_overlay_root}/roomflow"
 [[ -s "${DATA_DIR}/roomflow/current/index.html" ]]
-printf '%s\n' '4.7.2' > "${FM_CONFIG}/floodman-active-runtime.txt"
+printf '%s\n' '4.7.3' > "${FM_CONFIG}/floodman-active-runtime.txt"
 
 mkdir -p "${FM_RUN}" "${FM_LOGS}" "${DATA_DIR}/business/tmp/gateway-client" \
   "${DATA_DIR}/business/tmp/gateway-proxy" "${DATA_DIR}/business/tmp/gateway-fastcgi" \

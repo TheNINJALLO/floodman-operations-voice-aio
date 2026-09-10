@@ -1,3 +1,10 @@
+# Unified Business Suite 4.7.3
+
+- Embed the immutable Floodman Business Suite 4.7.3 image and checksum-verified runtime.
+- Simplify the daily Business Suite pages and keep secondary applications under More tools.
+- Require customer selection before listing properties and enforce cross-customer isolation.
+- Preserve the Voice AIO call path, persistent data, notifications, owner account, and rollback image.
+
 # v0.1.1
 
 - Expose `/opt/venv/bin/python` as the container runtime.
