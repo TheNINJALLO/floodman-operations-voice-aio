@@ -72,6 +72,7 @@ def settings():
         barge_in_min_speech_ms=160,
         barge_in_energy_threshold=325,
         barge_in_preroll_ms=240,
+        email_endpoint_silence_ms=1600,
     )
 
 
@@ -188,6 +189,7 @@ async def test_caller_speech_interrupts_playback_and_is_preserved() -> None:
         reader.feed_data(audio_frame(0))
 
     assert await asyncio.wait_for(playback, timeout=1) is True
+    assert connection.last_playback_fraction < 1.0
     captured = await asyncio.wait_for(connection.utterance(contact=False), timeout=1)
     assert captured
     assert len(captured) >= 10 * 320
@@ -241,3 +243,44 @@ async def test_speech_queued_during_processing_is_not_cleared_before_playback() 
     reader.feed_data(bytes([TYPE_HANGUP, 0, 0]))
     await asyncio.wait_for(connection.reader_task, timeout=1)
     await connection.close()
+
+
+@pytest.mark.asyncio
+async def test_email_endpoint_allows_a_natural_spelling_pause() -> None:
+    connection = AudioSocketConnection(asyncio.StreamReader(), BufferWriter(), settings())
+    capture = asyncio.create_task(connection.utterance(contact=True, stage="email"))
+
+    for _ in range(10):
+        connection._queue_audio(int(1200).to_bytes(2, "little", signed=True) * 160)
+    for _ in range(50):  # One second is longer than other contact fields.
+        connection._queue_audio(b"\x00\x00" * 160)
+    await asyncio.sleep(0)
+    assert not capture.done()
+
+    for _ in range(10):
+        connection._queue_audio(int(1200).to_bytes(2, "little", signed=True) * 160)
+    for _ in range(80):
+        connection._queue_audio(b"\x00\x00" * 160)
+
+    audio = await asyncio.wait_for(capture, timeout=1)
+    assert audio and len(audio) >= 150 * 320
+
+
+@pytest.mark.asyncio
+async def test_email_readback_uses_slower_tts_only_for_spelling() -> None:
+    class SpeedTTS:
+        def __init__(self): self.calls=[]
+        async def synthesize(self, text: str, *, speed=None) -> bytes:
+            self.calls.append((text,speed));return b"\x01\x00" * 2
+
+    tts=SpeedTTS();server=AudioSocketServer(settings(),FakeCore(),SimpleNamespace(),tts,FakeRegistry())
+    reply=VoiceReply(
+        text="I heard j, o, at, e, x, dot, c, o, m. Is that correct?",
+        speech_parts=("I heard j, o, at, e, x, dot, c, o, m","Is that correct?"),
+        pause_between_parts_ms=300,
+        speech_part_speeds=(0.78,None),
+    )
+
+    await server._synthesize_reply(reply)
+
+    assert tts.calls==[(reply.speech_parts[0],0.78),(reply.speech_parts[1],None)]

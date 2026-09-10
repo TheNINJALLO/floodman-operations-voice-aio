@@ -61,3 +61,4 @@ class VoiceReply:
     notification_partial: bool = False
     speech_parts: tuple[str, ...] = ()
     pause_between_parts_ms: int = 0
+    speech_part_speeds: tuple[float | None, ...] = ()

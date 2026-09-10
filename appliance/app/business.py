@@ -74,8 +74,10 @@ class BusinessDirectory:
         text = normalized(query)
         if any(term in text for term in ("what services", "what do you do", "kind of work", "services do you offer")):
             return "Floodman provides water-damage restoration, basement waterproofing, foundation repair, crawl-space encapsulation, mold remediation, and sump-pump and drainage services."
-        if any(term in text for term in ("free inspection", "inspection free", "free consultation")):
-            return "Floodman's website advertises free inspections and consultations. Final recommendations and pricing depend on the property conditions and the work required."
+        if any(term in text for term in (
+            "free inspection", "inspection free", "free consultation", "free estimate", "estimate free",
+        )):
+            return "Floodman offers free inspections and consultations so the team can determine the next step. Final recommendations and pricing depend on the property conditions and the work required."
         if any(term in text for term in ("how much", "price", "cost", "estimate over the phone")):
             return "Pricing depends on the source and extent of the problem, affected materials, access, and the inspection findings. The team can review the next step after collecting the property details."
         if any(term in text for term in ("warranty", "guarantee")):

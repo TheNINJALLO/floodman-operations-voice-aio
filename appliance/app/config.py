@@ -202,10 +202,12 @@ class Settings:
     kokoro_voices_path: Path
     kokoro_voice: str
     kokoro_speed: float
+    email_readback_speed: float
     tts_cache_enabled: bool
 
     endpoint_silence_ms: int
     contact_endpoint_silence_ms: int
+    email_endpoint_silence_ms: int
     minimum_speech_ms: int
     maximum_utterance_seconds: float
     post_tts_guard_ms: int
@@ -327,9 +329,11 @@ class Settings:
             kokoro_voices_path=Path(os.getenv("KOKORO_VOICES_PATH", models / "kokoro" / "voices-v1.0.bin")),
             kokoro_voice=_voice_name(voice_settings.get("voice"), os.getenv("KOKORO_VOICE", "af_heart")),
             kokoro_speed=max(0.75, min(_number(voice_settings.get("speed"), _float("KOKORO_SPEED", 0.90)), 1.25)),
+            email_readback_speed=max(0.75, min(_float("EMAIL_READBACK_SPEED", 0.78), 1.0)),
             tts_cache_enabled=_bool("TTS_CACHE_ENABLED", True),
             endpoint_silence_ms=_int("ENDPOINT_SILENCE_MS", 400),
             contact_endpoint_silence_ms=_int("CONTACT_ENDPOINT_SILENCE_MS", 800),
+            email_endpoint_silence_ms=max(1000, min(_int("EMAIL_ENDPOINT_SILENCE_MS", 1600), 3000)),
             minimum_speech_ms=_int("MINIMUM_SPEECH_MS", 160),
             maximum_utterance_seconds=_float("MAXIMUM_UTTERANCE_SECONDS", 25.0),
             post_tts_guard_ms=_int("POST_TTS_GUARD_MS", 120),

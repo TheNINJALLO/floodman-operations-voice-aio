@@ -150,6 +150,12 @@ speech recognition. `BARGE_IN_MIN_SPEECH_MS`, `BARGE_IN_ENERGY_THRESHOLD`, and
 `BARGE_IN_PREROLL_MS` can be tuned for unusually noisy telephone lines without
 exposing AudioSocket or speech services publicly.
 
+Email spelling uses its own `EMAIL_ENDPOINT_SILENCE_MS` so natural pauses do not
+split an address into separate turns. `EMAIL_READBACK_SPEED` slows only the
+spelled readback; the surrounding conversation retains the selected voice speed.
+If a caller interrupts a newly asked question with the end of their previous
+answer, Alex preserves that continuation and asks the interrupted question again.
+
 The repository tests deterministic intake, confirmations, unsupported work, emergency routing, account authorization, browser-notification privacy, service-area and knowledge editing, database cascades, environment parsing, Asterisk rendering, and the one-unit GPU contract.
 
 ## Production acceptance checklist

@@ -99,9 +99,13 @@ def test_conversational_endpoint_defaults(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.delenv("ENDPOINT_SILENCE_MS", raising=False)
     monkeypatch.delenv("CONTACT_ENDPOINT_SILENCE_MS", raising=False)
+    monkeypatch.delenv("EMAIL_ENDPOINT_SILENCE_MS", raising=False)
+    monkeypatch.delenv("EMAIL_READBACK_SPEED", raising=False)
     settings = Settings.from_env()
     assert settings.endpoint_silence_ms == 400
     assert settings.contact_endpoint_silence_ms == 800
+    assert settings.email_endpoint_silence_ms == 1600
+    assert settings.email_readback_speed == 0.78
 
 
 def test_ari_and_ami_are_not_exposed(project_root: Path):

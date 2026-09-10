@@ -31,7 +31,7 @@ def collection_question(state: IntakeState) -> str:
     if stage == "name":
         return "What name should I put this under?"
     if stage == "email":
-        return "What's the best email for you? You can say skip."
+        return "What's the best email for you?"
     if stage == "phone":
         return "What's the best callback number?"
     if stage == "address":

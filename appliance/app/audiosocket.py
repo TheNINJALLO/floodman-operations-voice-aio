@@ -38,6 +38,7 @@ class AudioSocketConnection:
         self._barge_audio = bytearray()
         self._barge_voiced_ms = 0.0
         self._barge_silence_ms = 0.0
+        self.last_playback_fraction = 0.0
 
     async def read_frame(self) -> tuple[int, bytes]:
         header = await self.reader.readexactly(3)
@@ -153,15 +154,21 @@ class AudioSocketConnection:
                 return
 
     async def speak(self, pcm16le: bytes) -> bool:
+        self.last_playback_fraction = 0.0
         if not pcm16le or self.closed:
             return False
         self.barge_in_event.clear()
         self._reset_barge_in()
-        if self.settings.barge_in_enabled and self._queued_speech_waiting():
-            return True
+        # Switch the reader to barge-in capture before inspecting queued audio.
+        # Otherwise speech arriving between that inspection and playback could
+        # be cleared and lost.
         self.output_active = True
+        if self.settings.barge_in_enabled and self._queued_speech_waiting():
+            self.output_active = False
+            return True
         await self.clear_audio()
         interrupted = False
+        sent_bytes = 0
         try:
             for chunk in chunk_pcm(pcm16le, 8000, 20):
                 if self.closed or self.barge_in_event.is_set():
@@ -169,6 +176,7 @@ class AudioSocketConnection:
                     break
                 self.writer.write(bytes([TYPE_AUDIO]) + struct.pack("!H", len(chunk)) + chunk)
                 await self.writer.drain()
+                sent_bytes += len(chunk)
                 await asyncio.sleep(0.020)
         finally:
             if not interrupted:
@@ -178,10 +186,14 @@ class AudioSocketConnection:
                 await self.clear_audio()
                 self._reset_barge_in()
             self.output_active = False
+            self.last_playback_fraction = min(1.0, sent_bytes / max(1, len(pcm16le)))
         return interrupted
 
-    async def utterance(self, *, contact: bool) -> bytes | None:
-        endpoint_ms = self.settings.contact_endpoint_silence_ms if contact else self.settings.endpoint_silence_ms
+    async def utterance(self, *, contact: bool, stage: str = "") -> bytes | None:
+        if stage == "email":
+            endpoint_ms = self.settings.email_endpoint_silence_ms
+        else:
+            endpoint_ms = self.settings.contact_endpoint_silence_ms if contact else self.settings.endpoint_silence_ms
         initial_timeout = 12.0
         speech = bytearray()
         speaking = False
@@ -246,7 +258,13 @@ class AudioSocketServer:
         parts = tuple(part for part in reply.speech_parts if str(part).strip())
         if len(parts) < 2:
             return await self.tts.synthesize(reply.text)
-        audio_parts = [await self.tts.synthesize(part) for part in parts]
+        audio_parts = []
+        for index, part in enumerate(parts):
+            speed = reply.speech_part_speeds[index] if index < len(reply.speech_part_speeds) else None
+            if speed is None:
+                audio_parts.append(await self.tts.synthesize(part))
+            else:
+                audio_parts.append(await self.tts.synthesize(part, speed=speed))
         pause_samples = max(0, int(8000 * reply.pause_between_parts_ms / 1000))
         pause = b"\x00\x00" * pause_samples
         return pause.join(audio_parts)
@@ -294,7 +312,9 @@ class AudioSocketServer:
             )
             while not connection.closed:
                 contact = contact_endpoint_stage(session.state.stage)
-                audio = await connection.utterance(contact=contact)
+                audio = await connection.utterance(contact=contact, stage=session.state.stage)
+                input_stage = ""
+                processed_transcript = False
                 if audio is None:
                     break
                 if not audio:
@@ -315,6 +335,8 @@ class AudioSocketServer:
                     except Exception:
                         logger.exception("call_event call_uuid=%s stage=stt_failed", call_uuid)
                         transcript = ""
+                    input_stage = session.state.stage
+                    processed_transcript = bool(transcript)
                     started = time.monotonic()
                     logger.info("call_event call_uuid=%s stage=voice_core_started", call_uuid)
                     reply = await self.core.process(session, transcript) if transcript else await self.core.no_input(session)
@@ -335,10 +357,19 @@ class AudioSocketServer:
                 logger.info("call_event call_uuid=%s stage=first_response_frame", call_uuid)
                 response_interrupted = await connection.speak(response_audio)
                 logger.info(
-                    "call_event call_uuid=%s stage=last_response_frame interrupted=%s",
+                    "call_event call_uuid=%s stage=last_response_frame interrupted=%s playback_fraction=%.3f",
                     call_uuid,
                     response_interrupted,
+                    connection.last_playback_fraction,
                 )
+                if response_interrupted and processed_transcript and not reply.transfer_number and not reply.end_call:
+                    note_interrupted = getattr(self.core, "note_prompt_interrupted", None)
+                    if note_interrupted is not None:
+                        note_interrupted(
+                            session,
+                            previous_stage=input_stage,
+                            playback_fraction=connection.last_playback_fraction,
+                        )
                 if reply.transfer_number:
                     self.registry.write_action(call_uuid, "transfer", reply.transfer_number, "assistant_transfer")
                     outcome = "transfer"

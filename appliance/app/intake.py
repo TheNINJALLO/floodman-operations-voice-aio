@@ -6,6 +6,7 @@ from typing import Any
 PHONE_RE = re.compile(r"\+[1-9][0-9]{7,14}$")
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 SPELLED_SEPARATOR_RUN_RE = re.compile(r"(?<![a-z0-9])(?:[a-z0-9]\s*(?:-|,)\s*)+[a-z0-9](?![a-z0-9])")
+SPELLED_PERIOD_RUN_RE = re.compile(r"(?<![a-z0-9])(?:[a-z0-9]\s*\.\s*){2,}(?![a-z0-9])")
 
 SUPPORTED_ALIASES: dict[str, tuple[str, ...]] = {
     "water_damage_restoration": (
@@ -111,6 +112,10 @@ def normalize_email(value: Any) -> str:
     # of individual characters before translating an explicitly spoken "dash"
     # so legitimate names such as "mary-jane" remain intact.
     text = SPELLED_SEPARATOR_RUN_RE.sub(lambda match: re.sub(r"[\s,-]+", "", match.group(0)), text)
+    # Whisper also writes slowly spoken initials as punctuation, for example
+    # "J.O.". An intentionally spoken email period normally arrives as "dot",
+    # so collapse only runs made entirely from single characters and periods.
+    text = SPELLED_PERIOD_RUN_RE.sub(lambda match: re.sub(r"[\s.]+", "", match.group(0)), text)
     replacements = {
         " at ": "@", " dot ": ".", " underscore ": "_", " dash ": "-", " hyphen ": "-",
         " period ": ".", " gmail com": "gmail.com", " yahoo com": "yahoo.com",
@@ -125,6 +130,7 @@ def normalize_email(value: Any) -> str:
 
 def normalize_name(value: Any) -> str:
     text = clean(value, 200).strip(" .,;:!?\t\r\n")
+    text = re.sub(r"^(?:(?:uh+|um+|erm|well|yeah|yes)[,\s]+)+", "", text, flags=re.IGNORECASE)
     text = re.sub(
         r"^(?:my name is|this is|it is|it's|you can put (?:it )?under|put (?:it )?under)\s+",
         "",
@@ -156,7 +162,7 @@ def spoken_email(value: str) -> str:
 def spoken_address(value: str) -> str:
     """Read every address and ZIP digit separately while preserving the words."""
     parts: list[str] = []
-    for character in clean(value, 500):
+    for character in clean(value, 500).strip(" .,;:!?"):
         if character.isdigit():
             parts.append(f" {_spoken_character(character)}, ")
         else:
@@ -181,12 +187,44 @@ def _spoken_character(value: str) -> str:
 
 def detect_emergency(value: Any) -> bool:
     text = normalized(value)
-    terms = (
-        "water rising", "actively rising", "sewage", "electrical", "electricity",
-        "electrical panel", "sparking", "gas odor", "gas smell", "collapse",
-        "falling", "unsafe to enter", "structural danger", "live wire", "emergency",
+    explicit = (
+        "this is an emergency", "it is an emergency", "emergency right now",
+        "need emergency help", "need emergency service now",
     )
-    return any(term in text for term in terms)
+    if any(term in text for term in explicit):
+        return True
+
+    sanitized = text
+    for phrase in (
+        "no safety concerns", "no electrical hazard", "no electrical", "not near electrical",
+        "no sewage", "no gas odor", "no gas smell", "no sparks", "not sparking",
+        "not unsafe", "no structural danger", "not an emergency",
+    ):
+        sanitized = sanitized.replace(phrase, " ")
+    immediate_hazards = (
+        "electrical panel", "water near electrical", "water by electrical", "live wire",
+        "sparking", "sparks", "gas odor", "gas smell", "sewage backup", "sewage overflow",
+        "collapse", "collapsing", "ceiling falling", "unsafe to enter", "structural danger",
+    )
+    if any(term in sanitized for term in immediate_hazards):
+        return True
+
+    inactive_water = any(
+        term in text
+        for term in (
+            "water is off", "water shut off", "shut the water off", "water has stopped",
+            "water stopped", "leak has stopped", "leak stopped", "not actively leaking",
+            "not rising", "already contained", "is contained",
+        )
+    )
+    active_water = (
+        "water is rising", "water rising", "actively rising", "water is coming in",
+        "water coming from", "still flowing", "still leaking", "actively leaking",
+        "flooding now", "flooding right now", "water spreading", "burst pipe",
+        "pipe burst", "pipe broke", "broken pipe", "overflowing", "cannot stop the water",
+        "cant stop the water", "standing water",
+    )
+    return not inactive_water and any(term in text for term in active_water)
 
 
 def human_requested(value: Any) -> bool:

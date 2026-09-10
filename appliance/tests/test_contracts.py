@@ -33,6 +33,7 @@ def test_egg(project_root: Path):
     ]
     assert "SIP_PASSWORD" in names and "KOKORO_VOICE" in names
     assert "SMTP_PASSWORD" in names and "FLOODMAN_EMAIL_ENABLED" in names
+    assert "EMAIL_ENDPOINT_SILENCE_MS" in names and "EMAIL_READBACK_SPEED" in names
     assert next(item for item in egg["variables"] if item["env_variable"] == "SMTP_PASSWORD")["user_viewable"] is False
 
 

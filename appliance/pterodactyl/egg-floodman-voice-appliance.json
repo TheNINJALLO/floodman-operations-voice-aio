@@ -559,6 +559,16 @@
             "field_type": "text"
         },
         {
+            "name": "Email Readback Speed",
+            "description": "Slower speed used only while spelling an email address back to the caller",
+            "env_variable": "EMAIL_READBACK_SPEED",
+            "default_value": "0.78",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|numeric|min:0.75|max:1.0",
+            "field_type": "text"
+        },
+        {
             "name": "Normal Endpoint Silence",
             "description": "Milliseconds before ending normal answers",
             "env_variable": "ENDPOINT_SILENCE_MS",
@@ -576,6 +586,16 @@
             "user_viewable": true,
             "user_editable": true,
             "rules": "required|integer|min:500|max:4000",
+            "field_type": "text"
+        },
+        {
+            "name": "Email Endpoint Silence",
+            "description": "Milliseconds allowed between spelled email characters before finalizing the answer",
+            "env_variable": "EMAIL_ENDPOINT_SILENCE_MS",
+            "default_value": "1600",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|integer|min:1000|max:3000",
             "field_type": "text"
         },
         {

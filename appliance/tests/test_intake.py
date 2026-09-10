@@ -1,4 +1,4 @@
-from app.intake import classify_property_context, classify_service, normalize_confirmation, normalize_email, normalize_name, normalize_phone, spoken_address, spoken_email
+from app.intake import classify_property_context, classify_service, detect_emergency, normalize_confirmation, normalize_email, normalize_name, normalize_phone, spoken_address, spoken_email
 
 def test_service_classification():
     assert classify_service("water is flooding my basement")["service_status"] == "supported"
@@ -16,6 +16,7 @@ def test_spelled_email_hyphens_are_treated_as_recognition_separators():
     assert normalize_email("j-o-s-h at example dot com") == "josh@example.com"
     assert normalize_email("j - o - s - h at example dot com") == "josh@example.com"
     assert normalize_email("J-O-A-C-H, S-H at gmail.com.") == "joachsh@gmail.com"
+    assert normalize_email("J.O. aldrich at gmail dot com") == "joaldrich@gmail.com"
 
 
 def test_real_email_hyphens_are_preserved():
@@ -50,8 +51,16 @@ def test_short_home_recognition_confusion_is_scoped_to_property_context():
 
 def test_name_prefix_is_removed_without_rewriting_the_callers_name():
     assert normalize_name("My name is Josh Aldrich.") == "Josh Aldrich"
+    assert normalize_name("Uh, Josh Aldrich.") == "Josh Aldrich"
     assert normalize_name("Aldrich") == "Aldrich"
 
 
 def test_partial_email_is_never_treated_as_complete():
     assert normalize_email("dot com") == ""
+
+
+def test_emergency_detection_requires_active_water_or_specific_hazards():
+    assert detect_emergency("Water is coming from a broken pipe and spreading into the hall")
+    assert detect_emergency("There are sparks by the electrical panel")
+    assert not detect_emergency("The pipe broke, but the water is off and there are no electrical concerns")
+    assert not detect_emergency("Do you offer emergency service?")

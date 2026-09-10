@@ -54,13 +54,13 @@ class LocalTTS:
         samples = np.clip(samples, -1.0, 1.0)
         return (samples * 32767.0).astype("<i2").tobytes()
 
-    async def synthesize(self, text: str) -> bytes:
+    async def synthesize(self, text: str, *, speed: float | None = None) -> bytes:
         text = str(text or "").strip()
         if not text:
             return b""
         voice = self.settings.kokoro_voice
-        speed = self.settings.kokoro_speed
-        path = self._cache_path(text, voice, speed)
+        selected_speed = self.settings.kokoro_speed if speed is None else self._validated_speed(speed)
+        path = self._cache_path(text, voice, selected_speed)
         if self.settings.tts_cache_enabled and path.exists():
             return path.read_bytes()
         try:
@@ -71,13 +71,13 @@ class LocalTTS:
                     self._kokoro.create,
                     text,
                     voice=voice,
-                    speed=speed,
+                    speed=selected_speed,
                     lang=self._language(voice),
                 )
             pcm = self._to_pcm(samples, int(rate))
         except Exception as exc:
             logger.exception("Kokoro failed, using eSpeak fallback: %s", exc)
-            pcm = await asyncio.to_thread(self._espeak, text)
+            pcm = await asyncio.to_thread(self._espeak, text, selected_speed)
         if self.settings.tts_cache_enabled and pcm:
             path.write_bytes(pcm)
         return pcm
@@ -138,11 +138,13 @@ class LocalTTS:
             raise ValueError("Speaking speed must be between 0.75 and 1.25.")
         return speed
 
-    def _espeak(self, text: str) -> bytes:
+    def _espeak(self, text: str, speed: float | None = None) -> bytes:
+        selected_speed = self.settings.kokoro_speed if speed is None else speed
+        words_per_minute = max(120, min(210, round(165 * selected_speed / max(0.75, self.settings.kokoro_speed))))
         with tempfile.TemporaryDirectory(prefix="floodman-tts-") as tmp:
             wav_path = Path(tmp) / "speech.wav"
             subprocess.run(
-                ["espeak-ng", "-v", "en-us+f3", "-s", "165", "-w", str(wav_path), text],
+                ["espeak-ng", "-v", "en-us+f3", "-s", str(words_per_minute), "-w", str(wav_path), text],
                 check=True,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,

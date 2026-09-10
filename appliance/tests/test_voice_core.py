@@ -23,6 +23,10 @@ class RecordingLLM(StubLLM):
     def __init__(self): self.fields=[]
     async def extract(self,field,transcript,state): self.fields.append(field);return {}
 
+class AnsweringLLM(StubLLM):
+    def __init__(self): self.questions=[]
+    async def answer(self,q,c): self.questions.append((q,c)); return "Floodman can inspect the condition and explain the appropriate next step."
+
 class StubNotifier:
     def __init__(self): self.calls=[]
     async def send(self,call_id,state,kind="lead",partial=False): self.calls.append((kind,partial,state.to_dict())); return 1
@@ -50,6 +54,7 @@ async def test_complete_intake(tmp_path,project_root,monkeypatch):
     assert session.state.affected_area=="the basement floor and drywall"
     assert session.state.source_summary=="a supply line broke and it reached two rooms"
     assert "within 24 hours" in reply.text
+    assert reply.text.endswith("Goodbye.")
     assert not any(text.startswith(("Got it.", "Understood.", "Thanks.", "Great.", "Perfect.")) for text in replies)
 
 @pytest.mark.asyncio
@@ -60,14 +65,15 @@ async def test_unsupported_and_emergency(tmp_path,project_root,monkeypatch):
     reply=await core.process(u,"I need roof repair")
     assert "not a service" in reply.text.lower() and u.state.service_status=="unsupported"
     e=core.create_session("emergency")
-    await core.process(e,"Water is rising by the electrical panel")
-    await core.process(e,"home")
-    await core.process(e,"the utility room")
-    await core.process(e,"right now")
-    await core.process(e,"a pipe broke and water is spreading")
-    reply=await core.process(e,"There are sparks and standing water")
+    reply=await core.process(e,"Water is rising by the electrical panel")
     assert reply.transfer_number=="+12315550001"
+    assert e.state.urgency=="emergency" and e.state.department=="emergency"
     assert any(kind=="emergency" for kind,_,_ in notifier.calls)
+
+    safe=core.create_session("not-emergency")
+    reply=await core.process(safe,"A pipe broke, but the water is off and there are no electrical concerns")
+    assert not reply.transfer_number
+    assert safe.state.urgency=="normal"
 
 @pytest.mark.asyncio
 async def test_partial_notification_is_idempotent_at_core_level(tmp_path,project_root,monkeypatch):
@@ -89,6 +95,24 @@ async def test_spelled_email_confirmation_does_not_say_dash(tmp_path,project_roo
     assert "j, o, a, c, h, s, h, at, g, m, a, i, l, dot, c, o, m" in reply.text.lower()
     assert reply.speech_parts[-1]=="Is that correct?"
     assert reply.pause_between_parts_ms==300
+    assert reply.speech_part_speeds==(s.email_readback_speed,None)
+
+
+@pytest.mark.asyncio
+async def test_split_email_fragments_are_recombined_without_saying_skip(tmp_path,project_root,monkeypatch):
+    s=settings(tmp_path,project_root,monkeypatch);db=Database(s.database_path);core=VoiceCore(s,db,BusinessDirectory(s.service_area_path),KnowledgeBase(project_root/"knowledge"),StubLLM(),StubNotifier())
+    session=core.create_session("split-email");session.state.stage="email"
+
+    partial=await core.process(session,"J.O.")
+    assert session.state.stage=="email" and session.state.email==""
+    assert session.state.metadata["email_fragments"]==["J.O."]
+    assert "skip" not in partial.text.lower()
+
+    reply=await core.process(session,"aldrich at gmail dot com")
+    assert session.state.email=="joaldrich@gmail.com"
+    assert "email_fragments" not in session.state.metadata
+    assert reply.speech_part_speeds==(s.email_readback_speed,None)
+    assert "skip" not in reply.text.lower()
 
 
 def test_greeting_uses_concise_floodman_introduction():
@@ -135,7 +159,8 @@ async def test_contact_fields_cannot_be_rewritten_or_invented_by_llm(tmp_path,pr
     assert session.state.email==""
     assert session.state.stage=="email"
     assert "aldrich@example.com" not in email_reply.text
-    assert "only heard part" in email_reply.text.lower()
+    assert "only caught part" in email_reply.text.lower()
+    assert "skip" not in email_reply.text.lower()
 
 
 @pytest.mark.asyncio
@@ -173,8 +198,63 @@ def test_normal_call_prompts_are_prepared_for_zero_generation_delay(tmp_path,pro
     assert "What do you think caused it, and how far has it spread?" in phrases
     assert "Any electrical, sewage, or other safety concerns?" in phrases
     assert "I can get these details to the right team. What name should I put this under?" in phrases
-    assert "What's the best email for you? You can say skip." in phrases
+    assert "What's the best email for you?" in phrases
+    assert not any("skip" in phrase.lower() for phrase in phrases)
     assert len(phrases)==len(set(phrases))
+
+
+@pytest.mark.asyncio
+async def test_unheard_interrupted_question_is_reasked_and_prior_answer_is_preserved(tmp_path,project_root,monkeypatch):
+    s=settings(tmp_path,project_root,monkeypatch);db=Database(s.database_path);core=VoiceCore(s,db,BusinessDirectory(s.service_area_path),KnowledgeBase(project_root/"knowledge"),StubLLM(),StubNotifier())
+    session=core.create_session("interrupted-question")
+    session.state.stage="safety_summary"
+    session.state.source_summary="A drain overflowed in the back room."
+    core.note_prompt_interrupted(session,previous_stage="source_summary",playback_fraction=0.04)
+
+    reply=await core.process(session,"and part of the way into the hallway")
+
+    assert session.state.stage=="safety_summary"
+    assert session.state.safety_summary==""
+    assert session.state.source_summary.endswith("and part of the way into the hallway")
+    assert reply.text=="Sorry, I cut you off. Any electrical, sewage, or other safety concerns?"
+
+
+@pytest.mark.asyncio
+async def test_answer_to_interrupted_question_is_accepted_without_repeating(tmp_path,project_root,monkeypatch):
+    s=settings(tmp_path,project_root,monkeypatch);db=Database(s.database_path);core=VoiceCore(s,db,BusinessDirectory(s.service_area_path),KnowledgeBase(project_root/"knowledge"),StubLLM(),StubNotifier())
+    session=core.create_session("answered-interruption");session.state.stage="safety_summary"
+    core.note_prompt_interrupted(session,previous_stage="source_summary",playback_fraction=0.20)
+
+    reply=await core.process(session,"No safety concerns")
+
+    assert session.state.safety_summary=="No safety concerns"
+    assert session.state.stage=="name"
+    assert "What name" in reply.text
+
+
+@pytest.mark.asyncio
+async def test_approved_questions_are_answered_then_active_intake_question_is_reasked(tmp_path,project_root,monkeypatch):
+    s=settings(tmp_path,project_root,monkeypatch);db=Database(s.database_path);llm=AnsweringLLM();core=VoiceCore(s,db,BusinessDirectory(s.service_area_path),KnowledgeBase(project_root/"knowledge"),llm,StubNotifier())
+    session=core.create_session("free-flow-question");session.state.stage="property_context"
+
+    reply=await core.process(session,"Should I touch wet electrical equipment?")
+
+    assert llm.questions and "wet electrical equipment" in llm.questions[0][1].lower()
+    assert reply.text.startswith("Floodman can inspect")
+    assert reply.text.endswith("Is this a home or a business?")
+    assert session.state.stage=="property_context"
+
+
+@pytest.mark.asyncio
+async def test_free_estimate_is_answered_while_intake_moves_forward(tmp_path,project_root,monkeypatch):
+    s=settings(tmp_path,project_root,monkeypatch);db=Database(s.database_path);core=VoiceCore(s,db,BusinessDirectory(s.service_area_path),KnowledgeBase(project_root/"knowledge"),StubLLM(),StubNotifier())
+    session=core.create_session("free-estimate")
+
+    reply=await core.process(session,"Can I talk to somebody about a free estimate?")
+
+    assert "free inspections and consultations" in reply.text
+    assert reply.text.endswith("Is this a home or a business?")
+    assert session.state.stage=="property_context"
 
 
 @pytest.mark.asyncio
