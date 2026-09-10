@@ -63,6 +63,8 @@ def test_unified_image_runs_voice_and_business_suite_on_distinct_ports(project_r
     assert "node -e \"require('bcrypt')\"" in dockerfile
     assert "node -e \"require('skia-canvas')\"" in dockerfile
     assert "gateway-nginx-bootstrap.log /var/log/nginx/error.log" in dockerfile
+    assert "COPY unified/patch-office-runtime.py /opt/floodman/unified/" in dockerfile
+    assert "python3 /opt/floodman/unified/patch-office-runtime.py" in dockerfile
     assert "cp -R --no-preserve=mode,ownership,timestamps /opt/floodman/gauzy-public-seed/." in dockerfile
     assert "cp -a /opt/floodman/gauzy-public-seed/\\." in dockerfile
     assert '--encoding=UTF8 --locale=C.UTF-8' in dockerfile
@@ -105,6 +107,8 @@ def test_unified_image_runs_voice_and_business_suite_on_distinct_ports(project_r
     assert "proxy_pass http://127.0.0.1:8802" in gateway
     assert "server_name floodman.oninetwork.com" in gateway
     assert "proxy_pass http://127.0.0.1:9000" in gateway
+    assert "location = /office/labelHere" in gateway
+    assert "return 303 /office/desktop" in gateway
     assert "server_name sign.oninetwork.com" in gateway
     assert "server_name lab.oninetwork.com" in gateway
     assert "server_name api.oninetwork.com" in gateway
@@ -139,6 +143,7 @@ def test_unified_mutable_paths_resolve_under_data_dir(project_root: Path):
     assert 'unzip -q "${business_runtime_zip}" -d "${business_overlay_next}"' in entrypoint
     assert 'sha256sum -c MANIFEST.sha256' in entrypoint
     assert 'prepare-roomflow.py' in entrypoint
+    assert "const RELEASE = '4.7.2-unified.1';" in entrypoint
     assert '${DATA_DIR}/roomflow/current/index.html' in entrypoint
 
 

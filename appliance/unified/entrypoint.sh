@@ -107,6 +107,14 @@ mkdir -p "${business_overlay_next}"
 unzip -q "${business_runtime_zip}" -d "${business_overlay_next}"
 [[ "$(cat "${business_overlay_root}/VERSION")" == "4.7.2" ]]
 (cd "${business_overlay_root}" && sha256sum -c MANIFEST.sha256 >/dev/null)
+
+# Rotate the managed browser caches for this unified repair even though the
+# pinned Business Suite version remains 4.7.2. This makes installed PWAs discard
+# any same-version navigation assets that predate the unified sidebar routes.
+pwa_service_worker="${business_overlay_root}/pwa/floodman-sw.js"
+grep -Fq "const RELEASE = '4.7.2';" "${pwa_service_worker}"
+sed -i "s/const RELEASE = '4.7.2';/const RELEASE = '4.7.2-unified.1';/" \
+  "${pwa_service_worker}"
 rm -rf "${business_overlay}"
 mv "${business_overlay_next}" "${business_overlay}"
 business_overlay_root="${business_overlay}/floodman-operations-v4.7.2"

@@ -245,11 +245,15 @@ COPY unified/entrypoint.sh /opt/floodman/scripts/entrypoint.sh
 COPY unified/start-voice-control.sh unified/start-voice-llama.sh unified/start-voice-asterisk.sh \
      unified/start-documenso.sh unified/start-hub.sh unified/start-orchestrator-api.sh unified/healthcheck.sh \
      unified/image-contract.sh /opt/floodman/unified/
+COPY unified/patch-office-runtime.py /opt/floodman/unified/
 COPY unified/postgres-init-wrapper.sh /opt/floodman/unified/bin/initdb
 COPY unified/postgres-server-wrapper.sh /opt/floodman/unified/bin/postgres
 COPY unified/bootstrap-databases.sh /opt/floodman/aio/bootstrap-databases.sh
 COPY unified/gateway-nginx.conf unified/proxy-headers.conf /opt/floodman/unified/
 COPY unified/voice-supervisor.conf /opt/floodman/aio/voice-supervisor.conf
+
+RUN python3 /opt/floodman/unified/patch-office-runtime.py \
+      --office-root /opt/floodman/office-console
 
 RUN set -eux; \
     cat /opt/floodman/aio/voice-supervisor.conf >> /opt/floodman/aio/supervisord.conf; \
