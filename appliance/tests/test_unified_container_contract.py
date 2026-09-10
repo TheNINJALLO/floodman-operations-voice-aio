@@ -68,6 +68,9 @@ def test_unified_image_runs_voice_and_business_suite_on_distinct_ports(project_r
     assert "cp -R --no-preserve=mode,ownership,timestamps" in dockerfile
     assert "/opt/floodman/gauzy-public-seed/." in dockerfile
     assert "cp -a /opt/floodman/gauzy-public-seed/\\." not in dockerfile
+    image_contract = (project_root / "unified" / "image-contract.sh").read_text(encoding="utf-8")
+    assert "cp -R --no-preserve=mode,ownership,timestamps" in image_contract
+    assert "/opt/floodman/gauzy-public-seed/." in image_contract
     assert '--encoding=UTF8 --locale=C.UTF-8' in dockerfile
     assert 'floodman?client_encoding=utf8' in dockerfile
     assert "export FLOODMAN_COMPANY_NAME" in dockerfile

@@ -19,7 +19,8 @@ grep -Fq '"${FM_DATA}/gauzy-files"' /opt/floodman/scripts/entrypoint.sh
 grep -Fq '"${FM_RUN}/gauzy-finalized"' /opt/floodman/scripts/entrypoint.sh
 grep -Fq '"${FM_RUN}/owner-linked"' /opt/floodman/scripts/entrypoint.sh
 ! grep -Fq 'share_panel_directory "${FM_CONFIG}"' /opt/floodman/scripts/entrypoint.sh
-grep -Fq 'cp -R --no-preserve=mode,ownership,timestamps /opt/floodman/gauzy-public-seed/.' /opt/floodman/aio/start-suite.sh
+grep -Fq 'cp -R --no-preserve=mode,ownership,timestamps' /opt/floodman/aio/start-suite.sh
+grep -Fq '/opt/floodman/gauzy-public-seed/.' /opt/floodman/aio/start-suite.sh
 ! grep -Fq 'cp -a /opt/floodman/gauzy-public-seed/.' /opt/floodman/aio/start-suite.sh
 grep -Fq -- '--encoding=UTF8 --locale=C.UTF-8' /opt/floodman/aio/start-suite.sh
 test "$(grep -Fc 'floodman?client_encoding=utf8' /opt/floodman/aio/start-suite.sh)" -eq 2
