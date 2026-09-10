@@ -284,3 +284,53 @@ async def test_email_readback_uses_slower_tts_only_for_spelling() -> None:
     await server._synthesize_reply(reply)
 
     assert tts.calls==[(reply.speech_parts[0],0.78),(reply.speech_parts[1],None)]
+
+
+def test_long_reply_is_split_at_natural_boundaries_for_responsive_tts() -> None:
+    server = AudioSocketServer(settings(), FakeCore(), SimpleNamespace(), FakeTTS(), FakeRegistry())
+    text = (
+        "I have the details about the water entering the finished basement from the supply line. "
+        "I also noted that the water is close to an electrical outlet and that the shutoff is accessible. "
+        "Please keep everyone away from the affected area while I notify the emergency team."
+    )
+
+    parts = server._responsive_text_parts(text)
+
+    assert len(parts) == 3
+    assert " ".join(parts) == text
+    assert all(len(part) <= 150 for part in parts)
+
+
+@pytest.mark.asyncio
+async def test_reply_playback_starts_while_later_phrase_is_still_synthesizing() -> None:
+    class PipelinedTTS:
+        def __init__(self):
+            self.second_started = asyncio.Event()
+            self.release_second = asyncio.Event()
+
+        async def synthesize(self, text: str, *, speed=None) -> bytes:
+            if text == "The remaining detail is still being generated.":
+                self.second_started.set()
+                await self.release_second.wait()
+            return b"\x01\x00" * 3200
+
+    tts = PipelinedTTS()
+    server = AudioSocketServer(settings(), FakeCore(), SimpleNamespace(), tts, FakeRegistry())
+    writer = BufferWriter()
+    connection = AudioSocketConnection(asyncio.StreamReader(), writer, settings())
+    reply = VoiceReply(
+        text="I can help with that. The remaining detail is still being generated.",
+        speech_parts=("I can help with that.", "The remaining detail is still being generated."),
+    )
+
+    playback = asyncio.create_task(server._speak_reply(connection, reply, "responsive-test"))
+    await asyncio.wait_for(tts.second_started.wait(), timeout=1)
+    for _ in range(50):
+        if writer.frames:
+            break
+        await asyncio.sleep(0.01)
+
+    assert writer.frames
+    assert not tts.release_second.is_set()
+    tts.release_second.set()
+    assert await asyncio.wait_for(playback, timeout=2) is False

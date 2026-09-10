@@ -3,9 +3,11 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import re
 import struct
 import time
 import uuid
+from collections.abc import AsyncIterator
 
 from app.audio import chunk_pcm, rms
 from app.config import Settings
@@ -39,6 +41,7 @@ class AudioSocketConnection:
         self._barge_voiced_ms = 0.0
         self._barge_silence_ms = 0.0
         self.last_playback_fraction = 0.0
+        self.last_stream_audio_bytes = 0
 
     async def read_frame(self) -> tuple[int, bytes]:
         header = await self.reader.readexactly(3)
@@ -153,10 +156,28 @@ class AudioSocketConnection:
             except asyncio.QueueEmpty:
                 return
 
-    async def speak(self, pcm16le: bytes) -> bool:
+    async def speak_stream(self, chunks: AsyncIterator[bytes], *, chunk_count: int = 1) -> bool:
         self.last_playback_fraction = 0.0
-        if not pcm16le or self.closed:
+        self.last_stream_audio_bytes = 0
+        if self.closed:
             return False
+
+        iterator = chunks.__aiter__()
+
+        async def close_iterator() -> None:
+            close = getattr(iterator, "aclose", None)
+            if close is not None:
+                with contextlib.suppress(Exception):
+                    await close()
+
+        try:
+            current = await anext(iterator)
+        except StopAsyncIteration:
+            return False
+        if not current or self.closed:
+            await close_iterator()
+            return False
+
         self.barge_in_event.clear()
         self._reset_barge_in()
         # Switch the reader to barge-in capture before inspecting queued audio.
@@ -165,20 +186,39 @@ class AudioSocketConnection:
         self.output_active = True
         if self.settings.barge_in_enabled and self._queued_speech_waiting():
             self.output_active = False
+            await close_iterator()
             return True
         await self.clear_audio()
         interrupted = False
-        sent_bytes = 0
+        completed_chunks = 0
+        current_sent_bytes = 0
+        total_chunks = max(1, int(chunk_count))
         try:
-            for chunk in chunk_pcm(pcm16le, 8000, 20):
-                if self.closed or self.barge_in_event.is_set():
-                    interrupted = self.barge_in_event.is_set()
+            while current:
+                self.last_stream_audio_bytes += len(current)
+                current_sent_bytes = 0
+                for chunk in chunk_pcm(current, 8000, 20):
+                    if self.closed or self.barge_in_event.is_set():
+                        interrupted = self.barge_in_event.is_set()
+                        break
+                    self.writer.write(bytes([TYPE_AUDIO]) + struct.pack("!H", len(chunk)) + chunk)
+                    await self.writer.drain()
+                    current_sent_bytes += len(chunk)
+                    self.last_playback_fraction = min(
+                        1.0,
+                        (completed_chunks + current_sent_bytes / max(1, len(current))) / total_chunks,
+                    )
+                    await asyncio.sleep(0.020)
+                if interrupted or self.closed:
                     break
-                self.writer.write(bytes([TYPE_AUDIO]) + struct.pack("!H", len(chunk)) + chunk)
-                await self.writer.drain()
-                sent_bytes += len(chunk)
-                await asyncio.sleep(0.020)
+                completed_chunks += 1
+                try:
+                    current = await anext(iterator)
+                except StopAsyncIteration:
+                    break
         finally:
+            if interrupted:
+                await close_iterator()
             if not interrupted:
                 await asyncio.sleep(max(0, self.settings.post_tts_guard_ms) / 1000)
                 interrupted = self.barge_in_event.is_set()
@@ -186,8 +226,16 @@ class AudioSocketConnection:
                 await self.clear_audio()
                 self._reset_barge_in()
             self.output_active = False
-            self.last_playback_fraction = min(1.0, sent_bytes / max(1, len(pcm16le)))
+            if not interrupted and not self.closed:
+                self.last_playback_fraction = 1.0
         return interrupted
+
+    async def speak(self, pcm16le: bytes) -> bool:
+        async def one_chunk() -> AsyncIterator[bytes]:
+            if pcm16le:
+                yield pcm16le
+
+        return await self.speak_stream(one_chunk(), chunk_count=1)
 
     async def utterance(self, *, contact: bool, stage: str = "") -> bytes | None:
         if stage == "email":
@@ -269,6 +317,135 @@ class AudioSocketServer:
         pause = b"\x00\x00" * pause_samples
         return pause.join(audio_parts)
 
+    @staticmethod
+    def _responsive_text_parts(text: str, *, minimum_chars: int = 36, maximum_chars: int = 150) -> tuple[str, ...]:
+        """Split long replies at natural boundaries so playback can begin sooner."""
+        value = " ".join(str(text or "").split())
+        if not value or len(value) <= maximum_chars:
+            return (value,) if value else ()
+
+        sentences = [part.strip() for part in re.split(r"(?<=[.!?])\s+", value) if part.strip()]
+        units: list[str] = []
+        for sentence in sentences:
+            if len(sentence) <= maximum_chars:
+                units.append(sentence)
+                continue
+            clauses = [part.strip() for part in re.split(r"(?<=[,;:])\s+", sentence) if part.strip()]
+            for clause in clauses:
+                words = clause.split()
+                current = ""
+                for word in words:
+                    candidate = f"{current} {word}".strip()
+                    if current and len(candidate) > maximum_chars:
+                        units.append(current)
+                        current = word
+                    else:
+                        current = candidate
+                if current:
+                    units.append(current)
+
+        parts: list[str] = []
+        current = ""
+        for unit in units:
+            candidate = f"{current} {unit}".strip()
+            if current and len(current) >= minimum_chars:
+                parts.append(current)
+                current = unit
+            elif current and len(candidate) > maximum_chars:
+                parts.append(current)
+                current = unit
+            else:
+                current = candidate
+        if current:
+            parts.append(current)
+        return tuple(parts)
+
+    def _reply_synthesis_units(self, reply: VoiceReply) -> tuple[tuple[str, float | None, int], ...]:
+        explicit_parts = tuple(part for part in reply.speech_parts if str(part).strip())
+        if explicit_parts:
+            parts = explicit_parts
+            pause_ms = max(0, int(reply.pause_between_parts_ms))
+            speeds = reply.speech_part_speeds
+        else:
+            parts = self._responsive_text_parts(reply.text)
+            pause_ms = 0
+            speeds = ()
+        return tuple(
+            (
+                str(part).strip(),
+                speeds[index] if index < len(speeds) else None,
+                pause_ms if index < len(parts) - 1 else 0,
+            )
+            for index, part in enumerate(parts)
+        )
+
+    async def _synthesize_unit(self, text: str, speed: float | None) -> bytes:
+        if speed is None:
+            return await self.tts.synthesize(text)
+        return await self.tts.synthesize(text, speed=speed)
+
+    @staticmethod
+    def _observe_background_synthesis(task: asyncio.Task[bytes]) -> None:
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            task.result()
+
+    async def _synthesis_stream(
+        self, units: tuple[tuple[str, float | None, int], ...]
+    ) -> AsyncIterator[bytes]:
+        if not units:
+            return
+        task: asyncio.Task[bytes] | None = asyncio.create_task(self._synthesize_unit(units[0][0], units[0][1]))
+        try:
+            for index, (_text, _speed, pause_ms) in enumerate(units):
+                assert task is not None
+                pcm = await task
+                next_task = None
+                if index + 1 < len(units):
+                    next_text, next_speed, _next_pause = units[index + 1]
+                    next_task = asyncio.create_task(self._synthesize_unit(next_text, next_speed))
+                task = next_task
+                if pause_ms:
+                    pause_samples = max(0, int(8000 * pause_ms / 1000))
+                    pcm += b"\x00\x00" * pause_samples
+                if pcm:
+                    yield pcm
+        finally:
+            if task is not None and not task.done():
+                # asyncio.to_thread cannot stop the underlying Kokoro call safely.
+                # Let it finish under LocalTTS's synthesis lock and consume its result.
+                task.add_done_callback(self._observe_background_synthesis)
+
+    async def _speak_reply(self, connection: AudioSocketConnection, reply: VoiceReply, call_uuid: str) -> bool:
+        units = self._reply_synthesis_units(reply)
+        started = time.monotonic()
+        first_chunk = True
+
+        async def observed_stream() -> AsyncIterator[bytes]:
+            nonlocal first_chunk
+            async for pcm in self._synthesis_stream(units):
+                if first_chunk:
+                    logger.info(
+                        "call_event call_uuid=%s stage=tts_first_chunk_completed duration_ms=%d audio_bytes=%d chunks=%d",
+                        call_uuid,
+                        int((time.monotonic() - started) * 1000),
+                        len(pcm),
+                        len(units),
+                    )
+                    logger.info("call_event call_uuid=%s stage=first_response_frame", call_uuid)
+                    first_chunk = False
+                yield pcm
+
+        logger.info("call_event call_uuid=%s stage=tts_started chunks=%d", call_uuid, len(units))
+        interrupted = await connection.speak_stream(observed_stream(), chunk_count=len(units))
+        logger.info(
+            "call_event call_uuid=%s stage=response_stream_completed duration_ms=%d audio_bytes=%d interrupted=%s",
+            call_uuid,
+            int((time.monotonic() - started) * 1000),
+            connection.last_stream_audio_bytes,
+            interrupted,
+        )
+        return interrupted
+
     async def handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         connection = AudioSocketConnection(reader, writer, self.settings)
         session = None
@@ -345,17 +522,7 @@ class AudioSocketServer:
                         call_uuid,
                         int((time.monotonic() - started) * 1000),
                     )
-                started = time.monotonic()
-                logger.info("call_event call_uuid=%s stage=tts_started", call_uuid)
-                response_audio = await self._synthesize_reply(reply)
-                logger.info(
-                    "call_event call_uuid=%s stage=tts_completed duration_ms=%d audio_bytes=%d",
-                    call_uuid,
-                    int((time.monotonic() - started) * 1000),
-                    len(response_audio),
-                )
-                logger.info("call_event call_uuid=%s stage=first_response_frame", call_uuid)
-                response_interrupted = await connection.speak(response_audio)
+                response_interrupted = await self._speak_reply(connection, reply, call_uuid)
                 logger.info(
                     "call_event call_uuid=%s stage=last_response_frame interrupted=%s playback_fraction=%.3f",
                     call_uuid,

@@ -102,8 +102,8 @@ def test_conversational_endpoint_defaults(tmp_path: Path, monkeypatch):
     monkeypatch.delenv("EMAIL_ENDPOINT_SILENCE_MS", raising=False)
     monkeypatch.delenv("EMAIL_READBACK_SPEED", raising=False)
     settings = Settings.from_env()
-    assert settings.endpoint_silence_ms == 400
-    assert settings.contact_endpoint_silence_ms == 800
+    assert settings.endpoint_silence_ms == 300
+    assert settings.contact_endpoint_silence_ms == 650
     assert settings.email_endpoint_silence_ms == 1600
     assert settings.email_readback_speed == 0.78
 
