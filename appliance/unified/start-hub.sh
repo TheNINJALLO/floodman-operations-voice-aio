@@ -15,6 +15,10 @@ config_hash="$(printf '%s\n' "$MAIN_PUBLIC_URL|$FLOODMAN_COMPANY_NAME|$HUB_RELEA
 runtime_web="$runtime_root/$config_hash"
 active_link="$FM_HOME/runtime/gauzy-web-active"
 mkdir -p "$runtime_root"
+# start-suite uses a restrictive umask for secrets. These directories contain
+# only public browser assets, so make the static path traversable by nginx even
+# when it was created under that umask.
+chmod 0755 "$runtime_root"
 
 if [ ! -s "$runtime_web/index.html" ] || [ ! -s "$runtime_web/.floodman-config-hash" ]; then
   fm_log "Preparing the branded Floodman ERP browser bundle..."
@@ -32,15 +36,18 @@ if [ ! -s "$runtime_web/index.html" ] || [ ! -s "$runtime_web/.floodman-config-h
   printf '%s' "$config_hash" > .floodman-config-hash
   mv "$stage" "$runtime_web"
 fi
+chmod -R a+rX "$runtime_web"
 
 active_next="$FM_HOME/runtime/.gauzy-web-active.$$"
 ln -s "$runtime_web" "$active_next"
 mv -Tf "$active_next" "$active_link"
 
 mkdir -p "$FM_HOME/runtime/hub"
+chmod 0755 "$FM_HOME/runtime/hub"
 envsubst '${HUB_TITLE} ${HUB_RELEASE} ${HUB_OFFICE_URL} ${HUB_VOICE_URL} ${HUB_ROOMFLOW_URL} ${HUB_DOCUMENSO_URL} ${HUB_MAILPIT_URL} ${HUB_ENGINEERING_URL} ${HUB_API_URL} ${HUB_COMPETITOR_URL} ${HUB_SYNC_STATUS_URL} ${HUB_REMOTE_ACCESS_ENABLED} ${HUB_REMOTE_DOCUMENSO_PORT} ${HUB_REMOTE_MAILPIT_PORT} ${HUB_REMOTE_ENGINEERING_PORT} ${HUB_REMOTE_API_PORT} ${HUB_REMOTE_DOCUMENSO_URL} ${HUB_REMOTE_MAILPIT_URL} ${HUB_REMOTE_ENGINEERING_URL} ${HUB_REMOTE_API_URL}' \
   < /opt/floodman/hub/hub-config.js.template \
   > "$FM_HOME/runtime/hub/floodman-hub-config.js"
+chmod 0644 "$FM_HOME/runtime/hub/floodman-hub-config.js"
 envsubst '${SERVER_PORT} ${HUB_RELEASE}' \
   < /opt/floodman/aio/nginx.conf.template \
   > "$FM_CONFIG/nginx.conf"

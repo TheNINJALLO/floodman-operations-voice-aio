@@ -28,6 +28,8 @@ test "$(readlink /opt/floodman/aio/start-hub.sh)" = "/opt/floodman/unified/start
 test "$(readlink /opt/floodman/aio/start-orchestrator-api.sh)" = "/opt/floodman/unified/start-orchestrator-api.sh"
 grep -Fq -- '--port 8701' /opt/floodman/aio/start-orchestrator-api.sh
 grep -Fq 'runtime/gauzy-web-active' /opt/floodman/aio/start-hub.sh
+grep -Fq 'chmod -R a+rX "$runtime_web"' /opt/floodman/aio/start-hub.sh
+grep -Fq 'chmod 0644 "$FM_HOME/runtime/hub/floodman-hub-config.js"' /opt/floodman/aio/start-hub.sh
 grep -Fq 'root /home/container/runtime/gauzy-web-active;' /opt/floodman/aio/nginx.conf.template
 grep -Fq 'location ^~ /mobile-api/' /opt/floodman/unified/gateway-nginx.conf
 grep -Fq 'proxy_pass http://127.0.0.1:8700;' /opt/floodman/unified/gateway-nginx.conf

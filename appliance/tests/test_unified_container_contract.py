@@ -4,6 +4,7 @@ from pathlib import Path
 def test_unified_image_runs_voice_and_business_suite_on_distinct_ports(project_root: Path):
     dockerfile = (project_root / "unified" / "Dockerfile").read_text(encoding="utf-8")
     entrypoint = (project_root / "unified" / "entrypoint.sh").read_text(encoding="utf-8")
+    start_hub = (project_root / "unified" / "start-hub.sh").read_text(encoding="utf-8")
     supervisor = (project_root / "unified" / "voice-supervisor.conf").read_text(encoding="utf-8")
 
     assert "floodman-operations:4.7.2@sha256:" in dockerfile
@@ -69,6 +70,8 @@ def test_unified_image_runs_voice_and_business_suite_on_distinct_ports(project_r
     assert "export FLOODMAN_COMPANY_NAME" in dockerfile
     assert "unified/start-hub.sh" in dockerfile
     assert "gauzy-web-active" in dockerfile
+    assert 'chmod -R a+rX "$runtime_web"' in start_hub
+    assert 'chmod 0644 "$FM_HOME/runtime/hub/floodman-hub-config.js"' in start_hub
     assert "runtime_root=/tmp/floodman-business-runtime/floodman-operations-v4.7.2" in dockerfile
     assert "orchestrator messaging-ai competitor-intel office-console local-lab" in dockerfile
     assert "sha256sum -c MANIFEST.sha256" in dockerfile
