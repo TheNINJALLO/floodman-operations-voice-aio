@@ -115,6 +115,65 @@ async def test_split_email_fragments_are_recombined_without_saying_skip(tmp_path
     assert "skip" not in reply.text.lower()
 
 
+@pytest.mark.asyncio
+async def test_complete_email_restart_replaces_stale_domain_fragment(tmp_path,project_root,monkeypatch):
+    s=settings(tmp_path,project_root,monkeypatch);db=Database(s.database_path);core=VoiceCore(s,db,BusinessDirectory(s.service_area_path),KnowledgeBase(project_root/"knowledge"),StubLLM(),StubNotifier())
+    session=core.create_session("email-restart");session.state.stage="email"
+
+    await core.process(session,"at gmail.com")
+    reply=await core.process(session,"josh at floodband.com")
+
+    assert session.state.email=="josh@floodband.com"
+    assert session.state.stage=="confirm_email"
+    assert "email_fragments" not in session.state.metadata
+    assert "j, o, s, h, at, f, l, o, o, d, b, a, n, d, dot, c, o, m" in reply.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_email_capture_cannot_loop_forever(tmp_path,project_root,monkeypatch):
+    s=settings(tmp_path,project_root,monkeypatch);db=Database(s.database_path);core=VoiceCore(s,db,BusinessDirectory(s.service_area_path),KnowledgeBase(project_root/"knowledge"),StubLLM(),StubNotifier())
+    session=core.create_session("email-limit");session.state.stage="email"
+
+    await core.process(session,"unclear")
+    await core.process(session,"still unclear")
+    reply=await core.process(session,"not understood")
+
+    assert session.state.email==""
+    assert session.state.email_status=="unavailable"
+    assert session.state.confirmations["email"]=="unavailable"
+    assert session.state.stage=="phone"
+    assert session.state.metadata["unconfirmed_email_fragments"]==["unclear","still unclear","not understood"]
+    assert "confirm it by phone" in reply.text.lower()
+    assert "callback number" in reply.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_email_correction_during_confirmation_is_used_immediately(tmp_path,project_root,monkeypatch):
+    s=settings(tmp_path,project_root,monkeypatch);db=Database(s.database_path);core=VoiceCore(s,db,BusinessDirectory(s.service_area_path),KnowledgeBase(project_root/"knowledge"),StubLLM(),StubNotifier())
+    session=core.create_session("email-correction");session.state.stage="confirm_email";session.state.email="wrong@example.com";session.state.email_status="provided"
+
+    reply=await core.process(session,"No, it's josh at floodband dot com")
+
+    assert session.state.email=="josh@floodband.com"
+    assert session.state.stage=="confirm_email"
+    assert "j, o, s, h, at, f, l, o, o, d, b, a, n, d, dot, c, o, m" in reply.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_email_confirmation_cannot_loop_forever(tmp_path,project_root,monkeypatch):
+    s=settings(tmp_path,project_root,monkeypatch);db=Database(s.database_path);core=VoiceCore(s,db,BusinessDirectory(s.service_area_path),KnowledgeBase(project_root/"knowledge"),StubLLM(),StubNotifier())
+    session=core.create_session("email-confirm-limit");session.state.stage="confirm_email";session.state.email="josh@example.com";session.state.email_status="provided"
+
+    await core.process(session,"I did not hear the question")
+    reply=await core.process(session,"What was that")
+
+    assert session.state.email==""
+    assert session.state.email_status=="unavailable"
+    assert session.state.stage=="phone"
+    assert session.state.metadata["unconfirmed_email"]=="josh@example.com"
+    assert "verify it by phone" in reply.text.lower()
+
+
 def test_greeting_uses_concise_floodman_introduction():
     assert VoiceCore.greeting() == "Hello. This is Alex with Floodman. How may I help you today?"
 

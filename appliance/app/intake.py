@@ -106,6 +106,15 @@ def normalize_phone(value: Any, *, default_country: str = "1") -> str:
 
 def normalize_email(value: Any) -> str:
     text = clean(value, 320).lower()
+    # A caller may give the correction in the same turn as "no" or introduce
+    # the address conversationally. Remove only a leading introduction; the
+    # address itself remains deterministic and still has to pass EMAIL_RE.
+    text = re.sub(
+        r"^(?:(?:no|actually|sorry|correction)[,\s]+)*"
+        r"(?:(?:my\s+)?email(?:\s+address)?\s+(?:is\s+)?|(?:it\s+is|it's)\s+)",
+        "",
+        text,
+    )
     # Whisper can render a slowly spelled sequence such as "j o s h" as
     # "j-o-s-h" even when the caller never said "dash". It may also insert a
     # comma between two spelled runs, as in "j-o-s-h, s-h". Collapse only runs

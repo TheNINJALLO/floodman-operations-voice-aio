@@ -42,6 +42,9 @@ class CallSession:
 class VoiceCore:
     """Purpose-built deterministic receptionist with local-AI extraction."""
 
+    EMAIL_CAPTURE_ATTEMPT_LIMIT = 3
+    EMAIL_CONFIRMATION_ATTEMPT_LIMIT = 2
+
     def __init__(
         self,
         settings: Settings,
@@ -122,6 +125,8 @@ class VoiceCore:
         add("Is that correct?")
         add("Sorry, I cut you off.")
         add("I only caught part of that email. Please continue from where you left off, including at and the domain.")
+        add("I'm having trouble hearing the email clearly, so I'll have the team confirm it by phone.")
+        add("I couldn't confirm that email, so I'll have the team verify it by phone.")
         add("What's the correct email?")
         add("Are you still there? I can wait a moment.")
         add("I'm still here. Say hello when you're ready.")
@@ -207,6 +212,57 @@ class VoiceCore:
             "skip", "no email", "none", "dont have one", "don t have one", "do not have one",
             "i dont have email", "i don t have email", "i don t have an email", "i do not have email",
         }
+
+    @staticmethod
+    def _email_has_domain_marker(value: str) -> bool:
+        words = normalized(value).split()
+        return "@" in value or "at" in words
+
+    def _capture_email(self, state: IntakeState, transcript: str) -> str:
+        """Prefer a fresh complete address while retaining real split spelling.
+
+        If an earlier fragment already contains a domain, the caller's next
+        complete address is a restart and must not be appended to that stale
+        fragment. A local-part-only fragment can still be joined to a later
+        domain, and domain-first audio can be joined in reverse order.
+        """
+        fragments = [str(value) for value in state.metadata.get("email_fragments", []) if str(value).strip()]
+        previous = clean(" ".join(fragments), 320)
+        standalone = normalize_email(transcript)
+        if standalone and (not previous or self._email_has_domain_marker(previous)):
+            return standalone
+        if previous:
+            combined = normalize_email(f"{previous} {transcript}")
+            if combined:
+                return combined
+            reverse_combined = normalize_email(f"{transcript} {previous}")
+            if reverse_combined:
+                return reverse_combined
+        return standalone
+
+    def _advance_after_unavailable_email(self, session: CallSession, reason: str) -> VoiceReply:
+        state = session.state
+        state.email = ""
+        state.email_status = "unavailable"
+        state.confirmations["email"] = "unavailable"
+        state.metadata.pop("email_fragments", None)
+        state.metadata.pop("email_capture_attempts", None)
+        state.metadata.pop("email_confirmation_attempts", None)
+        question = self._advance_to_contact(state, "phone")
+        if state.stage == "confirm_phone":
+            parts = (reason, *confirmation_parts(state, "phone"))
+            return self._assistant(
+                session,
+                f"{reason} {question}",
+                speech_parts=parts,
+                pause_between_parts_ms=120,
+            )
+        return self._assistant(
+            session,
+            f"{reason} {question}",
+            speech_parts=(reason, question),
+            pause_between_parts_ms=120,
+        )
 
     @staticmethod
     def _answers_interrupted_prompt(stage: str, transcript: str) -> bool:
@@ -433,18 +489,27 @@ class VoiceCore:
                 state.email = ""
                 state.email_status = "declined"
                 state.metadata.pop("email_fragments", None)
+                state.metadata.pop("email_capture_attempts", None)
             else:
                 fragments = [str(value) for value in state.metadata.get("email_fragments", []) if str(value).strip()]
-                candidate = clean(" ".join((*fragments, transcript)), 320)
-                state.email = normalize_email(candidate)
+                state.email = self._capture_email(state, transcript)
                 if not state.email:
                     fragments.append(transcript)
                     state.metadata["email_fragments"] = fragments[-4:]
+                    attempts = int(state.metadata.get("email_capture_attempts") or 0) + 1
+                    state.metadata["email_capture_attempts"] = attempts
+                    if attempts >= self.EMAIL_CAPTURE_ATTEMPT_LIMIT:
+                        state.metadata["unconfirmed_email_fragments"] = fragments[-4:]
+                        return self._advance_after_unavailable_email(
+                            session,
+                            "I'm having trouble hearing the email clearly, so I'll have the team confirm it by phone.",
+                        )
                     return self._assistant(
                         session,
                         "I only caught part of that email. Please continue from where you left off, including at and the domain.",
                     )
                 state.metadata.pop("email_fragments", None)
+                state.metadata.pop("email_capture_attempts", None)
                 state.email_status = "provided"
             state.stage = "confirm_email"
             return self._confirmation(session, "email")
@@ -453,16 +518,36 @@ class VoiceCore:
             decision = normalize_confirmation(transcript)
             if decision == "yes":
                 state.confirmations["email"] = state.email or state.email_status
+                state.metadata.pop("email_confirmation_attempts", None)
                 question = self._advance_to_contact(state, "phone")
                 if state.stage == "confirm_phone":
                     return self._confirmation(session, "phone")
                 return self._assistant(session, question)
+            replacement = normalize_email(transcript)
+            if replacement:
+                state.email = replacement
+                state.email_status = "provided"
+                state.metadata.pop("email_fragments", None)
+                state.metadata.pop("email_capture_attempts", None)
+                state.metadata.pop("email_confirmation_attempts", None)
+                return self._confirmation(session, "email")
             if decision == "no":
                 state.stage = "email"
                 state.email = ""
                 state.email_status = ""
                 state.metadata.pop("email_fragments", None)
+                state.metadata.pop("email_capture_attempts", None)
+                state.metadata.pop("email_confirmation_attempts", None)
                 return self._assistant(session, "What's the correct email?")
+            attempts = int(state.metadata.get("email_confirmation_attempts") or 0) + 1
+            state.metadata["email_confirmation_attempts"] = attempts
+            if attempts >= self.EMAIL_CONFIRMATION_ATTEMPT_LIMIT:
+                if state.email:
+                    state.metadata["unconfirmed_email"] = state.email
+                return self._advance_after_unavailable_email(
+                    session,
+                    "I couldn't confirm that email, so I'll have the team verify it by phone.",
+                )
             return self._confirmation(session, "email")
 
         if state.stage == "phone":

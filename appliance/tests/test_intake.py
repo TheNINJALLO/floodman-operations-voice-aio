@@ -7,6 +7,8 @@ def test_service_classification():
 
 def test_contact_normalizers():
     assert normalize_email("josh at example dot com") == "josh@example.com"
+    assert normalize_email("No, it's josh at example dot com") == "josh@example.com"
+    assert normalize_email("My email address is josh at example dot com") == "josh@example.com"
     assert normalize_phone("231 884 0943") == "+12318840943"
     assert normalize_confirmation("Yes, that's right") == "yes"
     assert normalize_confirmation("No, wrong") == "no"
