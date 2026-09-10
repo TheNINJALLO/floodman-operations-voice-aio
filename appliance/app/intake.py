@@ -187,6 +187,16 @@ def _spoken_character(value: str) -> str:
 
 def detect_emergency(value: Any) -> bool:
     text = normalized(value)
+    general_question = text.startswith((
+        "do you ", "does floodman ", "can floodman ", "what services ",
+        "do you handle ", "do you respond to ", "are you open for ",
+    ))
+    reported_condition = any(term in text for term in (
+        " my ", " our ", " here ", "right now", "currently", "there is ",
+        "there are ", "we have ", "i have ", "i need help", "still flowing",
+    ))
+    if general_question and not reported_condition:
+        return False
     explicit = (
         "this is an emergency", "it is an emergency", "emergency right now",
         "need emergency help", "need emergency service now",

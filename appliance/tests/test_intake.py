@@ -62,5 +62,7 @@ def test_partial_email_is_never_treated_as_complete():
 def test_emergency_detection_requires_active_water_or_specific_hazards():
     assert detect_emergency("Water is coming from a broken pipe and spreading into the hall")
     assert detect_emergency("There are sparks by the electrical panel")
+    assert detect_emergency("Can you help? My pipe burst and the water is still flowing")
     assert not detect_emergency("The pipe broke, but the water is off and there are no electrical concerns")
     assert not detect_emergency("Do you offer emergency service?")
+    assert not detect_emergency("Do you handle burst pipes?")
