@@ -16,25 +16,6 @@ from app.webpush import WebPushService
 logger = logging.getLogger(__name__)
 
 
-def recipients(settings: Settings, state: IntakeState) -> tuple[str, ...]:
-    ordered: list[str] = list(settings.team_alert_numbers)
-    if state.urgency == "emergency":
-        ordered.extend(settings.emergency_alert_numbers)
-    elif state.department == "billing":
-        ordered.extend(settings.billing_alert_numbers)
-    elif state.department == "support":
-        ordered.extend(settings.support_alert_numbers)
-    else:
-        ordered.extend(settings.estimating_alert_numbers)
-    seen: set[str] = set()
-    result = []
-    for value in ordered:
-        if value and value not in seen:
-            seen.add(value)
-            result.append(value)
-    return tuple(result)
-
-
 def build_message(state: IntakeState, callback_hours: int, *, partial: bool) -> str:
     title = "FLOODMAN PARTIAL CALL" if partial else "FLOODMAN NEW LEAD"
     service = state.service_key.replace("_", " ") or "manual review"
@@ -58,6 +39,19 @@ def build_message(state: IntakeState, callback_hours: int, *, partial: bool) -> 
     if not partial:
         lines.append(f"Callback requested within {callback_hours} hours")
     return "\n".join(lines)[:1550]
+
+
+def build_sms_message(public_base_url: str, call_id: int, *, kind: str) -> str:
+    event = {
+        "call_started": "A new inbound call connected.",
+        "completed_intake": "A completed call intake is ready for review.",
+        "emergency": "An emergency service intake needs immediate review.",
+        "human_transfer": "A caller requested help from a person.",
+        "partial_hangup": "A partial call intake needs follow-up.",
+        "partial_no_input": "A caller could not complete intake and needs follow-up.",
+    }.get(kind, "A call update is ready for review.")
+    workspace = f"{public_base_url.rstrip('/')}/calls/{call_id}"
+    return f"Floodman Call Center: {event} Sign in securely: {workspace} Reply STOP to opt out or HELP for help."
 
 
 def email_subject(kind: str) -> str:
@@ -100,8 +94,9 @@ class TeamNotifier:
 
     async def call_started(self, call_id: int, state: IntakeState) -> int:
         records = self.web_push.create_call_records(call_id, state, "call_started")
+        sms_attempts = self._reserve_sms_attempts(call_id, state, "call_started")
         email_attempts = self._reserve_email_attempts(call_id, state, "call_started")
-        if records or email_attempts:
+        if records or sms_attempts or email_attempts:
             self._schedule_delivery(
                 self._deliver(
                     call_id,
@@ -109,7 +104,7 @@ class TeamNotifier:
                     "call_started",
                     partial=True,
                     push_records=records,
-                    sms_attempts=[],
+                    sms_attempts=sms_attempts,
                     email_attempts=email_attempts,
                 )
             )
@@ -129,12 +124,7 @@ class TeamNotifier:
             logger.exception("Unable to complete a background team notification")
 
     async def send(self, call_id: int, state: IntakeState, *, kind: str = "lead", partial: bool = False) -> int:
-        sms_attempts: list[tuple[int, str]] = []
-        for recipient in recipients(self.settings, state):
-            key = f"{state.call_uuid}:{kind}:sms:{recipient}"
-            attempt_id = self.database.reserve_notification(call_id, kind, "sms", recipient, key)
-            if attempt_id is not None:
-                sms_attempts.append((attempt_id, recipient))
+        sms_attempts = self._reserve_sms_attempts(call_id, state, kind)
         email_attempts = self._reserve_email_attempts(call_id, state, kind)
         records = self.web_push.create_call_records(call_id, state, kind)
         if sms_attempts or email_attempts or records:
@@ -150,6 +140,16 @@ class TeamNotifier:
                 )
             )
         return len(sms_attempts) + len(email_attempts) + len(records)
+
+    def _reserve_sms_attempts(self, call_id: int, state: IntakeState, kind: str) -> list[tuple[int, str]]:
+        attempts: list[tuple[int, str]] = []
+        for user in self.database.list_sms_notification_recipients(kind):
+            recipient = str(user["phone"])
+            key = f"{state.call_uuid}:{kind}:sms:user:{user['id']}"
+            attempt_id = self.database.reserve_notification(call_id, kind, "sms", recipient, key)
+            if attempt_id is not None:
+                attempts.append((attempt_id, recipient))
+        return attempts
 
     def _reserve_email_attempts(self, call_id: int, state: IntakeState, kind: str) -> list[tuple[int, str]]:
         attempts: list[tuple[int, str]] = []
@@ -171,7 +171,7 @@ class TeamNotifier:
         sms_attempts: list[tuple[int, str]],
         email_attempts: list[tuple[int, str]],
     ) -> None:
-        sms_body = build_message(state, self.settings.callback_sla_hours, partial=partial)
+        sms_body = build_sms_message(self.settings.public_base_url, call_id, kind=kind)
         mail_body = build_email_message(
             state,
             self.settings.callback_sla_hours,

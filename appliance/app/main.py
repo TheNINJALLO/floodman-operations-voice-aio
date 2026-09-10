@@ -30,6 +30,7 @@ from app.knowledge import KnowledgeBase
 from app.llm import LocalLLM
 from app.notifications import TeamNotifier
 from app.registry import CallRegistry
+from app.sms_consent import SMS_DISCLOSURE, SMS_DISCLOSURE_VERSION, normalize_sms_phone
 from app.stt import LocalSTT
 from app.suite_bridge import BusinessSuiteBridge
 from app.tts import LocalTTS
@@ -265,6 +266,7 @@ async def ready() -> JSONResponse:
         "stt": runtime.stt._model is not None,
         "tts": runtime.tts._kokoro is not None,
         "email": runtime.notifier.email.configuration.configured,
+        "sms": settings.twilio_sms_configured,
     }
     return JSONResponse(value, status_code=200 if value["ready"] else 503)
 
@@ -275,6 +277,110 @@ async def service_worker() -> FileResponse:
         PROJECT_ROOT / "static" / "service-worker.js",
         media_type="application/javascript",
         headers={"Service-Worker-Allowed": "/", "Cache-Control": "no-cache"},
+    )
+
+
+@app.get("/sms-program", response_class=HTMLResponse)
+async def sms_program(request: Request):
+    return templates.TemplateResponse(
+        request,
+        "legal.html",
+        {
+            "page_title": "SMS program",
+            "page_eyebrow": "Floodman Call Center operational alerts",
+            "heading": "Floodman Call Center SMS alerts",
+            "intro": "Optional text alerts help signed-in Floodman team members respond to customer calls.",
+            "sections": (
+                (
+                    "How enrollment works",
+                    "A team member signs in, opens Your profile, enters their own mobile number, and checks the previously unchecked SMS consent box. Administrators cannot enroll another user. We record the number, time, source, and disclosure version as proof of consent.",
+                ),
+                (
+                    "Consent shown before enrollment",
+                    SMS_DISCLOSURE,
+                ),
+                (
+                    "What we send",
+                    "Recurring operational alerts about inbound customer calls, completed intakes, and emergency service requests. Messages link to the secure Floodman workspace; message frequency varies with call volume.",
+                ),
+                (
+                    "Cost and cancellation",
+                    "Message and data rates may apply. Reply STOP to opt out or turn off SMS alerts in Your profile. Reply HELP for help. Consent is not a condition of employment or purchase.",
+                ),
+                (
+                    "Support",
+                    "For program help, email it@floodman.com. Wireless carriers are not liable for delayed or undelivered messages.",
+                ),
+            ),
+        },
+    )
+
+
+@app.get("/privacy", response_class=HTMLResponse)
+async def privacy_policy(request: Request):
+    return templates.TemplateResponse(
+        request,
+        "legal.html",
+        {
+            "page_title": "Privacy policy",
+            "page_eyebrow": "Floodman Call Center SMS privacy",
+            "heading": "SMS privacy policy",
+            "intro": "This policy explains how Floodman handles mobile information for its operational alert program.",
+            "sections": (
+                (
+                    "Information we collect",
+                    "We collect a participating team member's mobile number, notification choices, consent timestamp and version, and delivery records so we can provide and audit requested operational alerts.",
+                ),
+                (
+                    "Message frequency and charges",
+                    "Message frequency varies with inbound call volume and the alert categories selected by the user. Message and data rates may apply.",
+                ),
+                (
+                    "How we use and share it",
+                    "We use mobile information only to operate, secure, support, and document the Floodman alert program. We do not sell it or share it with third parties or affiliates for marketing or promotional purposes. We may provide it to service providers such as our messaging carrier only as needed to deliver and support the program, or when legally required.",
+                ),
+                (
+                    "Choice and retention",
+                    "You may opt out at any time by replying STOP or disabling SMS in Your profile. We retain consent and opt-out records as needed for compliance, security, dispute handling, and legal obligations.",
+                ),
+                (
+                    "Contact",
+                    "Questions or privacy requests can be sent to it@floodman.com.",
+                ),
+            ),
+        },
+    )
+
+
+@app.get("/terms", response_class=HTMLResponse)
+async def sms_terms(request: Request):
+    return templates.TemplateResponse(
+        request,
+        "legal.html",
+        {
+            "page_title": "SMS terms",
+            "page_eyebrow": "Floodman Call Center program terms",
+            "heading": "SMS terms and conditions",
+            "intro": "These terms apply to optional recurring Floodman Call Center operational text alerts.",
+            "sections": (
+                (
+                    "Program and frequency",
+                    "Messages notify enrolled Floodman team members about inbound calls, completed intakes, and emergency service requests. Frequency varies with call volume.",
+                ),
+                (
+                    "Charges and delivery",
+                    "Message and data rates may apply. Your carrier may impose additional terms. Carriers are not responsible for delayed or undelivered messages.",
+                ),
+                (
+                    "Opt out and help",
+                    "Reply STOP to cancel. You may also disable SMS in Your profile. Reply HELP for help or email it@floodman.com. After an opt-out request, you may receive one confirmation message.",
+                ),
+                (
+                    "Consent and privacy",
+                    "Consent is not a condition of employment or purchase. Participation is optional. Mobile information is handled under our Privacy Policy.",
+                ),
+            ),
+        },
     )
 
 
@@ -558,7 +664,15 @@ async def profile_page(request: Request, floodman_session: str | None = Cookie(d
     return templates.TemplateResponse(
         request,
         "profile.html",
-        _context(request, principal, "profile", user=user, message=request.query_params.get("message", ""), error=request.query_params.get("error", "")),
+        _context(
+            request,
+            principal,
+            "profile",
+            user=user,
+            sms_disclosure=SMS_DISCLOSURE,
+            message=request.query_params.get("message", ""),
+            error=request.query_params.get("error", ""),
+        ),
     )
 
 
@@ -568,10 +682,12 @@ async def update_profile(
     csrf_token: str = Form(default=""),
     display_name: str = Form(default=""),
     email: str = Form(default=""),
+    phone: str = Form(default=""),
     notify_new_calls: str | None = Form(default=None),
     notify_completed_calls: str | None = Form(default=None),
     notify_emergencies: str | None = Form(default=None),
     email_notifications: str | None = Form(default=None),
+    sms_notifications: str | None = Form(default=None),
 ):
     principal = _require_api(floodman_session)
     _csrf(principal, csrf_token)
@@ -583,8 +699,12 @@ async def update_profile(
     preferences = _preferences(notify_new_calls, notify_completed_calls, notify_emergencies, email_notifications)
     try:
         email = normalize_user_email(email)
+        phone = normalize_sms_phone(phone)
         if preferences["email_notifications"] and not email:
             raise ValueError("An email address is required when email alerts are enabled.")
+        sms_enabled = sms_notifications is not None
+        if sms_enabled and not phone:
+            raise ValueError("A mobile number is required when SMS alerts are enabled.")
         runtime.database.update_user(
             principal.user_id,
             user["username"],
@@ -593,6 +713,14 @@ async def update_profile(
             bool(user["active"]),
             preferences,
             email,
+        )
+        runtime.database.update_sms_consent(
+            principal.user_id,
+            phone,
+            sms_enabled,
+            source="authenticated_profile",
+            disclosure_version=SMS_DISCLOSURE_VERSION,
+            disclosure_text=SMS_DISCLOSURE,
         )
     except (ValueError, sqlite3.IntegrityError) as exc:
         message = "That email address is already in use." if isinstance(exc, sqlite3.IntegrityError) else str(exc)

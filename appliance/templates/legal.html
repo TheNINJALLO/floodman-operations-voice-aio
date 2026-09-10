@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#102a43">
+  <title>{{ page_title }} · Floodman Call Center</title>
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="legal-page">
+  <main class="legal-shell">
+    <a class="brand legal-brand" href="/login" aria-label="Floodman Call Center sign in">
+      <span class="brand-mark" aria-hidden="true">F</span>
+      <span><strong>Floodman</strong><small>Call Center</small></span>
+    </a>
+    <article class="panel legal-card">
+      <span class="eyebrow">{{ page_eyebrow }}</span>
+      <h1>{{ heading }}</h1>
+      <p class="legal-intro">{{ intro }}</p>
+      {% for title, body in sections %}
+      <section>
+        <h2>{{ title }}</h2>
+        <p>{{ body }}</p>
+      </section>
+      {% endfor %}
+      <p class="legal-updated">Effective September 10, 2026</p>
+    </article>
+    <nav class="legal-links" aria-label="SMS program policies">
+      <a href="/sms-program">SMS program</a>
+      <a href="/terms">SMS terms</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/login">Team sign in</a>
+    </nav>
+  </main>
+</body>
+</html>

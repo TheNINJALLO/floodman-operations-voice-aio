@@ -85,6 +85,11 @@ class Database:
                     notify_completed_calls INTEGER NOT NULL DEFAULT 1,
                     notify_emergencies INTEGER NOT NULL DEFAULT 1,
                     email_notifications INTEGER NOT NULL DEFAULT 0,
+                    phone TEXT NOT NULL DEFAULT '',
+                    sms_notifications INTEGER NOT NULL DEFAULT 0,
+                    sms_consent_at TEXT,
+                    sms_consent_source TEXT NOT NULL DEFAULT '',
+                    sms_consent_version TEXT NOT NULL DEFAULT '',
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     last_login_at TEXT,
@@ -110,6 +115,16 @@ class Database:
                     created_at TEXT NOT NULL,
                     read_at TEXT,
                     UNIQUE(user_id, event_key)
+                );
+                CREATE TABLE IF NOT EXISTS sms_consent_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                    phone TEXT NOT NULL,
+                    action TEXT NOT NULL CHECK(action IN ('opt_in','opt_out')),
+                    source TEXT NOT NULL,
+                    disclosure_version TEXT NOT NULL DEFAULT '',
+                    disclosure_text TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS push_subscriptions (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -152,6 +167,7 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_messages_call ON messages(call_id, id);
                 CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON user_sessions(expires_at);
                 CREATE INDEX IF NOT EXISTS idx_user_notifications ON user_notifications(user_id, created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_sms_consent_events ON sms_consent_events(user_id, created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_events(created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_business_outbox_due
                     ON business_event_outbox(status, next_attempt_at, id);
@@ -159,6 +175,11 @@ class Database:
             )
             self._ensure_column(db, "users", "email", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(db, "users", "email_notifications", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(db, "users", "phone", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(db, "users", "sms_notifications", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(db, "users", "sms_consent_at", "TEXT")
+            self._ensure_column(db, "users", "sms_consent_source", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(db, "users", "sms_consent_version", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(db, "notifications", "channel", "TEXT NOT NULL DEFAULT 'sms'")
             db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users(email COLLATE NOCASE) WHERE email<>''")
             db.execute("CREATE INDEX IF NOT EXISTS idx_notifications_channel ON notifications(channel, status)")
@@ -494,6 +515,7 @@ class Database:
             rows = db.execute(
                 """SELECT u.id,u.username,u.display_name,u.email,u.role,u.active,
                           u.notify_new_calls,u.notify_completed_calls,u.notify_emergencies,u.email_notifications,
+                          u.phone,u.sms_notifications,u.sms_consent_at,
                           u.created_at,u.updated_at,u.last_login_at,
                           COUNT(p.id) AS push_devices
                    FROM users u LEFT JOIN push_subscriptions p ON p.user_id=u.id
@@ -502,13 +524,13 @@ class Database:
         return [dict(row) for row in rows]
 
     def get_user(self, user_id: int, *, include_secret: bool = False) -> dict[str, Any] | None:
-        columns = "*" if include_secret else "id,username,display_name,email,role,active,notify_new_calls,notify_completed_calls,notify_emergencies,email_notifications,created_at,updated_at,last_login_at"
+        columns = "*" if include_secret else "id,username,display_name,email,phone,role,active,notify_new_calls,notify_completed_calls,notify_emergencies,email_notifications,sms_notifications,sms_consent_at,sms_consent_source,sms_consent_version,created_at,updated_at,last_login_at"
         with self.connect() as db:
             row = db.execute(f"SELECT {columns} FROM users WHERE id=?", (user_id,)).fetchone()
         return dict(row) if row else None
 
     def get_user_by_username(self, username: str, *, include_secret: bool = False) -> dict[str, Any] | None:
-        columns = "*" if include_secret else "id,username,display_name,email,role,active,notify_new_calls,notify_completed_calls,notify_emergencies,email_notifications,created_at,updated_at,last_login_at"
+        columns = "*" if include_secret else "id,username,display_name,email,phone,role,active,notify_new_calls,notify_completed_calls,notify_emergencies,email_notifications,sms_notifications,sms_consent_at,sms_consent_source,sms_consent_version,created_at,updated_at,last_login_at"
         with self.connect() as db:
             row = db.execute(f"SELECT {columns} FROM users WHERE username=? COLLATE NOCASE", (username,)).fetchone()
         return dict(row) if row else None
@@ -549,6 +571,67 @@ class Database:
         with self.connect() as db:
             db.execute("UPDATE users SET password_hash=?,updated_at=? WHERE id=?", (password_hash, utcnow(), user_id))
             db.execute("DELETE FROM user_sessions WHERE user_id=?", (user_id,))
+
+    def update_sms_consent(
+        self,
+        user_id: int,
+        phone: str,
+        enabled: bool,
+        *,
+        source: str,
+        disclosure_version: str,
+        disclosure_text: str,
+    ) -> None:
+        """Update the active SMS preference while retaining an immutable consent trail."""
+        now = utcnow()
+        with self._lock, self.connect() as db:
+            current = db.execute(
+                "SELECT phone,sms_notifications,sms_consent_at FROM users WHERE id=?",
+                (user_id,),
+            ).fetchone()
+            if not current:
+                raise LookupError("User not found.")
+            old_phone = str(current["phone"] or "")
+            was_enabled = bool(current["sms_notifications"])
+            next_phone = str(phone or "")
+            changed_recipient = old_phone != next_phone
+            if was_enabled and (not enabled or changed_recipient):
+                db.execute(
+                    """INSERT INTO sms_consent_events(
+                           user_id,phone,action,source,disclosure_version,disclosure_text,created_at
+                       ) VALUES(?,?,?,?,?,?,?)""",
+                    (user_id, old_phone, "opt_out", source, disclosure_version, disclosure_text, now),
+                )
+            if enabled and (not was_enabled or changed_recipient):
+                db.execute(
+                    """INSERT INTO sms_consent_events(
+                           user_id,phone,action,source,disclosure_version,disclosure_text,created_at
+                       ) VALUES(?,?,?,?,?,?,?)""",
+                    (user_id, next_phone, "opt_in", source, disclosure_version, disclosure_text, now),
+                )
+            db.execute(
+                """UPDATE users SET phone=?,sms_notifications=?,sms_consent_at=?,
+                          sms_consent_source=?,sms_consent_version=?,updated_at=?
+                   WHERE id=?""",
+                (
+                    next_phone,
+                    int(enabled),
+                    now if enabled and (not was_enabled or changed_recipient) else (current["sms_consent_at"] if enabled else None),
+                    source if enabled else "",
+                    disclosure_version if enabled else "",
+                    now,
+                    user_id,
+                ),
+            )
+
+    def list_sms_consent_events(self, user_id: int) -> list[dict[str, Any]]:
+        with self.connect() as db:
+            rows = db.execute(
+                """SELECT id,user_id,phone,action,source,disclosure_version,disclosure_text,created_at
+                   FROM sms_consent_events WHERE user_id=? ORDER BY id""",
+                (user_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def delete_user(self, user_id: int) -> None:
         with self.connect() as db:
@@ -645,6 +728,33 @@ class Database:
             "SELECT id,email,display_name FROM users "
             "WHERE active=1 AND email_notifications=1 AND email<>'' "
             "AND role IN ('admin','manager','viewer')"
+        )
+        parameters: list[Any] = []
+        if preference:
+            query += f" AND {preference}=1"
+        if target_user_id is not None:
+            query += " AND id=?"
+            parameters.append(target_user_id)
+        query += " ORDER BY id"
+        with self.connect() as db:
+            rows = db.execute(query, tuple(parameters)).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_sms_notification_recipients(
+        self,
+        kind: str,
+        *,
+        target_user_id: int | None = None,
+    ) -> list[dict[str, Any]]:
+        preference = {
+            "call_started": "notify_new_calls",
+            "completed_intake": "notify_completed_calls",
+            "emergency": "notify_emergencies",
+        }.get(kind)
+        query = (
+            "SELECT id,phone,display_name FROM users "
+            "WHERE active=1 AND sms_notifications=1 AND phone<>'' "
+            "AND sms_consent_at IS NOT NULL AND role IN ('admin','manager','viewer')"
         )
         parameters: list[Any] = []
         if preference:

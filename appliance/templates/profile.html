@@ -10,12 +10,15 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <label>Display name<input name="display_name" value="{{ user.display_name }}" maxlength="80" required></label>
       <label>Email address<input type="email" name="email" value="{{ user.email }}" maxlength="320" placeholder="you@floodman.com"><small>Email is required when email alerts are enabled.</small></label>
+      <label>Mobile number<input type="tel" name="phone" value="{{ user.phone }}" autocomplete="tel" inputmode="tel" maxlength="24" placeholder="(231) 555-0100"><small>Only your own mobile number may be enrolled for text alerts.</small></label>
       <fieldset><legend>Call alerts</legend>
         <label class="check-field"><input type="checkbox" name="email_notifications" {{ 'checked' if user.email_notifications }}><span><strong>Send alerts by email</strong><small>Email follows the event choices below.</small></span></label>
+        <label class="check-field"><input type="checkbox" name="sms_notifications" {{ 'checked' if user.sms_notifications }}><span><strong>Send alerts by SMS</strong><small>{{ sms_disclosure }} <a href="/terms">SMS Terms</a> and <a href="/privacy">Privacy Policy</a>.</small></span></label>
         <label class="check-field"><input type="checkbox" name="notify_new_calls" {{ 'checked' if user.notify_new_calls }}><span><strong>New calls</strong><small>When a caller enters the system.</small></span></label>
         <label class="check-field"><input type="checkbox" name="notify_completed_calls" {{ 'checked' if user.notify_completed_calls }}><span><strong>Completed intake</strong><small>When a customer record is ready.</small></span></label>
         <label class="check-field"><input type="checkbox" name="notify_emergencies" {{ 'checked' if user.notify_emergencies }}><span><strong>Emergency calls</strong><small>When urgent action may be required.</small></span></label>
       </fieldset>
+      {% if user.sms_notifications and user.sms_consent_at %}<p class="help">SMS enrollment recorded <span class="js-date">{{ user.sms_consent_at }}</span>. Reply STOP at any time or clear the checkbox here.</p>{% endif %}
       <button class="button primary" type="submit">Save preferences</button>
     </form>
   </section>

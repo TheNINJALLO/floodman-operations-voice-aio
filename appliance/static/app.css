@@ -155,6 +155,18 @@ hr { margin: 20px; border: 0; border-top: 1px solid var(--line); }
 .identity-cell { display: flex; align-items: center; gap: 10px; }
 .small-avatar { width: 34px; height: 34px; }
 .settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 18px; }
+.legal-page { min-height: 100vh; background: linear-gradient(150deg, #081a2b 0%, #102a43 42%, #eef5f9 42%); padding: 42px 20px; }
+.legal-shell { width: min(820px, 100%); margin: 0 auto; }
+.legal-brand { display: inline-flex; margin-bottom: 22px; }
+.legal-card { padding: clamp(24px, 5vw, 52px); }
+.legal-card h1 { margin: 8px 0 12px; font-size: clamp(2rem, 5vw, 3.1rem); letter-spacing: -.035em; }
+.legal-intro { color: var(--muted); font-size: 1.05rem; line-height: 1.65; margin-bottom: 30px; }
+.legal-card section { padding: 20px 0; border-top: 1px solid var(--line); }
+.legal-card section h2 { margin: 0 0 8px; font-size: 1rem; }
+.legal-card section p { margin: 0; color: var(--muted); line-height: 1.7; }
+.legal-updated { margin: 24px 0 0; color: var(--muted); font-size: .78rem; }
+.legal-links { display: flex; justify-content: center; flex-wrap: wrap; gap: 18px; padding: 20px; }
+.legal-links a { color: #d6e8f3; font-size: .82rem; }
 .service-grid { grid-template-columns: minmax(0, 1.3fr) minmax(310px, .7fr); }
 .coverage-preview { padding-bottom: 18px; }
 .city-list { display: flex; flex-wrap: wrap; gap: 7px; padding: 18px; }

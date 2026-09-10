@@ -301,9 +301,35 @@ def test_recovery_bootstrap_and_named_login_routes(tmp_path: Path, monkeypatch: 
         "/voice",
         "/diagnostics",
         "/simulator",
+        "/sms-program",
+        "/terms",
+        "/privacy",
     ):
         response = client.get(path)
         assert response.status_code == 200, path
+
+    profile = client.get("/profile")
+    assert "previously unchecked" not in profile.text
+    assert "Reply STOP" in profile.text and 'name="sms_notifications"' in profile.text
+    opted_in = client.post(
+        "/profile",
+        data={
+            "csrf_token": named_csrf.group(1),
+            "display_name": "Portal Admin",
+            "email": "portal.admin@example.com",
+            "phone": "(231) 555-0100",
+            "email_notifications": "on",
+            "sms_notifications": "on",
+            "notify_new_calls": "on",
+            "notify_completed_calls": "on",
+            "notify_emergencies": "on",
+        },
+        follow_redirects=False,
+    )
+    assert opted_in.status_code == 303
+    enrolled = module.runtime.database.get_user(1)
+    assert enrolled and enrolled["phone"] == "+12315550100" and enrolled["sms_notifications"] == 1
+    assert module.runtime.database.list_sms_consent_events(1)[0]["action"] == "opt_in"
 
 
 @pytest.mark.asyncio
@@ -411,3 +437,45 @@ async def test_email_call_alerts_are_permission_scoped_idempotent_and_nonblockin
     assert delivered[0][0] == "allowed@example.com"
     assert "Customer Name" in delivered[0][2] and "/calls/" in delivered[0][2]
     assert database.get_call(call_id)["notifications"][0]["status"] == "sent"
+
+
+@pytest.mark.asyncio
+async def test_sms_call_alerts_require_self_consent_and_exclude_customer_pii(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://voice.example.com")
+    settings = Settings.from_env()
+    database = Database(settings.database_path)
+    user_id = database.create_user("sms.on", "SMS On", "hash", "manager", preferences(), None)
+    database.update_sms_consent(
+        user_id,
+        "+12315550100",
+        True,
+        source="authenticated_profile",
+        disclosure_version="test-v1",
+        disclosure_text="Test disclosure",
+    )
+    database.create_user("sms.off", "SMS Off", "hash", "viewer", preferences(), user_id)
+    notifier = TeamNotifier(settings, database)
+    delivered: list[tuple[str, str]] = []
+
+    async def capture_sms(recipient: str, body: str) -> tuple[str, str]:
+        delivered.append((recipient, body))
+        return "queued", "accepted"
+
+    monkeypatch.setattr(notifier, "_send_sms", capture_sms)
+    state = IntakeState(
+        call_uuid="sms-call",
+        name="Sensitive Customer",
+        phone="+12315550199",
+        email="sensitive@example.com",
+        address="1 Private Street",
+    )
+    call_id = database.create_call(state)
+    assert await notifier.send(call_id, state, kind="emergency") == 3  # Two in-app records and one opted-in SMS.
+    await notifier.stop()
+
+    assert delivered[0][0] == "+12315550100"
+    body = delivered[0][1]
+    for private_value in (state.name, state.phone, state.email, state.address, state.call_uuid):
+        assert private_value not in body
+    assert "Floodman Call Center" in body and f"/calls/{call_id}" in body and "STOP" in body

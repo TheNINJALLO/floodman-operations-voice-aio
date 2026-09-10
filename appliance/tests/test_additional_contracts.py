@@ -8,7 +8,8 @@ import pytest
 from app.business import BusinessDirectory
 from app.config import Settings
 from app.models import IntakeState
-from app.notifications import build_email_message, build_message
+from app.notifications import build_email_message, build_message, build_sms_message
+from app.sms_consent import normalize_sms_phone
 from app.tts import LocalTTS
 
 
@@ -56,6 +57,16 @@ def test_sms_contains_every_recovered_field():
     body = build_message(state, 24, partial=False)
     for value in ("Josh Aldrich", "+12318840943", "josh@example.com", "1 Main Street", "Water in basement", "24 hours"):
         assert value in body
+
+
+def test_staff_sms_identifies_sender_and_keeps_customer_pii_behind_login():
+    body = build_sms_message("https://voice.example.com", 42, kind="emergency")
+    assert body.startswith("Floodman Call Center:")
+    assert "https://voice.example.com/calls/42" in body
+    assert "Reply STOP" in body and "HELP" in body
+    assert normalize_sms_phone("(231) 555-0100") == "+12315550100"
+    with pytest.raises(ValueError, match="10-digit US mobile"):
+        normalize_sms_phone("555")
 
 
 def test_incoming_call_email_contains_no_customer_pii():
