@@ -293,7 +293,7 @@ async def sms_program(request: Request):
             "sections": (
                 (
                     "How enrollment works",
-                    "A team member signs in, opens Your profile, enters their own mobile number, and checks the previously unchecked SMS consent box. Administrators cannot enroll another user. We record the number, time, source, and disclosure version as proof of consent.",
+                    "A team member signs in, opens Your profile, enters their own mobile number, and checks the previously unchecked SMS consent box. Administrators cannot enroll another user. We record the number, time, source, and disclosure version as proof of consent. Because the enrollment control is protected by sign-in, this public page reproduces the exact disclosure shown beside that checkbox for compliance review.",
                 ),
                 (
                     "Consent shown before enrollment",
@@ -336,8 +336,8 @@ async def privacy_policy(request: Request):
                     "Message frequency varies with inbound call volume and the alert categories selected by the user. Message and data rates may apply.",
                 ),
                 (
-                    "How we use and share it",
-                    "We use mobile information only to operate, secure, support, and document the Floodman alert program. We do not sell it or share it with third parties or affiliates for marketing or promotional purposes. We may provide it to service providers such as our messaging carrier only as needed to deliver and support the program, or when legally required.",
+                    "How we use mobile information and messaging consent",
+                    "We use mobile information only to operate, secure, support, and document the Floodman alert program. We do not share, sell, rent, or provide mobile phone numbers, mobile information, text messaging originator opt-in data, or messaging consent data to third parties or affiliates for marketing or promotional purposes. This restriction applies to every data category described above. We may provide limited data to service providers such as our messaging carrier only as needed to deliver and support the requested program, or when legally required.",
                 ),
                 (
                     "Choice and retention",

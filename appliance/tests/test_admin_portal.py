@@ -308,6 +308,16 @@ def test_recovery_bootstrap_and_named_login_routes(tmp_path: Path, monkeypatch: 
         response = client.get(path)
         assert response.status_code == 200, path
 
+    sms_program = client.get("/sms-program")
+    assert "this public page reproduces the exact disclosure" in sms_program.text
+    privacy = client.get("/privacy")
+    assert (
+        "mobile phone numbers, mobile information, text messaging originator opt-in data, "
+        "or messaging consent data"
+    ) in privacy.text
+    assert "third parties or affiliates for marketing or promotional purposes" in privacy.text
+    assert "Message and data rates may apply" in privacy.text
+
     profile = client.get("/profile")
     assert "previously unchecked" not in profile.text
     assert "Reply STOP" in profile.text and 'name="sms_notifications"' in profile.text

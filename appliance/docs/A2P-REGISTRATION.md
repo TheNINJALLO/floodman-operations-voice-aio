@@ -18,7 +18,7 @@ Campaign description:
 
 Message flow:
 
-> Floodman team members opt in at https://aicall.oninetwork.com/profile after signing in to their individual account. The user enters their own US mobile number and checks a previously unchecked SMS consent box that states the brand, recurring operational message types, variable frequency, possible message and data rates, STOP and HELP instructions, and that consent is not a condition of employment or purchase. The application records the user, normalized mobile number, consent time, source, exact disclosure, and disclosure version. Administrators cannot opt in another user. Users opt out by replying STOP or by clearing the SMS checkbox in their profile. The publicly accessible program description is https://aicall.oninetwork.com/sms-program, terms are https://aicall.oninetwork.com/terms, and privacy policy is https://aicall.oninetwork.com/privacy.
+> Floodman team members opt in at https://aicall.oninetwork.com/profile after signing in to their individual account. The user enters their own US mobile number and checks a previously unchecked SMS consent box that states the Floodman Call Center brand, recurring operational message types, that message frequency varies, "Message and data rates may apply," STOP and HELP instructions, and that consent is not a condition of employment or purchase. The application records the user, normalized mobile number, consent time, source, exact disclosure, and disclosure version. Administrators cannot opt in another user. Users opt out by replying STOP or by clearing the SMS checkbox in their profile. Because the enrollment control is login-protected, the exact checkbox disclosure and opt-in steps are reproduced publicly at https://aicall.oninetwork.com/sms-program. Terms and Conditions: https://aicall.oninetwork.com/terms. Privacy Policy: https://aicall.oninetwork.com/privacy. Floodman does not share, sell, rent, or provide mobile phone numbers, mobile information, text messaging originator opt-in data, or messaging consent data to third parties or affiliates for marketing or promotional purposes.
 
 Sample message 1:
 
@@ -36,6 +36,8 @@ Other campaign settings:
 - Direct lending or loan arrangement: No
 - Opt-in keywords and opt-in message: Leave blank because SMS keyword opt-in is not offered.
 - Opt-out/help handling: Use Twilio's default or Advanced Opt-Out feature for STOP and HELP.
+- Privacy Policy URL: `https://aicall.oninetwork.com/privacy`
+- Terms and Conditions URL: `https://aicall.oninetwork.com/terms`
 
 ## Production activation
 
