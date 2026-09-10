@@ -138,8 +138,8 @@ COPY --from=business /usr/local/bin/mailpit /usr/local/bin/mailpit
 # On a Wings bind mount that can replace the destination metadata and make the
 # following marker write fail. Keep the payload, never the image-layer owner.
 RUN set -eux; \
-    grep -Fq 'cp -R --no-preserve=mode,ownership,timestamps /opt/floodman/gauzy-public-seed/.' \
-      /opt/floodman/aio/start-suite.sh; \
+    grep -Fq 'cp -R --no-preserve=mode,ownership,timestamps' /opt/floodman/aio/start-suite.sh; \
+    grep -Fq '/opt/floodman/gauzy-public-seed/.' /opt/floodman/aio/start-suite.sh; \
     grep -Fq 'initdb -D "$PGDATA" -U postgres --pwfile="$pwfile"' /opt/floodman/aio/start-suite.sh; \
     sed -i 's#initdb -D "$PGDATA" -U postgres #initdb -D "$PGDATA" -U postgres --encoding=UTF8 --locale=C.UTF-8 #' \
       /opt/floodman/aio/start-suite.sh; \
