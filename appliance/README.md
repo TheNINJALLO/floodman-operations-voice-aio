@@ -16,7 +16,7 @@ over loopback so Office, RoomFlow, estimates, tasks, and staff notifications use
 the same call/customer workflow. Business services cannot delay or terminate a
 live call.
 
-Only the carrier remains external to the local voice path. Twilio or another SIP provider supplies the phone number, minutes, and SMS. No paid AI key is accepted or required for calling.
+Only the carrier is required externally. Twilio or another SIP provider supplies the phone number, minutes, and SMS. Tel-Agent can use Deepgram, Groq, and ElevenLabs when their credentials are configured, but no paid AI key is required: missing or unavailable providers fail open to the bundled local LLM, Faster-Whisper, and Kokoro services.
 
 ## Reliability design
 

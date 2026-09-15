@@ -1109,6 +1109,31 @@ class Database:
         )
         return event_id
 
+    def add_transcript_turn(
+        self,
+        call_id: str,
+        direction: str,
+        sequence: int,
+        payload: dict[str, Any],
+    ) -> tuple[str, bool]:
+        """Persist one finalized turn exactly once before any remote synchronization."""
+        event_id = str(
+            uuid.uuid5(
+                uuid.NAMESPACE_URL,
+                f"floodman:transcript:{call_id}:{direction}:{sequence}",
+            )
+        )
+        with self.transaction() as conn:
+            cursor = conn.execute(
+                """
+                INSERT OR IGNORE INTO call_events
+                (id,call_id,direction,event_type,payload_json,created_at)
+                VALUES (?,?,?,?,?,?)
+                """,
+                (event_id, call_id, direction, "transcript_turn", _json(payload), _now()),
+            )
+        return event_id, cursor.rowcount == 1
+
     def list_call_events(self, limit: int = 200, call_id: str = "") -> list[dict[str, Any]]:
         if call_id:
             rows = self.fetchall(

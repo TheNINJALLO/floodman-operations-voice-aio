@@ -58,7 +58,10 @@ from app.models import (
     PropertyUpsert,
     RoomflowToolRequest,
     SuppressionCreate,
+    TelAgentFallbackRequest,
+    TelAgentTransferRequest,
     TestCallRequest,
+    TranscriptTurnEvent,
 )
 from app.outbound.ami import AMIClient
 from app.outbound.worker import OutboundWorker
@@ -331,6 +334,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "port": settings.gate_port,
                     "transcriber": settings.gate_transcriber,
                 },
+                "voice_engine": {
+                    "selected": settings.voice_engine,
+                    "tel_agent_enabled": settings.tel_agent_enabled,
+                    "tel_agent_ready": (
+                        settings.data_dir / "runtime/tel-agent-ready"
+                    ).is_file(),
+                    "tel_agent_port": settings.tel_agent_port,
+                    "fallback": "ava" if settings.ava_enabled else "live_reception",
+                },
                 "outbound": {
                     "enabled": settings.outbound_enabled,
                     "ami_enabled": settings.ami_enabled,
@@ -421,6 +433,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "provider": settings.default_provider,
                 "opening_transcript": "",
                 "reason": "gate_session_not_found_fail_open",
+                "call_id": gate_uuid,
+                "caller_number": "",
+                "direction": "inbound",
+                "metadata": {},
             }
         ready = row.get("state") in {
             GateState.READY.value,
@@ -438,6 +454,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "opening_transcript": row.get("opening_transcript") or "",
             "announcement_detected": bool(row.get("announcement_detected")),
             "reason": row.get("reason") or "",
+            "call_id": row.get("call_id") or gate_uuid,
+            "caller_number": row.get("caller_number") or "",
+            "direction": row.get("direction") or "inbound",
+            "metadata": row.get("metadata") or {},
         }
 
     # Campaigns and outbound -------------------------------------------
@@ -822,6 +842,48 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def ava_call_completed(request: Request, payload: CallCompletedEvent) -> dict[str, Any]:
         database: Database = request.app.state.database
         event_payload = payload.model_dump(mode="json")
+        # A provider or adapter can fail after finalized turns have already reached
+        # the local ledger. Rebuild an empty completion or prepend the Tel-Agent part
+        # of a Tel-Agent -> AVA handoff, without duplicating a normal Tel completion.
+        durable_turns = [
+            event["payload"]
+            for event in database.list_call_events(10_000, payload.call_id)
+            if event.get("event_type") == "transcript_turn"
+            and isinstance(event.get("payload"), dict)
+        ]
+        durable_turns.sort(key=lambda turn: int(turn.get("sequence") or 0))
+        durable_transcript = [
+            {
+                "role": turn.get("role"),
+                "content": turn.get("text"),
+                "confidence": turn.get("confidence"),
+                "language": turn.get("language"),
+                "interrupted": bool(turn.get("interrupted")),
+            }
+            for turn in durable_turns
+            if turn.get("text")
+        ]
+        if not event_payload.get("transcript"):
+            if durable_transcript:
+                event_payload["transcript"] = durable_transcript
+        elif payload.provider != "tel-agent" and isinstance(event_payload["transcript"], list):
+            existing = event_payload["transcript"]
+            existing_pairs = {
+                (
+                    str(item.get("role") or item.get("speaker") or "").lower(),
+                    str(item.get("content") or item.get("text") or "").strip(),
+                )
+                for item in existing
+                if isinstance(item, dict)
+            }
+            prefix = [
+                item
+                for item in durable_transcript
+                if (str(item.get("role") or "").lower(), str(item.get("content") or "").strip())
+                not in existing_pairs
+            ]
+            if prefix:
+                event_payload["transcript"] = [*prefix, *existing]
         database.add_call_event(payload.call_id, payload.direction, "call_completed", event_payload)
         if payload.direction == "outbound" and payload.caller_number:
             phone = normalize_phone(payload.caller_number)
@@ -887,6 +949,90 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "business": business_result,
             "intake": intake_result,
         }
+
+    @app.post("/internal/tel-agent/turn", dependencies=[Depends(require_internal)])
+    async def tel_agent_turn(request: Request, payload: TranscriptTurnEvent) -> dict[str, Any]:
+        role = payload.role.strip().lower()
+        if role not in {"user", "assistant"}:
+            raise HTTPException(status_code=422, detail="Transcript role must be user or assistant")
+        event = payload.model_dump(mode="json")
+        event["role"] = role
+        event_id, created = request.app.state.database.add_transcript_turn(
+            payload.call_id,
+            payload.direction,
+            payload.sequence,
+            event,
+        )
+        return {"ok": True, "event_id": event_id, "created": created}
+
+    @app.post("/internal/tel-agent/transfer", dependencies=[Depends(require_internal)])
+    async def tel_agent_transfer(
+        request: Request, payload: TelAgentTransferRequest
+    ) -> dict[str, Any]:
+        aliases = {
+            "floodman_reception": "live_reception",
+            "floodman_emergency": "emergency",
+            "floodman_billing": "billing",
+            "floodman_estimating": "estimating",
+        }
+        destination_name = aliases.get(payload.destination, payload.destination)
+        destination = settings.transfer_destinations.get(destination_name)
+        if not isinstance(destination, dict):
+            return {"ok": False, "error": "transfer_destination_not_configured"}
+        extension = str(destination.get("extension") or "").strip()
+        if not re.fullmatch(r"[0-9A-Za-z_-]{1,32}", extension):
+            return {"ok": False, "error": "transfer_destination_invalid"}
+        gate = request.app.state.database.get_gate(payload.gate_uuid)
+        metadata = gate.get("metadata") if gate and isinstance(gate.get("metadata"), dict) else {}
+        channel = str(metadata.get("channel") or "")
+        if not channel:
+            return {"ok": False, "error": "call_channel_not_found"}
+        if not settings.ami_enabled:
+            return {"ok": False, "error": "ami_disabled"}
+        result = await request.app.state.ami.redirect(
+            channel=channel,
+            context="from-internal",
+            extension=extension,
+            priority=1,
+        )
+        request.app.state.database.add_call_event(
+            str(gate.get("call_id") or payload.gate_uuid),
+            str(gate.get("direction") or "inbound"),
+            "tel_agent_transfer",
+            {
+                "destination": destination_name,
+                "extension": extension,
+                "ok": result.ok,
+                "message": result.message,
+            },
+        )
+        return {"ok": result.ok, "destination": destination_name, "message": result.message}
+
+    @app.post("/internal/tel-agent/fallback", dependencies=[Depends(require_internal)])
+    async def tel_agent_fallback(
+        request: Request, payload: TelAgentFallbackRequest
+    ) -> dict[str, Any]:
+        """Move a failed Tel-Agent session into AVA without trusting model output."""
+        gate = request.app.state.database.get_gate(payload.gate_uuid)
+        metadata = gate.get("metadata") if gate and isinstance(gate.get("metadata"), dict) else {}
+        channel = str(metadata.get("channel") or "")
+        if not channel:
+            return {"ok": False, "error": "call_channel_not_found"}
+        if not settings.ami_enabled:
+            return {"ok": False, "error": "ami_disabled"}
+        result = await request.app.state.ami.redirect(
+            channel=channel,
+            context="floodman-tel-agent-fallback",
+            extension="s",
+            priority=1,
+        )
+        request.app.state.database.add_call_event(
+            str(gate.get("call_id") or payload.gate_uuid),
+            str(gate.get("direction") or "inbound"),
+            "tel_agent_runtime_fallback",
+            {"reason": payload.reason, "ok": result.ok, "message": result.message},
+        )
+        return {"ok": result.ok, "fallback": "ava", "message": result.message}
 
 
     # In-call business tools -------------------------------------------

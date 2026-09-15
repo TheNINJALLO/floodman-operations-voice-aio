@@ -29,7 +29,7 @@ jobs:
         run: python -m pytest tests/ -x -q
 
       - name: Compile Python sources
-        run: python -m compileall app scripts tests
+        run: python -m compileall app integrations scripts tests
 
       - name: Validate shell scripts and configuration
         run: |
@@ -75,6 +75,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=floodman-lite
           build-args: |
             AVA_COMMIT=18d4e769335f3b643aca80e084c7e66f0969491e
+            TEL_AGENT_COMMIT=8a5193b2d801714e45ae6981a3506a60d562a99e
             PRELOAD_WHISPER_MODEL=tiny.en
 
   publish-full:
@@ -116,6 +117,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=floodman-full
           build-args: |
             AVA_COMMIT=18d4e769335f3b643aca80e084c7e66f0969491e
+            TEL_AGENT_COMMIT=8a5193b2d801714e45ae6981a3506a60d562a99e
             PRELOAD_WHISPER_MODEL=tiny.en
             PIPER_TTS_VERSION=1.6.0
             LLAMA_CPP_PYTHON_VERSION=0.3.34

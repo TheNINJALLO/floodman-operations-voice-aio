@@ -6,7 +6,7 @@ suite_hmac="${AI_CALLING_HMAC_KEYS:-}"
 source /home/container/data/runtime/voice-process.env
 export AI_CALLING_HMAC_KEYS="${suite_hmac}"
 export PUBLIC_BASE_URL="${VOICE_PUBLIC_BASE_URL:-https://aicall.oninetwork.com}"
-export PYTHONPATH=/opt/voice
+export PYTHONPATH=/opt/tel-agent:/opt/voice
 export CONFIG_DIR=/opt/voice/config
 export BUSINESS_SUITE_EVENTS_ENABLED=true
 export BUSINESS_SUITE_EVENTS_URL=http://127.0.0.1:9004/webhooks/ai-calling/deterministic

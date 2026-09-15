@@ -1,10 +1,18 @@
 from pathlib import Path
 import json
 
-def test_no_paid_ai_keys(project_root: Path):
-    source="\n".join(path.read_text(encoding="utf-8",errors="ignore") for path in (project_root/"app").glob("*.py"))
-    for name in ("GROQ_API_KEY","DEEPGRAM_API_KEY","ELEVENLABS_API_KEY","OPENAI_API_KEY"):
-        assert name not in source
+def test_paid_ai_keys_are_optional_and_isolated(project_root: Path):
+    ordinary_source="\n".join(
+        path.read_text(encoding="utf-8", errors="ignore")
+        for path in (project_root / "app").glob("*.py")
+        if path.name != "tel_agent_runtime.py"
+    )
+    adapter=(project_root/"app/tel_agent_runtime.py").read_text(encoding="utf-8")
+    for name in ("GROQ_API_KEY", "DEEPGRAM_API_KEY", "ELEVENLABS_API_KEY"):
+        assert name not in ordinary_source
+        assert f'os.getenv("{name}", "")' in adapter
+    assert "OPENAI_API_KEY" not in ordinary_source
+    assert "OPENAI_API_KEY" not in adapter
 
 def test_one_unit_supervisor(project_root: Path):
     text=(project_root/"supervisor/supervisord.conf").read_text()

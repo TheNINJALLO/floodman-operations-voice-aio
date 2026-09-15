@@ -188,6 +188,7 @@ class Settings:
 
     audiosocket_host: str
     audiosocket_port: int
+    voice_engine: str
     llama_base_url: str
     llama_api_key: str
     llama_model_alias: str
@@ -285,6 +286,9 @@ class Settings:
         public_base_url = os.getenv("PUBLIC_BASE_URL", "http://127.0.0.1:8002").rstrip("/")
         public_host = urlparse(public_base_url).hostname or ""
         trusted_default = ",".join(value for value in ("localhost", "127.0.0.1", public_host) if value)
+        voice_engine = os.getenv("VOICE_ENGINE", "local").strip().lower().replace("-", "_")
+        if voice_engine not in {"local", "tel_agent"}:
+            raise ValueError("VOICE_ENGINE must be local or tel_agent")
         return cls(
             data_dir=data,
             config_dir=config,
@@ -317,6 +321,7 @@ class Settings:
             service_area_path=Path(os.getenv("SERVICE_AREA_PATH", data / "service_area.yaml")),
             audiosocket_host=os.getenv("AUDIOSOCKET_HOST", "127.0.0.1"),
             audiosocket_port=_int("AUDIOSOCKET_PORT", 8090),
+            voice_engine=voice_engine,
             llama_base_url=os.getenv("LLAMA_BASE_URL", "http://127.0.0.1:8081/v1").rstrip("/"),
             llama_api_key=os.getenv("LLAMA_API_KEY", "floodman-local"),
             llama_model_alias=os.getenv("LLAMA_MODEL_ALIAS", "floodman-qwen3-4b"),

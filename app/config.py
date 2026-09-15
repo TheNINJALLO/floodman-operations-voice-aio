@@ -71,7 +71,7 @@ class Settings:
     database_path: Path = Path("/home/container/data/floodman-voice.sqlite3")
 
     gate_enabled: bool = True
-    gate_host: str = "0.0.0.0"
+    gate_host: str = "127.0.0.1"
     gate_port: int = 9019
     gate_min_seconds: float = 1.0
     gate_max_seconds: float = 11.0
@@ -121,7 +121,7 @@ class Settings:
     twilio_messaging_service_sid: str = ""
     twilio_sms_from_number: str = ""
 
-    ami_enabled: bool = False
+    ami_enabled: bool = True
     ami_host: str = "127.0.0.1"
     ami_port: int = 5038
     ami_username: str = "floodman"
@@ -132,6 +132,10 @@ class Settings:
     outbound_caller_id_number: str = ""
     ava_stasis_app: str = "asterisk-ai-voice-agent"
     ava_enabled: bool = True
+    voice_engine: str = "tel_agent"
+    tel_agent_enabled: bool = True
+    tel_agent_host: str = "127.0.0.1"
+    tel_agent_port: int = 9020
     asterisk_mode: str = "embedded"
     asterisk_host: str = "127.0.0.1"
     asterisk_ari_scheme: str = "http"
@@ -222,7 +226,7 @@ class Settings:
                 os.getenv("DATABASE_PATH", data_dir / "floodman-voice.sqlite3")
             ),
             gate_enabled=_env_bool("GATE_ENABLED", True),
-            gate_host=os.getenv("GATE_HOST", "0.0.0.0"),
+            gate_host=os.getenv("GATE_HOST", "127.0.0.1"),
             gate_port=_env_int("GATE_PORT", 9019),
             gate_min_seconds=_env_float("GATE_MIN_SECONDS", 1.0),
             gate_max_seconds=_env_float("GATE_MAX_SECONDS", 11.0),
@@ -280,7 +284,7 @@ class Settings:
                 "TWILIO_SMS_FROM_NUMBER",
                 os.getenv("TWILIO_FROM_NUMBER", os.getenv("TWILIO_PHONE_NUMBER", "")),
             ).strip(),
-            ami_enabled=_env_bool("AMI_ENABLED", False),
+            ami_enabled=_env_bool("AMI_ENABLED", True),
             ami_host=os.getenv("AMI_HOST", "127.0.0.1"),
             ami_port=_env_int("AMI_PORT", 5038),
             ami_username=os.getenv("AMI_USERNAME", "floodman"),
@@ -291,6 +295,13 @@ class Settings:
             outbound_caller_id_number=os.getenv("OUTBOUND_CALLER_ID_NUMBER", ""),
             ava_stasis_app=os.getenv("AVA_STASIS_APP", "asterisk-ai-voice-agent"),
             ava_enabled=_env_bool("AVA_ENABLED", True),
+            voice_engine=os.getenv("VOICE_ENGINE", "tel_agent")
+            .strip()
+            .lower()
+            .replace("-", "_"),
+            tel_agent_enabled=_env_bool("TEL_AGENT_ENABLED", True),
+            tel_agent_host=os.getenv("TEL_AGENT_HOST", "127.0.0.1").strip(),
+            tel_agent_port=_env_int("TEL_AGENT_PORT", 9020),
             asterisk_mode=os.getenv("ASTERISK_MODE", "embedded").strip().lower(),
             asterisk_host=os.getenv("ASTERISK_HOST", "127.0.0.1"),
             asterisk_ari_scheme=os.getenv("ASTERISK_ARI_SCHEME", "http").strip().lower(),

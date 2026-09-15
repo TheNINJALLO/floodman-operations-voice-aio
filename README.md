@@ -1,6 +1,10 @@
 # Floodman Operations Voice AIO v1.1.1
 
-Floodman Operations Voice AIO is a production-ready self-hosted voice stack for Floodman that combines **Asterisk**, **AVA AI**, the **Floodman operations app**, **Twilio Elastic SIP Trunking**, a **web dashboard**, a **Google-aware call gate**, **Roomflow** integration hooks, and **Pterodactyl** deployment assets.
+Floodman Operations Voice AIO is a self-hosted voice stack for Floodman that combines
+**Asterisk**, a pinned **Tel-Agent** streaming core, the **Floodman operations app**,
+**Twilio Elastic SIP Trunking**, a **web dashboard**, a **Google-aware call gate**,
+**Roomflow** integration hooks, and **Pterodactyl** deployment assets. AVA remains the
+readiness fallback while the Tel-Agent cutover is validated on live calls.
 
 The repository is prepared for controlled inbound rollout first. Outbound dialing, AMI-driven automation, and external system sync stay behind explicit safety switches until infrastructure and live-call validation are complete.
 
@@ -9,7 +13,8 @@ The repository is prepared for controlled inbound rollout first. Outbound dialin
 Core components:
 
 - **Asterisk** for SIP, RTP, ARI, AMI, transfers, and telephony control
-- **AVA AI** for conversational handling and agent logic
+- **Tel-Agent** for primary streaming STT, model/tool turns, TTS, and barge-in without LiveKit
+- **AVA AI** as the local and startup recovery engine
 - **Floodman app** for dashboard APIs, diagnostics, uploads, ledgering, and business workflows
 - **Twilio** runtime support for Elastic SIP Trunking
 - **Call gate** logic that waits through Google announcements and protects first-customer audio
@@ -127,7 +132,7 @@ Make the dashboard allocation the primary allocation. Add SIP and the entire RTP
 ```dotenv
 OUTBOUND_ENABLED=false
 TEST_CALLS_ENABLED=false
-AMI_ENABLED=false
+AMI_ENABLED=true
 ROOMFLOW_ENABLED=false
 SIP_TRUNK_MODE=disabled
 STARTUP_PREFLIGHT=warn
@@ -153,7 +158,7 @@ Before any carrier cutover:
 2. Confirm TCP 9000 responds
 3. Confirm UDP 5060 and UDP 10000-10040 are reachable where applicable
 4. Keep outbound and Roomflow disabled
-5. Keep AMI disabled
+5. Keep AMI bound to loopback; it is used only for allowlisted transfers and controlled originates
 6. Keep startup preflight on `warn` or `strict`
 7. Verify `/livez` and `/readyz`
 
@@ -174,7 +179,7 @@ Use this exact 14-step order:
 11. Perform Twilio carrier playback / test-number validation on the trunk
 12. Enable exactly one allowlisted echo test and verify two-way audio
 13. Test direct inbound DID calls plus reception, emergency, billing, and estimating transfers
-14. Test AVA direct calls first, then Google-forwarded calls, then secure SIP/TLS, then Roomflow, and only after all of that consider outbound enablement
+14. Test Tel-Agent direct calls and AVA fallback first, then Google-forwarded calls, secure SIP/TLS, and Roomflow; only after all of that consider outbound enablement
 
 ## Configuration reference
 
@@ -207,6 +212,9 @@ Use this exact 14-step order:
 | `TWILIO_FROM_NUMBER` | Outbound caller ID | blank |
 | `TWILIO_SECURE_TRUNKING` | Enable TLS/SRTP profile | `false` until UDP testing passes |
 | `TWILIO_RTP_SYMMETRIC` | NAT fallback | `false` unless specifically required |
+| `VOICE_ENGINE` | Primary conversational engine | `tel_agent` |
+| `TEL_AGENT_HOST` | Private AudioSocket bind | `127.0.0.1` |
+| `TEL_AGENT_PORT` | Private AudioSocket port | `9020` |
 
 ### Operational safety switches
 
@@ -214,7 +222,7 @@ Use this exact 14-step order:
 | --- | --- | --- |
 | `OUTBOUND_ENABLED` | Automated outbound dialing | `false` |
 | `TEST_CALLS_ENABLED` | Controlled echo testing | `false` |
-| `AMI_ENABLED` | Asterisk Manager Interface use | `false` |
+| `AMI_ENABLED` | Loopback AMI for allowlisted transfers/originates | `true` |
 | `ROOMFLOW_ENABLED` | Remote Roomflow synchronization | `false` |
 | `AUTO_INSTALL_LOCAL_MODELS` | AVA local-model auto-download | `false` |
 | `ENABLE_CARRIER_TEST_EXTENSIONS` | Twilio play-test dialplan helpers | `false` |

@@ -1,6 +1,7 @@
 ARG CUDA_VERSION=12.4.1
 ARG UBUNTU_VERSION=22.04
 ARG LLAMA_CPP_COMMIT=6d05498314db1b57f81c271080018aa2d0b89be9
+ARG TEL_AGENT_COMMIT=8a5193b2d801714e45ae6981a3506a60d562a99e
 
 FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu${UBUNTU_VERSION} AS llama-build
 ARG LLAMA_CPP_COMMIT
@@ -28,6 +29,7 @@ RUN git clone https://github.com/ggml-org/llama.cpp.git && \
 FROM nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu${UBUNTU_VERSION}
 ARG CONTAINER_UID=988
 ARG CONTAINER_GID=988
+ARG TEL_AGENT_COMMIT
 ENV DEBIAN_FRONTEND=noninteractive \
     VIRTUAL_ENV=/opt/venv \
     PATH=/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
@@ -64,14 +66,22 @@ COPY templates ./templates
 COPY static ./static
 COPY supervisor ./supervisor
 COPY THIRD_PARTY_LICENSES.md README.md ./
+RUN git init /opt/tel-agent && \
+    git -C /opt/tel-agent remote add origin https://github.com/Dpro-at/Tel-Agent.git && \
+    git -C /opt/tel-agent fetch --depth 1 origin "${TEL_AGENT_COMMIT}" && \
+    git -C /opt/tel-agent checkout --detach FETCH_HEAD && \
+    test "$(git -C /opt/tel-agent rev-parse HEAD)" = "${TEL_AGENT_COMMIT}" && \
+    grep -q "GNU AFFERO GENERAL PUBLIC LICENSE" /opt/tel-agent/LICENSE && \
+    ! grep -Rqs "import livekit" /opt/floodman/app
 RUN python3 -m venv /opt/venv && \
     /opt/venv/bin/pip install --upgrade pip setuptools wheel && \
     /opt/venv/bin/pip install . && \
+    PYTHONPATH=/opt/tel-agent /opt/venv/bin/python -c "from agent.providers.llm.openai_compatible import OpenAICompatibleLLM; from agent.providers.stt.deepgram import DeepgramSTT; from agent.providers.tts.elevenlabs import ElevenLabsTTS; assert OpenAICompatibleLLM and DeepgramSTT and ElevenLabsTTS" && \
     /opt/venv/bin/python --version && \
     /opt/venv/bin/python -c "import app, yaml; print('Floodman Python image contract: PASS')" && \
     test -x /opt/venv/bin/python && \
     mkdir -p /home/container/data && \
-    chown -R container:container /home/container /opt/floodman /opt/llama && \
+    chown -R container:container /home/container /opt/floodman /opt/llama /opt/tel-agent && \
     chmod +x /opt/floodman/scripts/*.sh /opt/floodman/scripts/*.py
 USER container
 WORKDIR /home/container

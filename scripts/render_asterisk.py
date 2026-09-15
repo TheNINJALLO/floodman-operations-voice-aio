@@ -412,6 +412,10 @@ def main() -> None:
     rtp_start = int(env("RTP_START", "10000"))
     rtp_end = int(env("RTP_END", "10040"))
     gate_port = int(env("GATE_PORT", "9019"))
+    tel_agent_port = int(env("TEL_AGENT_PORT", "9020"))
+    voice_engine = env("VOICE_ENGINE", "tel_agent").strip().lower().replace("-", "_")
+    if voice_engine not in {"tel_agent", "ava"}:
+        raise ValueError("VOICE_ENGINE must be tel_agent or ava")
     if rtp_end < rtp_start:
         raise ValueError("RTP_END must be greater than or equal to RTP_START")
     if rtp_end - rtp_start + 1 < 20:
@@ -514,7 +518,7 @@ timestampevents = yes
 [{ami_user}]
 secret = {ami_secret}
 read = system,call
-write = originate
+write = originate,call
 permit = 127.0.0.1/255.255.255.255
 """, 0o600)
 
@@ -617,6 +621,27 @@ exten => 8991,1,NoOp(Twilio Play termination test two)
             f" same => n,MixMonitor(${{FLOODMAN_REC_FILE}},{beep_flag})\n"
         )
 
+    if voice_engine == "tel_agent":
+        tel_agent_inbound_lines = f"""
+ same => n,Set(TEL_AGENT_READY=${{STAT(e,{data_dir / 'runtime/tel-agent-ready'})}})
+ same => n,GotoIf($["${{TEL_AGENT_READY}}"="1"]?tel-agent:ava)
+ same => n(tel-agent),TryExec(AudioSocket(${{FLOODMAN_GATE_UUID}},${{FLOODMAN_TEL_AGENT_SERVICE}}))
+ same => n,NoOp(Floodman Tel-Agent AudioSocket completed with ${{TRYSTATUS}})
+ same => n,GotoIf($["${{TRYSTATUS}}"="FAILED"]?ava)
+ same => n,Hangup()
+""".rstrip()
+        tel_agent_outbound_lines = f"""
+ same => n,Set(TEL_AGENT_READY=${{STAT(e,{data_dir / 'runtime/tel-agent-ready'})}})
+ same => n,GotoIf($["${{TEL_AGENT_READY}}"="1"]?outbound-tel-agent:outbound-ava)
+ same => n(outbound-tel-agent),TryExec(AudioSocket(${{FLOODMAN_GATE_UUID}},${{FLOODMAN_TEL_AGENT_SERVICE}}))
+ same => n,NoOp(Floodman outbound Tel-Agent completed with ${{TRYSTATUS}})
+ same => n,GotoIf($["${{TRYSTATUS}}"="FAILED"]?outbound-ava)
+ same => n,Hangup()
+""".rstrip()
+    else:
+        tel_agent_inbound_lines = " same => n,Goto(ava)"
+        tel_agent_outbound_lines = " same => n,Goto(outbound-ava)"
+
     extensions = f"""
 [general]
 static=yes
@@ -625,6 +650,7 @@ clearglobalvars=no
 
 [globals]
 FLOODMAN_GATE_SERVICE=127.0.0.1:{gate_port}
+FLOODMAN_TEL_AGENT_SERVICE=127.0.0.1:{tel_agent_port}
 
 [default]
 include => from-floodman-trunk
@@ -651,10 +677,12 @@ exten => s,1,NoOp(Floodman inbound call gate)
 {inbound_test_lines.rstrip()}
 {rec_inbound_lines.rstrip()}
  same => n,AGI({agi / 'agi_gate_start.py'})
- same => n,GotoIf($["${{FLOODMAN_GATE_BYPASS}}"="1"]?ava)
+ same => n,GotoIf($["${{FLOODMAN_GATE_BYPASS}}"="1"]?post-gate)
  same => n,TryExec(AudioSocket(${{FLOODMAN_GATE_UUID}},${{FLOODMAN_GATE_SERVICE}}))
  same => n,NoOp(Floodman gate AudioSocket completed with ${{TRYSTATUS}})
  same => n,AGI({agi / 'agi_gate_finish.py'})
+ same => n(post-gate),NoOp(Floodman call gate phase complete)
+{tel_agent_inbound_lines}
  same => n(ava),Set(__AI_AGENT=${{IF($["${{AI_AGENT}}"=""]?floodman_inbound:${{AI_AGENT}})}})
  same => n,Set(__AI_PROVIDER=${{IF($["${{AI_PROVIDER}}"=""]?{env('DEFAULT_PROVIDER','local_hybrid')}:${{AI_PROVIDER}})}})
  same => n,Set(__AVA_STASIS_ATTEMPTS=0)
@@ -684,6 +712,9 @@ exten => s,1,NoOp(Floodman outbound call)
  same => n,Set(__FLOODMAN_DIRECTION=outbound)
 {rec_outbound_lines.rstrip()}
  same => n,Answer()
+ same => n,AGI({agi / 'agi_gate_start.py'})
+{tel_agent_outbound_lines}
+ same => n(outbound-ava),NoOp(Floodman outbound AVA fallback)
  same => n,Stasis({safe(env('AVA_STASIS_APP','asterisk-ai-voice-agent'), r'[A-Za-z0-9_.-]+', 'Stasis app', False)})
  same => n,GotoIf($["${{STASISSTATUS}}"="FAILED"]?outbound-provider-failure)
  same => n,Hangup()
@@ -695,6 +726,12 @@ exten => h,1,NoOp(Floodman outbound hangup handler)
 [floodman-transfer]
 exten => s,1,NoOp(Floodman transfer pre-bridge)
  same => n,Return()
+
+[floodman-tel-agent-fallback]
+exten => s,1,NoOp(Floodman Tel-Agent runtime fallback to AVA)
+ same => n,GotoIf($["${{FLOODMAN_DIRECTION}}"="outbound"]?outbound)
+ same => n,Goto(floodman-inbound,s,ava)
+ same => n(outbound),Goto(floodman-outbound,s,outbound-ava)
 
 [from-internal]
 {transfer_context}

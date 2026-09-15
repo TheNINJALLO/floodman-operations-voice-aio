@@ -542,6 +542,66 @@
       "field_type": "text"
     },
     {
+      "name": "Primary Voice Engine",
+      "description": "Use the pinned Tel-Agent streaming core over private AudioSocket, or select AVA for rollback.",
+      "env_variable": "VOICE_ENGINE",
+      "default_value": "tel_agent",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|in:tel_agent,ava",
+      "field_type": "text"
+    },
+    {
+      "name": "Tel-Agent Enabled",
+      "description": "Starts the private Tel-Agent AudioSocket service when all provider credentials are configured.",
+      "env_variable": "TEL_AGENT_ENABLED",
+      "default_value": "1",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|boolean",
+      "field_type": "text"
+    },
+    {
+      "name": "Deepgram API Key",
+      "description": "Secret used by Tel-Agent streaming speech recognition.",
+      "env_variable": "DEEPGRAM_API_KEY",
+      "default_value": "",
+      "user_viewable": false,
+      "user_editable": true,
+      "rules": "nullable|string|max:2048",
+      "field_type": "text"
+    },
+    {
+      "name": "Groq API Key",
+      "description": "Secret used by the Tel-Agent OpenAI-compatible reasoning provider.",
+      "env_variable": "GROQ_API_KEY",
+      "default_value": "",
+      "user_viewable": false,
+      "user_editable": true,
+      "rules": "nullable|string|max:2048",
+      "field_type": "text"
+    },
+    {
+      "name": "ElevenLabs API Key",
+      "description": "Secret used by Tel-Agent streaming speech synthesis.",
+      "env_variable": "ELEVENLABS_API_KEY",
+      "default_value": "",
+      "user_viewable": false,
+      "user_editable": true,
+      "rules": "nullable|string|max:2048",
+      "field_type": "text"
+    },
+    {
+      "name": "ElevenLabs Voice ID",
+      "description": "Approved ElevenLabs voice used for customer calls.",
+      "env_variable": "ELEVENLABS_VOICE_ID",
+      "default_value": "",
+      "user_viewable": false,
+      "user_editable": true,
+      "rules": "nullable|string|max:256",
+      "field_type": "text"
+    },
+    {
       "name": "Roomflow Base URL",
       "description": "Base URL for the Floodman Roomflow deployment.",
       "env_variable": "ROOMFLOW_BASE_URL",
@@ -573,9 +633,9 @@
     },
     {
       "name": "AMI Enabled",
-      "description": "Enables Asterisk Manager Interface access for scheduled outbound calls. Keep false until outbound configuration is complete.",
+      "description": "Enables loopback-only Asterisk Manager access for allowlisted live transfers and controlled outbound calls.",
       "env_variable": "AMI_ENABLED",
-      "default_value": "0",
+      "default_value": "1",
       "user_viewable": true,
       "user_editable": true,
       "rules": "required|boolean",

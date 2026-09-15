@@ -2,6 +2,7 @@ FROM ubuntu:24.04 AS base
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG AVA_COMMIT=18d4e769335f3b643aca80e084c7e66f0969491e
+ARG TEL_AGENT_COMMIT=8a5193b2d801714e45ae6981a3506a60d562a99e
 ARG PRELOAD_WHISPER_MODEL=tiny.en
 ARG PIPER_TTS_VERSION=1.6.0
 ARG LLAMA_CPP_PYTHON_VERSION=0.3.34
@@ -80,9 +81,21 @@ RUN git init /opt/ava \
        /opt/floodman-build/patch_ava_flux.py \
        /opt/floodman-build/patch_ava_direct_tool_prompts.py
 
+# Tel-Agent is installed as a pinned library without its optional LiveKit extra.
+# Floodman's existing loopback Asterisk AudioSocket transport is the phone binding.
+RUN git init /opt/tel-agent \
+    && git -C /opt/tel-agent remote add origin https://github.com/Dpro-at/Tel-Agent.git \
+    && git -C /opt/tel-agent fetch --depth 1 origin ${TEL_AGENT_COMMIT} \
+    && git -C /opt/tel-agent checkout --detach FETCH_HEAD \
+    && test "$(git -C /opt/tel-agent rev-parse HEAD)" = "${TEL_AGENT_COMMIT}" \
+    && test -f /opt/tel-agent/LICENSE \
+    && grep -q "GNU AFFERO GENERAL PUBLIC LICENSE" /opt/tel-agent/LICENSE
+
 RUN pip install --no-cache-dir -r /opt/ava/requirements.txt \
     && pip install --no-cache-dir -r /opt/ava/local_ai_server/requirements-base.txt \
-    && pip install --no-cache-dir "faster-whisper>=1.1,<2"
+    && pip install --no-cache-dir "faster-whisper>=1.1,<2" \
+    && pip install --no-cache-dir "httpx>=0.28,<1" "websockets>=13" \
+    && PYTHONPATH=/opt/tel-agent python -c "from agent.providers.stt.deepgram import DeepgramSTT; from agent.providers.tts.elevenlabs import ElevenLabsTTS; from agent.session.turn import speak; assert DeepgramSTT and ElevenLabsTTS and speak"
 
 WORKDIR /opt/floodman
 COPY . /opt/floodman
@@ -93,7 +106,7 @@ FROM base AS runtime-base
 
 RUN useradd --create-home --home-dir /home/container --uid 988 --shell /bin/bash container \
     && mkdir -p /opt/model-cache /home/container/data/runtime/supervisor \
-    && chown -R container:container /home/container /opt/ava /opt/floodman /opt/model-cache
+    && chown -R container:container /home/container /opt/ava /opt/tel-agent /opt/floodman /opt/model-cache
 
 EXPOSE 9000/tcp 5060/udp 5061/tcp 10000-10040/udp
 # Do not declare /home/container or a child as a Docker VOLUME.

@@ -135,6 +135,26 @@ def static_configuration_checks(settings: Settings) -> dict[str, dict[str, Any]]
     checks: dict[str, dict[str, Any]] = {}
     production = settings.environment.lower() == "production"
 
+    voice_engine_ok = settings.voice_engine in {"tel_agent", "ava"}
+    checks["voice_engine"] = _component(
+        voice_engine_ok,
+        "ready" if voice_engine_ok else "invalid",
+        critical=True,
+        detail=f"Primary voice engine: {settings.voice_engine}",
+    )
+    tel_host_ok = settings.tel_agent_host in {"127.0.0.1", "::1", "localhost"}
+    checks["tel_agent_bind"] = _component(
+        tel_host_ok,
+        "ready" if tel_host_ok else "unsafe",
+        critical=settings.voice_engine == "tel_agent",
+        detail=(
+            "Tel-Agent AudioSocket is restricted to loopback"
+            if tel_host_ok
+            else "TEL_AGENT_HOST must be a loopback address"
+        ),
+        metadata={"host": settings.tel_agent_host, "port": settings.tel_agent_port},
+    )
+
     parsed = urlparse(settings.public_base_url)
     https_ok = parsed.scheme == "https" or not production
     checks["public_url"] = _component(
@@ -319,6 +339,23 @@ async def collect_diagnostics(
             else "Call gate disabled" if not settings.gate_enabled else "Call gate did not start"
         ),
         metadata={"port": settings.gate_port, "transcriber": settings.gate_transcriber},
+    )
+
+    tel_marker = settings.data_dir / "runtime/tel-agent-ready"
+    tel_selected = settings.voice_engine == "tel_agent" and settings.tel_agent_enabled
+    tel_ready = tel_marker.is_file()
+    components["tel_agent_runtime"] = _component(
+        tel_ready or not tel_selected,
+        "ready" if tel_ready else "disabled" if not tel_selected else "fallback",
+        critical=False,
+        detail=(
+            "Tel-Agent private AudioSocket listener is ready"
+            if tel_ready
+            else "Tel-Agent is not ready; calls route to the AVA recovery engine"
+            if tel_selected
+            else "Tel-Agent is not selected"
+        ),
+        metadata={"port": settings.tel_agent_port, "fallback": "ava"},
     )
 
     if include_network and settings.asterisk_mode == "embedded":

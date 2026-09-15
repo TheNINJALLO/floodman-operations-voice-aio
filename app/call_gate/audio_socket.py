@@ -66,6 +66,8 @@ class AudioSocketGateServer:
         self._tasks: set[asyncio.Task[None]] = set()
 
     async def start(self) -> None:
+        if self.settings.gate_host not in {"127.0.0.1", "::1", "localhost"}:
+            raise ValueError("Call-gate AudioSocket must bind to loopback")
         self.server = await asyncio.start_server(
             self._accept,
             self.settings.gate_host,

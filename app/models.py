@@ -219,6 +219,28 @@ class CallCompletedEvent(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class TranscriptTurnEvent(BaseModel):
+    call_id: str = Field(min_length=1, max_length=160)
+    direction: str = "inbound"
+    sequence: int = Field(ge=0, le=10000)
+    role: str
+    text: str = Field(min_length=1, max_length=100000)
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    language: str | None = Field(default=None, max_length=35)
+    interrupted: bool = False
+    engine: str = "tel-agent"
+
+
+class TelAgentTransferRequest(BaseModel):
+    gate_uuid: str = Field(min_length=1, max_length=64)
+    destination: str = Field(min_length=1, max_length=64)
+
+
+class TelAgentFallbackRequest(BaseModel):
+    gate_uuid: str = Field(min_length=1, max_length=64)
+    reason: str = Field(default="provider_failure", max_length=80)
+
+
 class TestCallRequest(BaseModel):
     phone: str
     label: str = "production_audio_test"

@@ -151,6 +151,82 @@ class AMIClient:
             except Exception:
                 pass
 
+    async def redirect(
+        self,
+        *,
+        channel: str,
+        context: str,
+        extension: str,
+        priority: int = 1,
+    ) -> OriginateResult:
+        """Move a live channel to an allowlisted dialplan destination."""
+        for name, value, pattern in (
+            ("channel", channel, r"[A-Za-z0-9_./@:+-]{1,180}"),
+            ("context", context, r"[A-Za-z0-9_-]{1,64}"),
+            ("extension", extension, r"[A-Za-z0-9_-]{1,32}"),
+        ):
+            if not re.fullmatch(pattern, value):
+                raise ValueError(f"Unsafe AMI redirect {name}")
+        action_id = str(uuid.uuid4())
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(self.settings.ami_host, self.settings.ami_port),
+            timeout=min(5.0, self.settings.ami_timeout_seconds),
+        )
+        try:
+            banner = await asyncio.wait_for(reader.readline(), timeout=3.0)
+            if not banner.lower().startswith(b"asterisk call manager"):
+                raise AMIError("Unexpected AMI banner")
+            login = await self._send_action(
+                writer,
+                reader,
+                [
+                    ("Action", "Login"),
+                    ("Username", self.settings.ami_username),
+                    ("Secret", self.settings.ami_secret),
+                    ("Events", "off"),
+                    ("ActionID", f"login-{action_id}"),
+                ],
+                min(5.0, self.settings.ami_timeout_seconds),
+            )
+            if login.get("Response", "").lower() != "success":
+                raise AMIError(login.get("Message", "AMI login failed"))
+            response = await self._send_action(
+                writer,
+                reader,
+                [
+                    ("Action", "Redirect"),
+                    ("ActionID", action_id),
+                    ("Channel", channel),
+                    ("Context", context),
+                    ("Exten", extension),
+                    ("Priority", str(max(1, priority))),
+                ],
+                min(5.0, self.settings.ami_timeout_seconds),
+            )
+            ok = response.get("Response", "").lower() == "success"
+            return OriginateResult(
+                ok=ok,
+                action_id=action_id,
+                message=response.get("Message", response.get("Response", "")),
+                response=response,
+                channel=channel,
+            )
+        finally:
+            try:
+                await self._send_action(
+                    writer,
+                    reader,
+                    [("Action", "Logoff"), ("ActionID", f"logoff-{action_id}")],
+                    1.5,
+                )
+            except Exception:
+                pass
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except Exception:
+                pass
+
     async def originate_test_call(self, *, phone: str, label: str = "production_audio_test") -> OriginateResult:
         """Call an allowlisted operator and enter the local Asterisk echo-test context."""
         phone_digits = re.sub(r"[^0-9+]", "", phone)
@@ -324,8 +400,11 @@ class AMIClient:
                 ("Action", "Originate"),
                 ("ActionID", action_id),
                 ("Channel", channel),
-                ("Application", "Stasis"),
-                ("Data", self.settings.ava_stasis_app),
+                # Enter Floodman's dialplan so the selected voice engine can use
+                # Tel-Agent first and retain AVA as the readiness fallback.
+                ("Context", "floodman-outbound"),
+                ("Exten", "s"),
+                ("Priority", "1"),
                 ("CallerID", caller_id),
                 ("Timeout", str(int(self.settings.ami_timeout_seconds * 1000))),
                 ("Async", "true"),

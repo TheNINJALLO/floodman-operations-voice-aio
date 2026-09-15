@@ -79,6 +79,10 @@ export RTP_END="${RTP_END:-10040}"
 export ARI_PORT="${ARI_PORT:-8088}"
 export AMI_PORT="${AMI_PORT:-5038}"
 export GATE_PORT="${GATE_PORT:-9019}"
+export VOICE_ENGINE="${VOICE_ENGINE:-tel_agent}"
+export TEL_AGENT_ENABLED="${TEL_AGENT_ENABLED:-true}"
+export TEL_AGENT_HOST="${TEL_AGENT_HOST:-127.0.0.1}"
+export TEL_AGENT_PORT="${TEL_AGENT_PORT:-9020}"
 export ASTERISK_HOST="${ASTERISK_HOST:-127.0.0.1}"
 export ASTERISK_ARI_PORT="${ASTERISK_ARI_PORT:-${ARI_PORT}}"
 export ASTERISK_ARI_SCHEME="${ASTERISK_ARI_SCHEME:-http}"
@@ -295,6 +299,7 @@ cat <<BANNER
  Web panel: ${PUBLIC_BASE_URL}
  ${ADMIN_TOKEN_LINE}
  Gate AudioSocket: 127.0.0.1:${GATE_PORT}
+ Voice engine: ${VOICE_ENGINE} (Tel-Agent AudioSocket 127.0.0.1:${TEL_AGENT_PORT})
  SIP mode: ${SIP_TRUNK_MODE:-disabled}
  Asterisk mode: ${ASTERISK_MODE:-embedded}
  AVA provider: ${AVA_PROVIDER:-local_hybrid}

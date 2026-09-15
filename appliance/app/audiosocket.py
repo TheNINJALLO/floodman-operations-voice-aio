@@ -394,6 +394,14 @@ class AudioSocketServer:
     ) -> AsyncIterator[bytes]:
         if not units:
             return
+        if getattr(self.tts, "streaming", False):
+            for text, speed, pause_ms in units:
+                async for pcm in self.tts.stream_pcm(text, speed=speed):
+                    if pcm:
+                        yield pcm
+                if pause_ms:
+                    yield b"\x00\x00" * max(0, int(8000 * pause_ms / 1000))
+            return
         task: asyncio.Task[bytes] | None = asyncio.create_task(self._synthesize_unit(units[0][0], units[0][1]))
         try:
             for index, (_text, _speed, pause_ms) in enumerate(units):
@@ -471,17 +479,10 @@ class AudioSocketServer:
             )
             greeting = self.core.greeting()
             self.core.database.add_message(session.call_id, "assistant", greeting)
-            started = time.monotonic()
             logger.info("call_event call_uuid=%s stage=greeting_synthesis_started", call_uuid)
-            greeting_audio = await self.tts.synthesize(greeting)
-            logger.info(
-                "call_event call_uuid=%s stage=greeting_synthesis_completed duration_ms=%d audio_bytes=%d",
-                call_uuid,
-                int((time.monotonic() - started) * 1000),
-                len(greeting_audio),
+            greeting_interrupted = await self._speak_reply(
+                connection, VoiceReply(text=greeting), call_uuid
             )
-            logger.info("call_event call_uuid=%s stage=first_greeting_frame", call_uuid)
-            greeting_interrupted = await connection.speak(greeting_audio)
             logger.info(
                 "call_event call_uuid=%s stage=last_greeting_frame interrupted=%s",
                 call_uuid,

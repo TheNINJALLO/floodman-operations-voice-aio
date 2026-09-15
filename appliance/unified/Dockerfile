@@ -4,6 +4,7 @@ ARG NODE22_IMAGE=node:22.22.2-bookworm-slim@sha256:9f6d5975c7dca860947d3915877f8
 ARG CUDA_DEVEL_IMAGE=nvidia/cuda:12.4.1-devel-ubuntu22.04@sha256:da6791294b0b04d7e65d87b7451d6f2390b4d36225ab0701ee7dfec5769829f5
 ARG CUDA_RUNTIME_IMAGE=nvidia/cuda:12.4.1-runtime-ubuntu22.04@sha256:517da2300c184c9999ec203c2665244bdebd3578d12fcc7065e83667932643d9
 ARG LLAMA_CPP_COMMIT=6d05498314db1b57f81c271080018aa2d0b89be9
+ARG TEL_AGENT_COMMIT=8a5193b2d801714e45ae6981a3506a60d562a99e
 ARG PYTHON_VERSION=3.12.11
 ARG PYTHON_SOURCE_SHA256=c30bb24b7f1e9a19b11b55a546434f74e739bb4c271a3e3a80ff4380d49f7adb
 ARG POSTGRESQL_VERSION=14.18
@@ -94,6 +95,7 @@ ARG BUSINESS_RUNTIME_URL
 ARG BUSINESS_RUNTIME_SHA256
 ARG BUSINESS_LAUNCHER_URL
 ARG BUSINESS_LAUNCHER_SHA256
+ARG TEL_AGENT_COMMIT
 ENV DEBIAN_FRONTEND=noninteractive \
     VIRTUAL_ENV=/opt/voice-venv \
     PATH=/opt/node24/bin:/opt/python312/bin:/usr/lib/postgresql/14/bin:/opt/voice-venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
@@ -105,6 +107,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     NVIDIA_VISIBLE_DEVICES=all \
     NVIDIA_DRIVER_CAPABILITIES=compute,utility \
     LD_LIBRARY_PATH=/opt/python312/lib:/opt/llama:/usr/local/cuda/lib64:${LD_LIBRARY_PATH}
+
+ENV VOICE_ENGINE=tel_agent
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       asterisk bash build-essential ca-certificates cargo coreutils curl espeak-ng ffmpeg \
@@ -199,9 +203,18 @@ COPY templates /tmp/voice-source/templates
 COPY static /tmp/voice-source/static
 COPY THIRD_PARTY_LICENSES.md README.md /tmp/voice-source/
 
+RUN git init /opt/tel-agent \
+    && git -C /opt/tel-agent remote add origin https://github.com/Dpro-at/Tel-Agent.git \
+    && git -C /opt/tel-agent fetch --depth 1 origin "${TEL_AGENT_COMMIT}" \
+    && git -C /opt/tel-agent checkout --detach FETCH_HEAD \
+    && test "$(git -C /opt/tel-agent rev-parse HEAD)" = "${TEL_AGENT_COMMIT}" \
+    && grep -q "GNU AFFERO GENERAL PUBLIC LICENSE" /opt/tel-agent/LICENSE \
+    && ! grep -Rqs "import livekit" /tmp/voice-source/app
+
 RUN python3 -m venv /opt/voice-venv && \
     /opt/voice-venv/bin/pip install --upgrade pip setuptools wheel && \
     cd /tmp/voice-source && /opt/voice-venv/bin/pip install . && \
+    PYTHONPATH=/opt/tel-agent /opt/voice-venv/bin/python -c "from agent.providers.llm.openai_compatible import OpenAICompatibleLLM; from agent.providers.stt.deepgram import DeepgramSTT; from agent.providers.tts.elevenlabs import ElevenLabsTTS; assert OpenAICompatibleLLM and DeepgramSTT and ElevenLabsTTS" && \
     mkdir -p /opt/voice /opt/floodman/scripts && \
     cp -a /tmp/voice-source/app /tmp/voice-source/config /tmp/voice-source/knowledge \
       /tmp/voice-source/templates /tmp/voice-source/static /tmp/voice-source/README.md \
@@ -286,7 +299,7 @@ RUN set -eux; \
     chmod 0755 /usr/local/bin/mailpit /opt/floodman/aio/*.sh /opt/floodman/scripts/*.sh \
       /opt/floodman/scripts/*.py /opt/floodman/unified/*.sh /opt/floodman/unified/bin/*; \
     chown -R container:container /home/container /opt/floodman /opt/voice /opt/voice-venv \
-      /opt/pydeps /opt/llama /srv/gauzy /opt/gauzy-web-pristine /opt/documenso
+      /opt/pydeps /opt/llama /opt/tel-agent /srv/gauzy /opt/gauzy-web-pristine /opt/documenso
 
 RUN /opt/floodman/unified/image-contract.sh
 

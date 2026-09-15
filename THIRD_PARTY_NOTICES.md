@@ -17,3 +17,17 @@ The full container installs `piper-tts==1.6.0`, which is distributed under GPL-3
 The runtime also uses Asterisk, FastAPI, Uvicorn, HTTPX, Pydantic, PyYAML, faster-whisper, SQLite, Supervisor, FFmpeg, optional Vosk, optional llama-cpp-python, and their transitive dependencies. Each retains its own license.
 
 No third-party model weights are redistributed in this source archive. Model downloads remain subject to the model publisher's license and acceptable-use terms.
+
+## Tel-Agent
+
+Floodman's optional primary voice runtime installs Tel-Agent from
+<https://github.com/Dpro-at/Tel-Agent> at commit
+`8a5193b2d801714e45ae6981a3506a60d562a99e`.
+
+Tel-Agent is licensed under AGPL-3.0-or-later. Its complete pinned source and license
+are retained at `/opt/tel-agent` in the distributed container image. The Floodman
+AudioSocket adapter in `integrations/tel_agent/` is marked AGPL-3.0-or-later. No
+LiveKit package or Tel-Agent `voice` extra is installed.
+
+Anyone distributing a combined image should review the AGPL obligations that apply to
+that distribution.

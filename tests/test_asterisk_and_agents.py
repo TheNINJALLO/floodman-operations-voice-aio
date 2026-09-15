@@ -154,6 +154,10 @@ async def test_ami_originate_sets_ava_correlation_variables(settings):
 
     assert result.ok is True
     originate = actions[1]
+    assert originate["Context"] == ["floodman-outbound"]
+    assert originate["Exten"] == ["s"]
+    assert originate["Priority"] == ["1"]
+    assert "Application" not in originate
     variables = set(originate["Variable"])
     assert "AI_AGENT=floodman_callback" in variables
     assert "AI_CONTEXT=floodman_callback" in variables

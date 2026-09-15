@@ -2,6 +2,8 @@
 
 This repository does not redistribute model weights. First boot downloads them from their upstream sources.
 
+- Tel-Agent commit `8a5193b2d801714e45ae6981a3506a60d562a99e`: AGPL-3.0-or-later. The complete pinned source and license are retained at `/opt/tel-agent`; LiveKit and the optional `voice` extra are not installed.
+
 - llama.cpp: MIT license
 - Qwen3 model family: Apache 2.0 model license
 - Faster-Whisper: MIT license

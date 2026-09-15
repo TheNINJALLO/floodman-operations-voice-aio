@@ -33,6 +33,7 @@ from app.registry import CallRegistry
 from app.sms_consent import SMS_DISCLOSURE, SMS_DISCLOSURE_VERSION, normalize_sms_phone
 from app.stt import LocalSTT
 from app.suite_bridge import BusinessSuiteBridge
+from app.tel_agent_runtime import TelAgentLLM, TelAgentSTT, TelAgentTTS
 from app.tts import LocalTTS
 from app.voice_core import CallSession, VoiceCore
 
@@ -68,9 +69,14 @@ class Runtime:
         self.auth = AuthManager(self.database, settings.admin_token, settings.session_hours)
         self.business = BusinessDirectory(settings.service_area_path)
         self.knowledge = KnowledgeBase(settings.knowledge_dir)
-        self.llm = LocalLLM(settings)
-        self.stt = LocalSTT(settings)
-        self.tts = LocalTTS(settings)
+        if settings.voice_engine == "tel_agent":
+            self.llm = TelAgentLLM(settings)
+            self.stt = TelAgentSTT(settings)
+            self.tts = TelAgentTTS(settings)
+        else:
+            self.llm = LocalLLM(settings)
+            self.stt = LocalSTT(settings)
+            self.tts = LocalTTS(settings)
         self.registry = CallRegistry(settings.runtime_dir)
         self.notifier = TeamNotifier(settings, self.database)
         self.suite_bridge = BusinessSuiteBridge(settings, self.database)
@@ -260,11 +266,17 @@ async def health() -> dict[str, Any]:
 @app.get("/ready")
 async def ready() -> JSONResponse:
     llm = await runtime.llm.health() if runtime.ready else False
+    stt_ready = getattr(runtime.stt, "ready", runtime.stt._model is not None)
+    tts_ready = getattr(runtime.tts, "ready", runtime.tts._kokoro is not None)
     value = {
         "ready": bool(runtime.ready and llm),
         "llm": llm,
-        "stt": runtime.stt._model is not None,
-        "tts": runtime.tts._kokoro is not None,
+        "stt": stt_ready,
+        "tts": tts_ready,
+        "voice_engine": settings.voice_engine,
+        "llm_provider": getattr(runtime.llm, "provider_name", "local-llama"),
+        "stt_provider": getattr(runtime.stt, "provider_name", "local-whisper"),
+        "tts_provider": getattr(runtime.tts, "provider_name", "local-kokoro"),
         "email": runtime.notifier.email.configuration.configured,
         "sms": settings.twilio_sms_configured,
     }
