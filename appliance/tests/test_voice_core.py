@@ -361,3 +361,21 @@ async def test_notification_failure_does_not_trigger_technical_call_failure(tmp_
     assert session.state.completed
     assert "all set" in reply.text.lower()
     assert db.get_call(session.call_id)["notification_status"]=="delivery_error"
+
+
+@pytest.mark.asyncio
+async def test_tel_agent_mode_records_only_delivered_assistant_speech(tmp_path,project_root,monkeypatch):
+    s=settings(tmp_path,project_root,monkeypatch);db=Database(s.database_path);core=VoiceCore(s,db,BusinessDirectory(s.service_area_path),KnowledgeBase(project_root/"knowledge"),StubLLM(),StubNotifier())
+    session=core.create_session("spoken-only-transcript");session.defer_assistant_recording=True
+
+    reply=await core.process(session,"Water is in my basement")
+    before=db.get_call(session.call_id)["messages"]
+    core.record_assistant(session,"Which part of the basement is affected?")
+    after=db.get_call(session.call_id)["messages"]
+
+    assert reply.text
+    assert [message["role"] for message in before]==["caller"]
+    assert [message["text"] for message in after]==[
+        "Water is in my basement",
+        "Which part of the basement is affected?",
+    ]

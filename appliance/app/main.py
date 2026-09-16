@@ -277,6 +277,24 @@ async def ready() -> JSONResponse:
         "llm_provider": getattr(runtime.llm, "provider_name", "local-llama"),
         "stt_provider": getattr(runtime.stt, "provider_name", "local-whisper"),
         "tts_provider": getattr(runtime.tts, "provider_name", "local-kokoro"),
+        "conversation_runtime": (
+            "tel-agent-full-duplex" if settings.voice_engine == "tel_agent" else "floodman-local"
+        ),
+        "streaming_stt": bool(getattr(runtime.stt, "streaming", False)),
+        "streaming_llm": settings.voice_engine == "tel_agent",
+        "streaming_tts": bool(getattr(runtime.tts, "streaming", False)),
+        "conversation_features": [
+            "continuous-transcription",
+            "streamed-token-to-phrase-replies",
+            "barge-in",
+            "spoken-only-transcript",
+            "caller-id",
+            "deterministic-transfer",
+            "local-first-intake",
+            "knowledge",
+            "team-notifications",
+            "business-suite-sync",
+        ] if settings.voice_engine == "tel_agent" else [],
         "email": runtime.notifier.email.configuration.configured,
         "sms": settings.twilio_sms_configured,
     }

@@ -34,7 +34,7 @@
   </section>
   <aside class="panel conversation-panel">
     <div class="panel-heading"><div><h2>Conversation</h2><p>{{ call.messages | length }} messages</p></div></div>
-    <div class="conversation">{% for item in call.messages %}<article class="bubble {{ item.role }}"><small>{{ 'AI assistant' if item.role == 'assistant' else 'Caller' }} · <span class="js-date">{{ item.created_at }}</span></small><p>{{ item.text }}</p></article>{% else %}<div class="empty-state small"><p>No transcript was captured.</p></div>{% endfor %}</div>
+    <div class="conversation">{% for item in call.messages %}<article class="bubble {{ item.role }}"><small>{{ 'AI assistant' if item.role == 'assistant' else 'Caller' }}{% if item.interrupted %} · interrupted{% endif %}{% if item.language %} · {{ item.language }}{% endif %} · <span class="js-date">{{ item.created_at }}</span></small><p>{{ item.text }}</p></article>{% else %}<div class="empty-state small"><p>No transcript was captured.</p></div>{% endfor %}</div>
   </aside>
 </div>
 <section class="panel">

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from app.tel_agent_runtime import _provider_payload, mulaw_to_slin8
+from app.tel_agent_runtime import DeepgramTurnAssembler, _provider_payload, mulaw_to_slin8
 
 
 def test_unified_image_pins_tel_agent_without_livekit(project_root: Path) -> None:
@@ -14,9 +14,12 @@ def test_unified_image_pins_tel_agent_without_livekit(project_root: Path) -> Non
         encoding="utf-8"
     )
     adapter = (project_root / "app/tel_agent_runtime.py").read_text(encoding="utf-8")
+    phone = (project_root / "app/tel_agent_phone.py").read_text(encoding="utf-8")
     assert "TEL_AGENT_COMMIT=8a5193b2d801714e45ae6981a3506a60d562a99e" in dockerfile
     assert "ENV VOICE_ENGINE=tel_agent" in dockerfile
     assert "PYTHONPATH=/opt/tel-agent:/opt/voice" in launcher
+    assert "from agent.session.turn import speak" in dockerfile
+    assert "from agent.session.turn import speak" in phone
     assert "import livekit" not in adapter.lower()
     assert "[voice]" not in dockerfile
 
@@ -57,3 +60,53 @@ def test_invalid_voice_engine_is_rejected(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("VOICE_ENGINE", "not-a-real-engine")
     with pytest.raises(ValueError, match="VOICE_ENGINE"):
         Settings.from_env()
+
+
+def test_deepgram_segments_are_archived_as_one_complete_turn() -> None:
+    assembler = DeepgramTurnAssembler()
+
+    assert assembler.accept({
+        "type": "Results",
+        "is_final": True,
+        "speech_final": False,
+        "channel": {
+            "detected_language": "en",
+            "alternatives": [{"transcript": "water is in the basement", "confidence": 0.9}],
+        },
+    }) is None
+    turn = assembler.accept({
+        "type": "Results",
+        "is_final": True,
+        "speech_final": True,
+        "channel": {
+            "detected_language": "en",
+            "alternatives": [{"transcript": "near the electrical panel", "confidence": 0.8}],
+        },
+    })
+
+    assert turn is not None
+    assert turn.text == "water is in the basement near the electrical panel"
+    assert turn.confidence == pytest.approx(0.85)
+    assert turn.language == "en"
+    assert assembler.finish() is None
+
+
+def test_deepgram_utterance_end_flushes_stable_text_only() -> None:
+    assembler = DeepgramTurnAssembler()
+    assembler.accept({
+        "type": "Results",
+        "is_final": True,
+        "speech_final": False,
+        "channel": {"alternatives": [{"transcript": "stable words"}]},
+    })
+    assembler.accept({
+        "type": "Results",
+        "is_final": False,
+        "speech_final": False,
+        "channel": {"alternatives": [{"transcript": "unstable guess"}]},
+    })
+
+    turn = assembler.accept({"type": "UtteranceEnd"})
+
+    assert turn is not None
+    assert turn.text == "stable words"

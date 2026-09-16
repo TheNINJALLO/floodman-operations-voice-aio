@@ -7,14 +7,19 @@ Floodman's VoiceCore remains the authority for intake, compliance, and transfers
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import json
 import logging
 import os
 import struct
 from collections.abc import AsyncIterator, Sequence
+from dataclasses import dataclass, field
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 import httpx
+import websockets
 
 from app.config import Settings
 from app.llm import LocalLLM
@@ -22,6 +27,65 @@ from app.stt import LocalSTT
 from app.tts import LocalTTS
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(slots=True)
+class TelAgentTranscriptTurn:
+    """One complete caller turn assembled from stable streaming STT segments."""
+
+    text: str
+    confidence: float | None = None
+    language: str = ""
+
+
+@dataclass(slots=True)
+class DeepgramTurnAssembler:
+    """Accumulate every stable segment until Deepgram marks the turn complete."""
+
+    segments: list[str] = field(default_factory=list)
+    confidences: list[float] = field(default_factory=list)
+    language: str = ""
+
+    def accept(self, message: dict[str, Any]) -> TelAgentTranscriptTurn | None:
+        kind = str(message.get("type") or "")
+        if kind == "Results":
+            channel = message.get("channel") or {}
+            alternatives = channel.get("alternatives") or []
+            if not alternatives:
+                return None
+            alternative = alternatives[0] or {}
+            text = str(alternative.get("transcript") or "").strip()
+            if bool(message.get("is_final")) and text:
+                self.segments.append(text)
+                confidence = alternative.get("confidence")
+                if isinstance(confidence, int | float):
+                    self.confidences.append(float(confidence))
+                self.language = str(channel.get("detected_language") or self.language)
+            if bool(message.get("speech_final")):
+                return self.finish()
+            return None
+        if kind == "UtteranceEnd":
+            return self.finish()
+        return None
+
+    def finish(self) -> TelAgentTranscriptTurn | None:
+        text = " ".join(part for part in self.segments if part).strip()
+        if not text:
+            return None
+        confidence = (
+            sum(self.confidences) / len(self.confidences)
+            if self.confidences
+            else None
+        )
+        turn = TelAgentTranscriptTurn(
+            text=text,
+            confidence=confidence,
+            language=self.language,
+        )
+        self.segments.clear()
+        self.confidences.clear()
+        self.language = ""
+        return turn
 
 
 def mulaw_to_slin8(payload: bytes) -> bytes:
@@ -177,8 +241,26 @@ class TelAgentLLM(LocalLLM):
         max_tokens: int = 180,
         temperature: float = 0.1,
     ) -> str:
-        self._load_provider()
         pieces: list[str] = []
+        async for piece in self.stream_text(
+            messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        ):
+            pieces.append(piece)
+        return "".join(pieces).strip()
+
+    async def stream_text(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        max_tokens: int = 180,
+        temperature: float = 0.1,
+    ) -> AsyncIterator[str]:
+        """Yield model deltas so Tel-Agent can speak before generation finishes."""
+
+        self._load_provider()
+        emitted = False
         try:
             async for event in self._provider.stream_configured(
                 messages,
@@ -186,21 +268,77 @@ class TelAgentLLM(LocalLLM):
                 temperature=temperature,
             ):
                 if isinstance(event, self._text_delta_type):
-                    pieces.append(event.text)
-            answer = "".join(pieces).strip()
-            if answer:
-                return answer
+                    text = str(event.text or "")
+                    if text:
+                        emitted = True
+                        yield text
+            if emitted:
+                return
             raise RuntimeError("Tel-Agent model returned an empty reply")
         except Exception as exc:
+            if emitted:
+                logger.warning(
+                    "Tel-Agent model stream ended after partial output: %s",
+                    type(exc).__name__,
+                )
+                return
             logger.warning(
                 "Tel-Agent model unavailable; using local completion fallback: %s",
                 type(exc).__name__,
             )
-            return await super()._chat(
+            answer = await super()._chat(
                 messages,
                 max_tokens=max_tokens,
                 temperature=temperature,
             )
+            if answer:
+                yield answer
+
+    async def stream_spoken_reply(
+        self,
+        *,
+        caller_text: str,
+        required_reply: str,
+        state: dict[str, Any],
+        history: Sequence[dict[str, str]],
+    ) -> AsyncIterator[str]:
+        """Naturalize wording without allowing the model to change policy decisions."""
+
+        messages: list[dict[str, str]] = [
+            {
+                "role": "system",
+                "content": (
+                    "You are Alex, Floodman's automated phone assistant. The deterministic "
+                    "policy engine has already decided the facts, action, and next question. "
+                    "Rewrite only the wording so it sounds like a warm, concise phone "
+                    "conversation. Preserve every fact and the same next question. Use one or "
+                    "two short sentences, contractions when natural, no markdown, and no lists. "
+                    "Never add prices, promises, availability, diagnoses, insurance decisions, "
+                    "verification claims, or actions that are absent from the required reply."
+                ),
+            }
+        ]
+        messages.extend(
+            {"role": item["role"], "content": item["content"]}
+            for item in history[-20:]
+            if item.get("role") in {"user", "assistant"} and item.get("content")
+        )
+        messages.append(
+            {
+                "role": "user",
+                "content": (
+                    f"Caller just said: {caller_text}\n"
+                    f"Current intake stage: {str(state.get('stage') or '')}\n"
+                    f"Required response: {required_reply}"
+                ),
+            }
+        )
+        async for piece in self.stream_text(
+            messages,
+            max_tokens=140,
+            temperature=0.25,
+        ):
+            yield piece
 
 
 class TelAgentSTT(LocalSTT):
@@ -219,6 +357,10 @@ class TelAgentSTT(LocalSTT):
     @property
     def ready(self) -> bool:
         return self._provider is not None if self._cloud_key else self._model is not None
+
+    @property
+    def streaming(self) -> bool:
+        return bool(self._cloud_key)
 
     async def start(self) -> None:
         if not self._cloud_key:
@@ -244,6 +386,87 @@ class TelAgentSTT(LocalSTT):
         )
         self._final_type = Final
         logger.info("Tel-Agent Deepgram STT configured")
+
+    def _stream_url(self, sample_rate: int) -> str:
+        base_url = os.getenv("DEEPGRAM_BASE_URL", "wss://api.deepgram.com").strip().rstrip("/")
+        params = {
+            "channels": "1",
+            "encoding": "linear16",
+            "sample_rate": str(sample_rate),
+            "model": os.getenv("TEL_AGENT_DEEPGRAM_MODEL", "nova-3").strip(),
+            "language": os.getenv("STT_LANGUAGE", "en-US").strip(),
+            "interim_results": "true",
+            "punctuate": "true",
+            "smart_format": "true",
+            "vad_events": "true",
+            "endpointing": str(
+                int(_bounded_number("TEL_AGENT_ENDPOINTING_MS", 450, 100, 1500))
+            ),
+            "utterance_end_ms": str(
+                int(_bounded_number("TEL_AGENT_UTTERANCE_END_MS", 1000, 1000, 3000))
+            ),
+        }
+        return f"{base_url}/v1/listen?{urlencode(params)}"
+
+    async def stream_turns(
+        self,
+        audio: AsyncIterator[bytes],
+        *,
+        sample_rate: int = 8000,
+    ) -> AsyncIterator[TelAgentTranscriptTurn]:
+        """Keep one Deepgram stream open and emit complete, lossless caller turns."""
+
+        if not self._cloud_key:
+            raise RuntimeError("Continuous Tel-Agent STT requires DEEPGRAM_API_KEY")
+        headers = {"Authorization": f"Token {self._cloud_key}"}
+        assembler = DeepgramTurnAssembler()
+        async with websockets.connect(
+            self._stream_url(sample_rate),
+            additional_headers=headers,
+            open_timeout=5,
+            close_timeout=3,
+            ping_interval=10,
+            ping_timeout=10,
+        ) as socket:
+            sender = asyncio.create_task(self._pump_stream_audio(socket, audio))
+            keepalive = asyncio.create_task(self._keep_stream_alive(socket))
+            try:
+                async for raw in socket:
+                    try:
+                        message = json.loads(raw)
+                    except (TypeError, ValueError):
+                        continue
+                    if not isinstance(message, dict):
+                        continue
+                    turn = assembler.accept(message)
+                    if turn is not None:
+                        yield turn
+            finally:
+                sender.cancel()
+                keepalive.cancel()
+                await asyncio.gather(sender, keepalive, return_exceptions=True)
+
+    @staticmethod
+    async def _pump_stream_audio(socket: Any, audio: AsyncIterator[bytes]) -> None:
+        try:
+            async for chunk in audio:
+                if chunk:
+                    await socket.send(chunk)
+        except websockets.ConnectionClosed:
+            return
+        with contextlib.suppress(websockets.ConnectionClosed):
+            await socket.send(json.dumps({"type": "CloseStream"}))
+
+    @staticmethod
+    async def _keep_stream_alive(socket: Any) -> None:
+        """Keep continuous recognition open while the assistant is speaking."""
+
+        while True:
+            await asyncio.sleep(3)
+            try:
+                await socket.send(json.dumps({"type": "KeepAlive"}))
+            except websockets.ConnectionClosed:
+                return
 
     async def transcribe(
         self,
@@ -276,6 +499,18 @@ class TelAgentSTT(LocalSTT):
             )
             await LocalSTT.start(self)
             return await LocalSTT.transcribe(self, pcm16le, sample_rate, contact=contact)
+
+    async def transcribe_local(
+        self,
+        pcm16le: bytes,
+        sample_rate: int = 8000,
+        *,
+        contact: bool = False,
+    ) -> str:
+        """Bypass a failed cloud stream and use the private Whisper fallback."""
+
+        await LocalSTT.start(self)
+        return await LocalSTT.transcribe(self, pcm16le, sample_rate, contact=contact)
 
 
 class TelAgentTTS(LocalTTS):
@@ -357,6 +592,11 @@ class TelAgentTTS(LocalTTS):
         pcm = await LocalTTS.synthesize(self, text)
         if pcm:
             yield pcm
+
+    def stream(self, text: str) -> AsyncIterator[bytes]:
+        """Tel-Agent TTSProvider surface used by agent.session.turn.speak."""
+
+        return self.stream_pcm(text)
 
     async def synthesize(self, text: str, *, speed: float | None = None) -> bytes:
         return b"".join([part async for part in self.stream_pcm(text, speed=speed)])

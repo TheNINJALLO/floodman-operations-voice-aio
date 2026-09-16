@@ -156,6 +156,44 @@ class AudioSocketConnection:
             except asyncio.QueueEmpty:
                 return
 
+    async def inbound_frames(self) -> AsyncIterator[bytes]:
+        """Yield caller media continuously to Tel-Agent's streaming STT socket."""
+
+        while not self.closed:
+            frame = await self.queue.get()
+            if frame is None:
+                return
+            if frame:
+                yield frame
+
+    def begin_provider_output(self) -> None:
+        self.barge_in_event.clear()
+        self._reset_barge_in()
+        self.output_active = True
+        self.last_stream_audio_bytes = 0
+        if self.settings.barge_in_enabled:
+            self._queued_speech_waiting()
+
+    async def write_provider_audio(self, payload: bytes) -> None:
+        """Pace provider PCM into AudioSocket frames without buffering ahead."""
+
+        if not payload or self.closed:
+            return
+        for chunk in chunk_pcm(payload, 8000, 20):
+            if self.closed or self.barge_in_event.is_set():
+                return
+            self.writer.write(bytes([TYPE_AUDIO]) + struct.pack("!H", len(chunk)) + chunk)
+            await self.writer.drain()
+            self.last_stream_audio_bytes += len(chunk)
+            await asyncio.sleep(0.020)
+
+    async def finish_provider_output(self, *, interrupted: bool) -> None:
+        if not interrupted and not self.closed:
+            await asyncio.sleep(max(0, self.settings.post_tts_guard_ms) / 1000)
+        self.output_active = False
+        if not interrupted:
+            self._reset_barge_in()
+
     async def speak_stream(self, chunks: AsyncIterator[bytes], *, chunk_count: int = 1) -> bool:
         self.last_playback_fraction = 0.0
         self.last_stream_audio_bytes = 0
@@ -292,6 +330,11 @@ class AudioSocketServer:
         self.registry = registry
         self.server: asyncio.AbstractServer | None = None
         self.active_calls = 0
+        self.tel_agent_phone = None
+        if getattr(settings, "voice_engine", "local") == "tel_agent":
+            from app.tel_agent_phone import TelAgentPhoneAgent
+
+            self.tel_agent_phone = TelAgentPhoneAgent(core, stt, core.llm, tts, registry)
 
     async def start(self) -> None:
         self.server = await asyncio.start_server(self.handle, self.settings.audiosocket_host, self.settings.audiosocket_port)
@@ -455,6 +498,14 @@ class AudioSocketServer:
         return interrupted
 
     async def handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        if self.tel_agent_phone is not None:
+            self.active_calls += 1
+            try:
+                await self.tel_agent_phone.handle(reader, writer)
+            finally:
+                self.active_calls -= 1
+            return
+
         connection = AudioSocketConnection(reader, writer, self.settings)
         session = None
         outcome = "caller_hangup"

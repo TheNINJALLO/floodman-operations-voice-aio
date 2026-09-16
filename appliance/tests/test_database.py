@@ -30,6 +30,26 @@ def test_database_adds_email_delivery_columns(tmp_path):
     assert "channel" in notification_columns
 
 
+def test_database_preserves_tel_agent_transcript_metadata(tmp_path):
+    db = Database(tmp_path / "transcript-metadata.db")
+    call_id = db.create_call(IntakeState(call_uuid="metadata-call"))
+
+    db.add_message(
+        call_id,
+        "caller",
+        "Water is downstairs",
+        confidence=0.91,
+        language="en-US",
+    )
+    db.add_message(call_id, "assistant", "Which room?", interrupted=True)
+
+    messages = db.get_call(call_id)["messages"]
+    assert messages[0]["confidence"] == 0.91
+    assert messages[0]["language"] == "en-US"
+    assert messages[0]["interrupted"] == 0
+    assert messages[1]["interrupted"] == 1
+
+
 def test_sms_consent_is_explicit_auditable_and_permission_scoped(tmp_path):
     db = Database(tmp_path / "sms-consent.db")
     preferences = {

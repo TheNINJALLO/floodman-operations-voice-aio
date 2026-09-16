@@ -37,6 +37,7 @@ class CallSession:
     notification_sent: bool = False
     interrupted_prompt_stage: str = ""
     interrupted_from_stage: str = ""
+    defer_assistant_recording: bool = False
 
 
 class VoiceCore:
@@ -146,17 +147,33 @@ class VoiceCore:
         speech_part_speeds: tuple[float | None, ...] = (),
     ) -> VoiceReply:
         text = clean(text, 1200)
-        self.database.add_message(session.call_id, "assistant", text)
-        self.database.update_prompt(session.call_id, text)
         self._save(session)
-        if self.suite_bridge is not None:
-            self.suite_bridge.queue(session.call_id, session.state, "transcript-updated")
+        if not session.defer_assistant_recording:
+            self.record_assistant(session, text)
         return VoiceReply(
             text=text,
             speech_parts=speech_parts,
             pause_between_parts_ms=max(0, pause_between_parts_ms),
             speech_part_speeds=speech_part_speeds,
         )
+
+    def record_assistant(
+        self, session: CallSession, text: str, *, interrupted: bool = False
+    ) -> None:
+        """Persist only speech that the caller actually received from the agent."""
+
+        text = clean(text, 1200)
+        if not text:
+            return
+        self.database.add_message(
+            session.call_id,
+            "assistant",
+            text,
+            interrupted=interrupted,
+        )
+        self.database.update_prompt(session.call_id, text)
+        if self.suite_bridge is not None:
+            self.suite_bridge.queue(session.call_id, session.state, "transcript-updated")
 
     def _confirmation(self, session: CallSession, field: str) -> VoiceReply:
         parts = tuple(part for part in confirmation_parts(session.state, field) if part)
@@ -365,10 +382,23 @@ class VoiceCore:
             ) if value
         )
 
-    async def process(self, session: CallSession, transcript: str) -> VoiceReply:
+    async def process(
+        self,
+        session: CallSession,
+        transcript: str,
+        *,
+        confidence: float | None = None,
+        language: str = "",
+    ) -> VoiceReply:
         state = session.state
         transcript = clean(transcript, 4000)
-        self.database.add_message(session.call_id, "caller", transcript)
+        self.database.add_message(
+            session.call_id,
+            "caller",
+            transcript,
+            confidence=confidence,
+            language=language,
+        )
         session.no_input_count = 0
 
         if state.urgency != "emergency" and detect_emergency(self._emergency_context(state, transcript)):

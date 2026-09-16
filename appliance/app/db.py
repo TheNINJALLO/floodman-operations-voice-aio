@@ -53,6 +53,9 @@ class Database:
                     call_id INTEGER NOT NULL REFERENCES calls(id) ON DELETE CASCADE,
                     role TEXT NOT NULL,
                     text TEXT NOT NULL,
+                    confidence REAL,
+                    language TEXT NOT NULL DEFAULT '',
+                    interrupted INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS intakes (
@@ -181,6 +184,9 @@ class Database:
             self._ensure_column(db, "users", "sms_consent_source", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(db, "users", "sms_consent_version", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(db, "notifications", "channel", "TEXT NOT NULL DEFAULT 'sms'")
+            self._ensure_column(db, "messages", "confidence", "REAL")
+            self._ensure_column(db, "messages", "language", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(db, "messages", "interrupted", "INTEGER NOT NULL DEFAULT 0")
             db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users(email COLLATE NOCASE) WHERE email<>''")
             db.execute("CREATE INDEX IF NOT EXISTS idx_notifications_channel ON notifications(channel, status)")
             # A process can stop after claiming an item but before recording its
@@ -210,12 +216,34 @@ class Database:
             row = db.execute("SELECT id FROM calls WHERE call_uuid=?", (call_uuid,)).fetchone()
             return int(row["id"]) if row else None
 
-    def add_message(self, call_id: int, role: str, text: str) -> None:
+    def add_message(
+        self,
+        call_id: int,
+        role: str,
+        text: str,
+        *,
+        confidence: float | None = None,
+        language: str = "",
+        interrupted: bool = False,
+    ) -> None:
         text = str(text or "").strip()
         if not text:
             return
         with self._lock, self.connect() as db:
-            db.execute("INSERT INTO messages(call_id,role,text,created_at) VALUES(?,?,?,?)", (call_id, role, text, utcnow()))
+            db.execute(
+                """INSERT INTO messages(
+                       call_id,role,text,confidence,language,interrupted,created_at
+                   ) VALUES(?,?,?,?,?,?,?)""",
+                (
+                    call_id,
+                    role,
+                    text,
+                    confidence,
+                    str(language or "")[:32],
+                    int(interrupted),
+                    utcnow(),
+                ),
+            )
             transcript = "\n".join(f"{row['role']}: {row['text']}" for row in db.execute("SELECT role,text FROM messages WHERE call_id=? ORDER BY id", (call_id,)))
             db.execute("UPDATE calls SET transcript_text=? WHERE id=?", (transcript, call_id))
 
@@ -388,7 +416,14 @@ class Database:
             ).fetchone()
             if not row:
                 return None
-            messages = [dict(value) for value in db.execute("SELECT role,text,created_at FROM messages WHERE call_id=? ORDER BY id", (call_id,))]
+            messages = [
+                dict(value)
+                for value in db.execute(
+                    """SELECT role,text,confidence,language,interrupted,created_at
+                       FROM messages WHERE call_id=? ORDER BY id""",
+                    (call_id,),
+                )
+            ]
             notifications = [
                 dict(value)
                 for value in db.execute(

@@ -18,6 +18,12 @@ live call.
 
 Only the carrier is required externally. Twilio or another SIP provider supplies the phone number, minutes, and SMS. Tel-Agent can use Deepgram, Groq, and ElevenLabs when their credentials are configured, but no paid AI key is required: missing or unavailable providers fail open to the bundled local LLM, Faster-Whisper, and Kokoro services.
 
+With `VOICE_ENGINE=tel_agent`, Tel-Agent owns the full-duplex call loop rather than only
+the provider adapters: continuous recognition, streamed token-to-phrase playback,
+barge-in, first-audio latency logging, and spoken-only transcript commits. Asterisk
+remains the private media transport and Floodman remains the deterministic authority
+for safety, routing, verification, customer records, and business actions.
+
 ## Reliability design
 
 The local model extracts structured information. The application owns every customer-facing question, confirmation, transition, notification, and call-ending decision. This prevents the model from inventing long acknowledgements or leaving the caller in dead air.

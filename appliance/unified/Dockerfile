@@ -214,7 +214,7 @@ RUN git init /opt/tel-agent \
 RUN python3 -m venv /opt/voice-venv && \
     /opt/voice-venv/bin/pip install --upgrade pip setuptools wheel && \
     cd /tmp/voice-source && /opt/voice-venv/bin/pip install . && \
-    PYTHONPATH=/opt/tel-agent /opt/voice-venv/bin/python -c "from agent.providers.llm.openai_compatible import OpenAICompatibleLLM; from agent.providers.stt.deepgram import DeepgramSTT; from agent.providers.tts.elevenlabs import ElevenLabsTTS; assert OpenAICompatibleLLM and DeepgramSTT and ElevenLabsTTS" && \
+    PYTHONPATH=/opt/tel-agent /opt/voice-venv/bin/python -c "from agent.providers.llm.openai_compatible import OpenAICompatibleLLM; from agent.providers.stt.deepgram import DeepgramSTT; from agent.providers.tts.elevenlabs import ElevenLabsTTS; from agent.session.turn import speak; assert OpenAICompatibleLLM and DeepgramSTT and ElevenLabsTTS and speak" && \
     mkdir -p /opt/voice /opt/floodman/scripts && \
     cp -a /tmp/voice-source/app /tmp/voice-source/config /tmp/voice-source/knowledge \
       /tmp/voice-source/templates /tmp/voice-source/static /tmp/voice-source/README.md \

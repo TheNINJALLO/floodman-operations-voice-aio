@@ -76,7 +76,7 @@ RUN git init /opt/tel-agent && \
 RUN python3 -m venv /opt/venv && \
     /opt/venv/bin/pip install --upgrade pip setuptools wheel && \
     /opt/venv/bin/pip install . && \
-    PYTHONPATH=/opt/tel-agent /opt/venv/bin/python -c "from agent.providers.llm.openai_compatible import OpenAICompatibleLLM; from agent.providers.stt.deepgram import DeepgramSTT; from agent.providers.tts.elevenlabs import ElevenLabsTTS; assert OpenAICompatibleLLM and DeepgramSTT and ElevenLabsTTS" && \
+    PYTHONPATH=/opt/tel-agent /opt/venv/bin/python -c "from agent.providers.llm.openai_compatible import OpenAICompatibleLLM; from agent.providers.stt.deepgram import DeepgramSTT; from agent.providers.tts.elevenlabs import ElevenLabsTTS; from agent.session.turn import speak; assert OpenAICompatibleLLM and DeepgramSTT and ElevenLabsTTS and speak" && \
     /opt/venv/bin/python --version && \
     /opt/venv/bin/python -c "import app, yaml; print('Floodman Python image contract: PASS')" && \
     test -x /opt/venv/bin/python && \
