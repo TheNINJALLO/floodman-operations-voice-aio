@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 
 from app.config import Settings
+from app.call_diagnostics import emit_current
 
 logger = logging.getLogger(__name__)
 
@@ -74,5 +75,6 @@ class LocalSTT:
         # second VAD can reject valid one-word telephone answers such as "home",
         # "business", and "yes", so retry only empty results without that filter.
         duration_ms = int((audio.size / 16000) * 1000)
+        emit_current("stt_retry", reason="empty_vad_result", audio_ms=duration_ms)
         logger.info("STT VAD returned no speech; retrying captured audio without VAD duration_ms=%d", duration_ms)
         return await asyncio.to_thread(run, vad_filter=False, beam_size=1, best_of=1)

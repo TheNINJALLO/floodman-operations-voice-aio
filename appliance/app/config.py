@@ -8,6 +8,7 @@ import secrets
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
+from app.model_profile import select_primary_model
 
 
 def _bool(name: str, default: bool = False) -> bool:
@@ -189,6 +190,10 @@ class Settings:
     audiosocket_host: str
     audiosocket_port: int
     voice_engine: str
+    primary_model_profile: str
+    primary_model_path: Path
+    local_ai_device: str
+    local_ai_only: bool
     llama_base_url: str
     llama_api_key: str
     llama_model_alias: str
@@ -203,6 +208,7 @@ class Settings:
     kokoro_voices_path: Path
     kokoro_voice: str
     kokoro_speed: float
+    kokoro_threads: int
     email_readback_speed: float
     tts_cache_enabled: bool
 
@@ -211,6 +217,15 @@ class Settings:
     email_endpoint_silence_ms: int
     minimum_speech_ms: int
     maximum_utterance_seconds: float
+    no_input_timeout_seconds: float
+    input_preroll_ms: int
+    call_slow_response_ms: int
+    post_call_briefings_enabled: bool
+    briefing_backend: str
+    briefing_ollama_url: str
+    briefing_model: str
+    briefing_threads: int
+    briefing_timeout_seconds: float
     post_tts_guard_ms: int
     vad_energy_threshold: int
     barge_in_enabled: bool
@@ -222,6 +237,8 @@ class Settings:
     sip_server: str
     sip_port: int
     sip_transport: str
+    sip_tls_cert_file: Path
+    sip_tls_key_file: Path
     sip_username: str
     sip_password: str
     sip_from_user: str
@@ -286,9 +303,19 @@ class Settings:
         public_base_url = os.getenv("PUBLIC_BASE_URL", "http://127.0.0.1:8002").rstrip("/")
         public_host = urlparse(public_base_url).hostname or ""
         trusted_default = ",".join(value for value in ("localhost", "127.0.0.1", public_host) if value)
-        voice_engine = os.getenv("VOICE_ENGINE", "local").strip().lower().replace("-", "_")
+        voice_engine = os.getenv("VOICE_ENGINE", "tel_agent").strip().lower().replace("-", "_")
         if voice_engine not in {"local", "tel_agent"}:
             raise ValueError("VOICE_ENGINE must be local or tel_agent")
+        local_ai_device = os.getenv("LOCAL_AI_DEVICE", "cpu").strip().lower()
+        if local_ai_device not in {"cpu", "cuda"}:
+            raise ValueError("LOCAL_AI_DEVICE must be cpu or cuda")
+        local_only_value = os.getenv("LOCAL_AI_ONLY", "true").strip().lower()
+        if local_only_value not in {"1", "true", "yes", "on", "0", "false", "no", "off"}:
+            raise ValueError("LOCAL_AI_ONLY must be true or false")
+        primary_model = select_primary_model(models)
+        briefing_backend = os.getenv("BRIEFING_BACKEND", "primary").strip().lower()
+        if briefing_backend not in {"primary", "ollama"}:
+            raise ValueError("BRIEFING_BACKEND must be primary or ollama")
         return cls(
             data_dir=data,
             config_dir=config,
@@ -322,18 +349,23 @@ class Settings:
             audiosocket_host=os.getenv("AUDIOSOCKET_HOST", "127.0.0.1"),
             audiosocket_port=_int("AUDIOSOCKET_PORT", 8090),
             voice_engine=voice_engine,
+            primary_model_profile=primary_model.profile,
+            primary_model_path=primary_model.path,
+            local_ai_device=local_ai_device,
+            local_ai_only=local_only_value in {"1", "true", "yes", "on"},
             llama_base_url=os.getenv("LLAMA_BASE_URL", "http://127.0.0.1:8081/v1").rstrip("/"),
             llama_api_key=os.getenv("LLAMA_API_KEY", "floodman-local"),
-            llama_model_alias=os.getenv("LLAMA_MODEL_ALIAS", "floodman-qwen3-4b"),
+            llama_model_alias=primary_model.alias,
             llama_timeout_seconds=_float("LLAMA_TIMEOUT_SECONDS", 8.0),
             faster_whisper_model=os.getenv("FASTER_WHISPER_MODEL", "small.en"),
             faster_whisper_device=os.getenv("FASTER_WHISPER_DEVICE", "cpu"),
             faster_whisper_compute_type=os.getenv("FASTER_WHISPER_COMPUTE_TYPE", "int8"),
-            faster_whisper_threads=_int("FASTER_WHISPER_THREADS", max(2, (os.cpu_count() or 4) // 2)),
+            faster_whisper_threads=max(1, _int("FASTER_WHISPER_THREADS", min(4, os.cpu_count() or 4))),
             kokoro_model_path=Path(os.getenv("KOKORO_MODEL_PATH", models / "kokoro" / "kokoro-v1.0.onnx")),
             kokoro_voices_path=Path(os.getenv("KOKORO_VOICES_PATH", models / "kokoro" / "voices-v1.0.bin")),
             kokoro_voice=_voice_name(voice_settings.get("voice"), os.getenv("KOKORO_VOICE", "af_heart")),
             kokoro_speed=max(0.75, min(_number(voice_settings.get("speed"), _float("KOKORO_SPEED", 0.90)), 1.25)),
+            kokoro_threads=max(1, _int("KOKORO_THREADS", 2)),
             email_readback_speed=max(0.75, min(_float("EMAIL_READBACK_SPEED", 0.78), 1.0)),
             tts_cache_enabled=_bool("TTS_CACHE_ENABLED", True),
             endpoint_silence_ms=_int("ENDPOINT_SILENCE_MS", 300),
@@ -341,6 +373,16 @@ class Settings:
             email_endpoint_silence_ms=max(1000, min(_int("EMAIL_ENDPOINT_SILENCE_MS", 1600), 3000)),
             minimum_speech_ms=_int("MINIMUM_SPEECH_MS", 160),
             maximum_utterance_seconds=_float("MAXIMUM_UTTERANCE_SECONDS", 25.0),
+            no_input_timeout_seconds=max(2.0, min(_float("NO_INPUT_TIMEOUT_SECONDS", 12.0), 60.0)),
+            input_preroll_ms=max(0, min(_int("INPUT_PREROLL_MS", 240), 1000)),
+            call_slow_response_ms=max(100, min(_int("CALL_SLOW_RESPONSE_MS", 2000), 30000)),
+            post_call_briefings_enabled=_bool("POST_CALL_BRIEFINGS_ENABLED", False),
+            briefing_backend=briefing_backend,
+            briefing_ollama_url=os.getenv("BRIEFING_OLLAMA_URL", "http://127.0.0.1:11434").strip(),
+            briefing_model=(primary_model.alias if briefing_backend == "primary" else
+                            os.getenv("BRIEFING_MODEL", "floodman-deckard:40b-q4_k_m").strip()),
+            briefing_threads=max(1, min(_int("BRIEFING_THREADS", 4), 16)),
+            briefing_timeout_seconds=max(5.0, min(_float("BRIEFING_TIMEOUT_SECONDS", 120.0), 300.0)),
             post_tts_guard_ms=_int("POST_TTS_GUARD_MS", 120),
             vad_energy_threshold=_int("VAD_ENERGY_THRESHOLD", 325),
             barge_in_enabled=_bool("BARGE_IN_ENABLED", True),
@@ -351,11 +393,15 @@ class Settings:
             sip_server=os.getenv("SIP_SERVER", "").strip(),
             sip_port=_int("SIP_PORT", 5060),
             sip_transport=os.getenv("SIP_TRANSPORT", "udp").strip().lower(),
+            sip_tls_cert_file=Path(os.getenv("SIP_TLS_CERT_FILE", str(data / "asterisk/keys/server.crt"))),
+            sip_tls_key_file=Path(os.getenv("SIP_TLS_KEY_FILE", str(data / "asterisk/keys/server.key"))),
             sip_username=os.getenv("SIP_USERNAME", "").strip(),
             sip_password=os.getenv("SIP_PASSWORD", "").strip(),
             sip_from_user=os.getenv("SIP_FROM_USER", "").strip(),
             sip_from_domain=os.getenv("SIP_FROM_DOMAIN", "").strip(),
-            sip_match_addresses=_csv("SIP_MATCH_ADDRESSES", "54.172.60.0/23,54.244.51.0/24,177.71.206.192/26"),
+            # Twilio's published signaling gateways, checked 2026-11-04.
+            # https://www.twilio.com/docs/sip-trunking/ip-addresses
+            sip_match_addresses=_csv("SIP_MATCH_ADDRESSES", "54.172.60.0/30,54.244.51.0/30,54.171.127.192/30,35.156.191.128/30,54.65.63.192/30,54.169.127.128/30,54.252.254.64/30,177.71.206.192/30"),
             sip_outbound_proxy=os.getenv("SIP_OUTBOUND_PROXY", "").strip(),
             sip_local_net=os.getenv("SIP_LOCAL_NET", "172.16.0.0/12").strip(),
             sip_public_ip=os.getenv("PUBLIC_IP", "").strip(),
@@ -399,7 +445,7 @@ class Settings:
 
     @property
     def llm_model_path(self) -> Path:
-        return Path(os.getenv("LLAMA_MODEL_PATH", self.model_dir / "llm" / "Qwen3-4B-Q4_K_M.gguf"))
+        return self.primary_model_path
 
     @property
     def twilio_sms_configured(self) -> bool:

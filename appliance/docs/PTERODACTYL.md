@@ -1,14 +1,16 @@
-# Pterodactyl and RTX A1000
+# Pterodactyl CPU and optional CUDA operation
 
-The node must expose an NVIDIA runtime to Docker before Wings starts this egg. Verify on the host and inside a test container:
+CPU mode is the default. Build `Dockerfile.cpu`, set `LOCAL_AI_DEVICE=cpu` and `LOCAL_AI_ONLY=true`; no NVIDIA runtime or GPU allocation is needed. Start with one simultaneous call and the CPU budgets in [README.md](../README.md). Available RAM gives model-loading headroom, but the CPU quota, affinity, and competing workloads still determine response time. Use the new CPU image digest; the historical `gpu-appliance` workflow builds the separate unified image.
+
+For optional CUDA mode, explicitly set `LOCAL_AI_DEVICE=cuda`. The node must expose an NVIDIA runtime to Docker before Wings starts this profile. Verify on the host and inside a test container:
 
 ```bash
 nvidia-smi
 ```
 
-The A1000 should report roughly 8 GB VRAM. The container preflight requires at least 7000 MiB visible.
+The CUDA preflight requires at least 7000 MiB visible. CPU preflight skips NVIDIA checks. Both profiles still require model files, private inference/audio services, and valid carrier configuration.
 
-Recommended host resources:
+The earlier CUDA deployment used these resources:
 
 - RTX A1000 8 GB
 - 8 CPU cores minimum, 12 preferred
@@ -18,7 +20,7 @@ Recommended host resources:
 
 Allocations:
 
-- `8003/tcp` web panel
+- `8002/tcp` web panel
 - `5060/udp` or carrier-selected SIP port
 - `10000-10100/udp` RTP
 

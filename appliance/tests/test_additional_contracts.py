@@ -127,6 +127,8 @@ def test_ari_and_ami_are_not_exposed(project_root: Path):
 
 def test_model_downloads_are_persistent(project_root: Path):
     source = (project_root / "scripts/download_models.py").read_text(encoding="utf-8")
-    assert 'models / "llm"' in source
+    profile = (project_root / "app/model_profile.py").read_text(encoding="utf-8")
+    assert 'model_dir / "llm"' in profile
+    assert "ensure_primary_model(primary, data)" in source
     assert 'models / "kokoro"' in source
     assert "snapshot_download" in source

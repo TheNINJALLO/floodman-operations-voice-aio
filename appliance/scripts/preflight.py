@@ -27,17 +27,20 @@ def main() -> int:
     check(len(settings.internal_token) >= 24, "internal_token", "configured", errors)
     check(settings.database_path.parent.exists(), "data_directory", str(settings.data_dir), errors)
     if not args.web_only:
-        check(shutil.which("nvidia-smi") is not None, "nvidia_runtime", "nvidia-smi is available", errors)
-        memory = 0
-        try:
-            result = subprocess.run(
-                ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
-                check=True, text=True, capture_output=True,
-            )
-            memory = max(int(line.strip()) for line in result.stdout.splitlines() if line.strip())
-        except Exception:
-            pass
-        check(memory >= 7000, "gpu_memory", f"{memory} MiB detected; 7000 MiB required", errors)
+        check(True, "local_ai_device", settings.local_ai_device, errors)
+        check(True, "primary_model", f"{settings.primary_model_profile}: {settings.llama_model_alias}", errors)
+        if settings.local_ai_device == "cuda":
+            check(shutil.which("nvidia-smi") is not None, "nvidia_runtime", "nvidia-smi is available", errors)
+            memory = 0
+            try:
+                result = subprocess.run(
+                    ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
+                    check=True, text=True, capture_output=True,
+                )
+                memory = max(int(line.strip()) for line in result.stdout.splitlines() if line.strip())
+            except Exception:
+                pass
+            check(memory >= 7000, "gpu_memory", f"{memory} MiB detected; 7000 MiB required", errors)
         check(settings.llm_model_path.is_file(), "llm_model", str(settings.llm_model_path), errors)
         check(settings.kokoro_model_path.is_file(), "kokoro_model", str(settings.kokoro_model_path), errors)
         check(settings.kokoro_voices_path.is_file(), "kokoro_voices", str(settings.kokoro_voices_path), errors)

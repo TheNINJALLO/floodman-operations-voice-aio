@@ -14,7 +14,7 @@ fi
 
 echo "Floodman Python runtime: $("${PYTHON_BIN}" --version 2>&1) at ${PYTHON_BIN}"
 
-DATA_DIR="${DATA_DIR:-/home/container/data}"
+export DATA_DIR="${DATA_DIR:-/home/container/data}"
 RUNTIME_ENV="${RUNTIME_ENV:-${DATA_DIR}/runtime.env}"
 mkdir -p "${DATA_DIR}" "${DATA_DIR}/logs" "${DATA_DIR}/runtime" "${DATA_DIR}/models" "${DATA_DIR}/cache"
 touch "${RUNTIME_ENV}"

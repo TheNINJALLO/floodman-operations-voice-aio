@@ -11,6 +11,7 @@ from collections.abc import AsyncIterator
 
 from app.audio import chunk_pcm, rms
 from app.config import Settings
+from app.call_diagnostics import CallDiagnostics, CallTrace, current_trace
 from app.intake_flow import contact_endpoint_stage
 from app.models import VoiceReply
 from app.registry import CallRegistry
@@ -42,6 +43,24 @@ class AudioSocketConnection:
         self._barge_silence_ms = 0.0
         self.last_playback_fraction = 0.0
         self.last_stream_audio_bytes = 0
+        self.trace: CallTrace | None = None
+        self._response_since = time.perf_counter()
+        self._first_audio_emitted = False
+        self.dropped_frames = 0
+
+    def event(self, event: str, **details) -> None:
+        if self.trace is not None:
+            try:
+                self.trace.emit(event, **details)
+            except Exception:
+                logger.warning("Unable to queue call diagnostic event")
+
+    def _first_audio(self) -> None:
+        if not self._first_audio_emitted:
+            self._first_audio_emitted = True
+            delay = (time.perf_counter() - self._response_since) * 1000
+            self.event("first_audio", first_audio_ms=max(0, delay),
+                       level="warning" if delay >= getattr(self.settings, "call_slow_response_ms", 2000) else "info")
 
     async def read_frame(self) -> tuple[int, bytes]:
         header = await self.reader.readexactly(3)
@@ -70,6 +89,7 @@ class AudioSocketConnection:
                         self._queue_audio(payload)
                 elif kind == TYPE_ERROR:
                     self.close_reason = "asterisk_error_frame"
+                    self.event("audio_error", level="error", reason=self.close_reason)
                     logger.warning("call_event stage=audiosocket_error code=%s", payload.hex())
                     break
         except asyncio.IncompleteReadError:
@@ -84,8 +104,12 @@ class AudioSocketConnection:
                 self.queue.put_nowait(None)
 
     def _queue_audio(self, payload: bytes) -> None:
-        with contextlib.suppress(asyncio.QueueFull):
+        try:
             self.queue.put_nowait(payload)
+        except asyncio.QueueFull:
+            self.dropped_frames += 1
+            if self.dropped_frames == 1:
+                self.event("input_audio_dropped", level="warning", queue_depth=self.queue.qsize())
 
     @staticmethod
     def _duration_ms(payload: bytes) -> float:
@@ -123,6 +147,7 @@ class AudioSocketConnection:
             self._reset_barge_in()
             self.barge_in_event.set()
             self._queue_audio(buffered)
+            self.event("barge_in", energy=energy, buffered_audio_bytes=len(buffered))
             logger.info(
                 "call_event stage=barge_in_detected energy=%d buffered_audio_bytes=%d",
                 energy,
@@ -166,7 +191,9 @@ class AudioSocketConnection:
             if frame:
                 yield frame
 
-    def begin_provider_output(self) -> None:
+    def begin_provider_output(self, *, since: float | None = None) -> None:
+        self._response_since = since if since is not None else time.perf_counter()
+        self._first_audio_emitted = False
         self.barge_in_event.clear()
         self._reset_barge_in()
         self.output_active = True
@@ -184,19 +211,31 @@ class AudioSocketConnection:
                 return
             self.writer.write(bytes([TYPE_AUDIO]) + struct.pack("!H", len(chunk)) + chunk)
             await self.writer.drain()
+            self._first_audio()
             self.last_stream_audio_bytes += len(chunk)
             await asyncio.sleep(0.020)
 
     async def finish_provider_output(self, *, interrupted: bool) -> None:
-        if not interrupted and not self.closed:
-            await asyncio.sleep(max(0, self.settings.post_tts_guard_ms) / 1000)
-        self.output_active = False
-        if not interrupted:
-            self._reset_barge_in()
+        try:
+            if not interrupted and not self.closed:
+                await asyncio.sleep(max(0, self.settings.post_tts_guard_ms) / 1000)
+        finally:
+            self._release_output()
 
-    async def speak_stream(self, chunks: AsyncIterator[bytes], *, chunk_count: int = 1) -> bool:
+    def _release_output(self) -> None:
+        # A caller can begin answering just before playback finishes without
+        # reaching the sustained-speech threshold needed to interrupt playback.
+        # Hand that onset to the listener instead of discarding the first word.
+        self.output_active = False
+        if not self.barge_in_event.is_set() and self._barge_voiced_ms:
+            self._queue_audio(bytes(self._barge_audio))
+        self._reset_barge_in()
+
+    async def speak_stream(self, chunks: AsyncIterator[bytes], *, chunk_count: int = 1, since: float | None = None) -> bool:
         self.last_playback_fraction = 0.0
         self.last_stream_audio_bytes = 0
+        self._response_since = since if since is not None else time.perf_counter()
+        self._first_audio_emitted = False
         if self.closed:
             return False
 
@@ -233,7 +272,6 @@ class AudioSocketConnection:
         total_chunks = max(1, int(chunk_count))
         try:
             while current:
-                self.last_stream_audio_bytes += len(current)
                 current_sent_bytes = 0
                 for chunk in chunk_pcm(current, 8000, 20):
                     if self.closed or self.barge_in_event.is_set():
@@ -241,6 +279,8 @@ class AudioSocketConnection:
                         break
                     self.writer.write(bytes([TYPE_AUDIO]) + struct.pack("!H", len(chunk)) + chunk)
                     await self.writer.drain()
+                    self._first_audio()
+                    self.last_stream_audio_bytes += len(chunk)
                     current_sent_bytes += len(chunk)
                     self.last_playback_fraction = min(
                         1.0,
@@ -255,15 +295,14 @@ class AudioSocketConnection:
                 except StopAsyncIteration:
                     break
         finally:
-            if interrupted:
-                await close_iterator()
-            if not interrupted:
-                await asyncio.sleep(max(0, self.settings.post_tts_guard_ms) / 1000)
-                interrupted = self.barge_in_event.is_set()
-            if not interrupted:
-                await self.clear_audio()
-                self._reset_barge_in()
-            self.output_active = False
+            try:
+                if interrupted:
+                    await close_iterator()
+                if not interrupted and not self.closed:
+                    await asyncio.sleep(max(0, self.settings.post_tts_guard_ms) / 1000)
+                    interrupted = self.barge_in_event.is_set()
+            finally:
+                self._release_output()
             if not interrupted and not self.closed:
                 self.last_playback_fraction = 1.0
         return interrupted
@@ -280,16 +319,34 @@ class AudioSocketConnection:
             endpoint_ms = self.settings.email_endpoint_silence_ms
         else:
             endpoint_ms = self.settings.contact_endpoint_silence_ms if contact else self.settings.endpoint_silence_ms
-        initial_timeout = 12.0
+        self.event("listening_started", stage=stage, endpoint_ms=endpoint_ms)
+        initial_timeout = getattr(self.settings, "no_input_timeout_seconds", 12.0)
+        preroll_bytes = int(8000 * 2 * getattr(self.settings, "input_preroll_ms", 240) / 1000)
+        preroll = bytearray()
         speech = bytearray()
         speaking = False
         speech_ms = 0.0
         silence_ms = 0.0
+        idle_media_ms = 0.0
+        utterance_media_ms = 0.0
         started = time.monotonic()
+        speech_started: float | None = None
         while not self.closed:
+            now = time.monotonic()
+            if speaking:
+                remaining = self.settings.maximum_utterance_seconds - max(
+                    now - speech_started, utterance_media_ms / 1000
+                )
+                timeout = min(2.0, remaining)
+            else:
+                remaining = initial_timeout - max(now - started, idle_media_ms / 1000)
+                timeout = remaining
+            if remaining <= 0:
+                break
             try:
-                frame = await asyncio.wait_for(self.queue.get(), timeout=initial_timeout if not speaking else 2.0)
+                frame = await asyncio.wait_for(self.queue.get(), timeout=timeout)
             except asyncio.TimeoutError:
+                self.event("capture_ended" if speaking else "no_input", reason="media_timeout", audio_bytes=len(speech))
                 return b"" if not speaking else bytes(speech)
             if frame is None:
                 return None
@@ -297,17 +354,40 @@ class AudioSocketConnection:
             energy = rms(frame)
             voiced = energy >= self.settings.vad_energy_threshold
             if voiced:
+                if not speaking:
+                    self.event("speech_started")
+                    speech_started = time.monotonic()
+                    speech.extend(preroll)
+                    preroll.clear()
                 speaking = True
                 silence_ms = 0.0
                 speech_ms += duration_ms
+                utterance_media_ms += duration_ms
                 speech.extend(frame)
             elif speaking:
                 silence_ms += duration_ms
+                utterance_media_ms += duration_ms
                 speech.extend(frame)
                 if speech_ms >= self.settings.minimum_speech_ms and silence_ms >= endpoint_ms:
                     break
-            if time.monotonic() - started >= self.settings.maximum_utterance_seconds:
-                break
+                if silence_ms >= max(endpoint_ms, 400):
+                    # A short "yes" can be below the normal speech minimum.
+                    # Give it a little more pause, rather than waiting for the
+                    # entire utterance limit. Very brief clicks return to idle.
+                    if speech_ms >= min(80, self.settings.minimum_speech_ms):
+                        break
+                    speaking = False
+                    speech_started = None
+                    speech.clear()
+                    speech_ms = silence_ms = utterance_media_ms = 0.0
+            else:
+                idle_media_ms += duration_ms
+                if preroll_bytes:
+                    preroll.extend(frame)
+                    if len(preroll) > preroll_bytes:
+                        del preroll[: len(preroll) - preroll_bytes]
+        self.event("capture_ended" if speech else "no_input", audio_bytes=len(speech),
+                   voiced_ms=speech_ms, silence_ms=silence_ms, reason="closed" if self.closed else "endpoint_or_limit")
         return bytes(speech)
 
     async def close(self) -> None:
@@ -322,19 +402,21 @@ class AudioSocketConnection:
 
 
 class AudioSocketServer:
-    def __init__(self, settings: Settings, core: VoiceCore, stt: LocalSTT, tts: LocalTTS, registry: CallRegistry):
+    def __init__(self, settings: Settings, core: VoiceCore, stt: LocalSTT, tts: LocalTTS, registry: CallRegistry,
+                 diagnostics: CallDiagnostics | None = None):
         self.settings = settings
         self.core = core
         self.stt = stt
         self.tts = tts
         self.registry = registry
+        self.diagnostics = diagnostics
         self.server: asyncio.AbstractServer | None = None
         self.active_calls = 0
         self.tel_agent_phone = None
         if getattr(settings, "voice_engine", "local") == "tel_agent":
             from app.tel_agent_phone import TelAgentPhoneAgent
 
-            self.tel_agent_phone = TelAgentPhoneAgent(core, stt, core.llm, tts, registry)
+            self.tel_agent_phone = TelAgentPhoneAgent(core, stt, core.llm, tts, registry, diagnostics=diagnostics)
 
     async def start(self) -> None:
         self.server = await asyncio.start_server(self.handle, self.settings.audiosocket_host, self.settings.audiosocket_port)
@@ -466,7 +548,8 @@ class AudioSocketServer:
                 # Let it finish under LocalTTS's synthesis lock and consume its result.
                 task.add_done_callback(self._observe_background_synthesis)
 
-    async def _speak_reply(self, connection: AudioSocketConnection, reply: VoiceReply, call_uuid: str) -> bool:
+    async def _speak_reply(self, connection: AudioSocketConnection, reply: VoiceReply, call_uuid: str,
+                         *, since: float | None = None) -> bool:
         units = self._reply_synthesis_units(reply)
         started = time.monotonic()
         first_chunk = True
@@ -487,7 +570,12 @@ class AudioSocketServer:
                 yield pcm
 
         logger.info("call_event call_uuid=%s stage=tts_started chunks=%d", call_uuid, len(units))
-        interrupted = await connection.speak_stream(observed_stream(), chunk_count=len(units))
+        connection.event("reply_started")
+        interrupted = await connection.speak_stream(observed_stream(), chunk_count=len(units), since=since)
+        connection.event("reply_completed", interrupted=interrupted, audio_bytes=connection.last_stream_audio_bytes,
+                         playback_fraction=connection.last_playback_fraction)
+        if not connection.last_stream_audio_bytes and not interrupted and not connection.closed:
+            connection.event("no_output_audio", level="warning")
         logger.info(
             "call_event call_uuid=%s stage=response_stream_completed duration_ms=%d audio_bytes=%d interrupted=%s",
             call_uuid,
@@ -510,6 +598,7 @@ class AudioSocketServer:
         session = None
         outcome = "caller_hangup"
         call_uuid = ""
+        trace_token = None
         peer = writer.get_extra_info("peername")
         logger.info("call_event stage=tcp_accept peer=%s", peer)
         self.active_calls += 1
@@ -518,6 +607,10 @@ class AudioSocketServer:
             logger.info("call_event call_uuid=%s stage=uuid_received", call_uuid)
             metadata = self.registry.read_pre(call_uuid)
             session = self.core.create_session(call_uuid, metadata.get("caller_number", ""), metadata.get("called_number", ""))
+            if self.diagnostics is not None:
+                connection.trace = self.diagnostics.begin(session.call_id,
+                    llm_provider="local-llama", stt_provider="local-whisper", tts_provider="local-kokoro")
+                trace_token = current_trace.set(connection.trace)
             call_started = getattr(self.core, "call_started", None)
             if call_started is not None:
                 await call_started(session)
@@ -540,8 +633,11 @@ class AudioSocketServer:
                 greeting_interrupted,
             )
             while not connection.closed:
+                if connection.trace is not None:
+                    connection.trace.turn += 1
                 contact = contact_endpoint_stage(session.state.stage)
                 audio = await connection.utterance(contact=contact, stage=session.state.stage)
+                capture_ended = time.perf_counter()
                 input_stage = ""
                 processed_transcript = False
                 if audio is None:
@@ -554,27 +650,33 @@ class AudioSocketServer:
                     try:
                         started = time.monotonic()
                         logger.info("call_event call_uuid=%s stage=stt_started", call_uuid)
+                        connection.event("stt_started", stage=session.state.stage)
                         transcript = await self.stt.transcribe(audio, 8000, contact=contact)
+                        connection.event("stt_completed", duration_ms=(time.monotonic() - started) * 1000, chars=len(transcript))
                         logger.info(
                             "call_event call_uuid=%s stage=stt_completed duration_ms=%d transcript_chars=%d",
                             call_uuid,
                             int((time.monotonic() - started) * 1000),
                             len(transcript),
                         )
-                    except Exception:
+                    except Exception as exc:
+                        connection.event("stt_failed", level="error", error_type=type(exc).__name__)
                         logger.exception("call_event call_uuid=%s stage=stt_failed", call_uuid)
                         transcript = ""
                     input_stage = session.state.stage
                     processed_transcript = bool(transcript)
                     started = time.monotonic()
                     logger.info("call_event call_uuid=%s stage=voice_core_started", call_uuid)
+                    connection.event("processing_started", stage=input_stage)
                     reply = await self.core.process(session, transcript) if transcript else await self.core.no_input(session)
+                    connection.event("processing_completed", duration_ms=(time.monotonic() - started) * 1000,
+                                     stage=session.state.stage)
                     logger.info(
                         "call_event call_uuid=%s stage=voice_core_completed duration_ms=%d",
                         call_uuid,
                         int((time.monotonic() - started) * 1000),
                     )
-                response_interrupted = await self._speak_reply(connection, reply, call_uuid)
+                response_interrupted = await self._speak_reply(connection, reply, call_uuid, since=capture_ended)
                 logger.info(
                     "call_event call_uuid=%s stage=last_response_frame interrupted=%s playback_fraction=%.3f",
                     call_uuid,
@@ -598,19 +700,24 @@ class AudioSocketServer:
                     action = "completed" if session.state.completed else "fallback_callback"
                     self.registry.write_action(call_uuid, action, "", outcome)
                     break
-        except Exception:
+        except Exception as exc:
+            connection.event("call_failed", level="error", error_type=type(exc).__name__)
             logger.exception("call_event call_uuid=%s stage=voice_core_failed", call_uuid or "unknown")
             if call_uuid:
                 self.registry.write_action(call_uuid, "technical_failure", "", "voice_core_error")
             outcome = "error"
         finally:
-            if session:
-                await self.core.disconnect(session, outcome)
-            logger.info(
-                "call_event call_uuid=%s stage=socket_closed outcome=%s reason=%s",
-                call_uuid or "unknown",
-                outcome,
-                connection.close_reason,
-            )
-            await connection.close()
-            self.active_calls = max(0, self.active_calls - 1)
+            try:
+                if session:
+                    await self.core.disconnect(session, outcome)
+            finally:
+                connection.event("call_ended", outcome=outcome, reason=connection.close_reason,
+                                 dropped_frames=connection.dropped_frames)
+                logger.info(
+                    "call_event call_uuid=%s stage=socket_closed outcome=%s reason=%s",
+                    call_uuid or "unknown", outcome, connection.close_reason,
+                )
+                await connection.close()
+                self.active_calls = max(0, self.active_calls - 1)
+                if trace_token is not None:
+                    current_trace.reset(trace_token)

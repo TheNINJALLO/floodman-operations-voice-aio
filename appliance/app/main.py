@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import io
+import json
 import logging
+import math
 import re
 import sqlite3
 import time
@@ -23,7 +25,9 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from app.audiosocket import AudioSocketServer
 from app.auth import AuthManager, Principal
 from app.business import BusinessDirectory
+from app.briefings import PostCallBriefings
 from app.config import Settings
+from app.call_diagnostics import CallDiagnostics, FEEDBACK_CATEGORIES, diagnostic_report, summary as diagnostic_summary
 from app.db import Database
 from app.emailer import normalize_user_email
 from app.knowledge import KnowledgeBase
@@ -80,6 +84,7 @@ class Runtime:
         self.registry = CallRegistry(settings.runtime_dir)
         self.notifier = TeamNotifier(settings, self.database)
         self.suite_bridge = BusinessSuiteBridge(settings, self.database)
+        self.briefings = PostCallBriefings(settings, self.database, lambda: self.audio.active_calls)
         self.core = VoiceCore(
             settings,
             self.database,
@@ -88,8 +93,10 @@ class Runtime:
             self.llm,
             self.notifier,
             self.suite_bridge,
+            self.briefings,
         )
-        self.audio = AudioSocketServer(settings, self.core, self.stt, self.tts, self.registry)
+        self.call_diagnostics = CallDiagnostics(self.database, settings)
+        self.audio = AudioSocketServer(settings, self.core, self.stt, self.tts, self.registry, self.call_diagnostics)
         self.simulators: dict[str, CallSession] = {}
         self.ready = False
 
@@ -99,15 +106,19 @@ class Runtime:
         if not await self.llm.health():
             raise RuntimeError("Local llama.cpp API is not ready")
         await self.tts.warm(self.core.warm_phrases())
+        await self.call_diagnostics.start()
         await self.audio.start()
         await self.suite_bridge.start()
+        await self.briefings.start()
         self.ready = True
 
     async def stop(self) -> None:
         self.ready = False
         await self.audio.stop()
+        await self.briefings.stop()
         await self.suite_bridge.stop()
         await self.notifier.stop()
+        await self.call_diagnostics.stop()
 
 
 runtime = Runtime()
@@ -274,6 +285,10 @@ async def ready() -> JSONResponse:
         "stt": stt_ready,
         "tts": tts_ready,
         "voice_engine": settings.voice_engine,
+        "primary_model_profile": settings.primary_model_profile,
+        "primary_model": settings.llama_model_alias,
+        "local_ai_device": settings.local_ai_device,
+        "local_ai_only": settings.local_ai_only,
         "llm_provider": getattr(runtime.llm, "provider_name", "local-llama"),
         "stt_provider": getattr(runtime.stt, "provider_name", "local-whisper"),
         "tts_provider": getattr(runtime.tts, "provider_name", "local-kokoro"),
@@ -284,7 +299,7 @@ async def ready() -> JSONResponse:
         "streaming_llm": settings.voice_engine == "tel_agent",
         "streaming_tts": bool(getattr(runtime.tts, "streaming", False)),
         "conversation_features": [
-            "continuous-transcription",
+            "continuous-transcription" if getattr(runtime.stt, "streaming", False) else "local-utterance-transcription",
             "streamed-token-to-phrase-replies",
             "barge-in",
             "spoken-only-transcript",
@@ -490,11 +505,76 @@ async def call_detail(call_id: int, request: Request, floodman_session: str | No
     call = runtime.database.get_call(call_id)
     if not call:
         raise HTTPException(404)
+    diagnostics = runtime.database.get_call_diagnostics(call_id)
     return templates.TemplateResponse(
         request,
         "call.html",
-        _context(request, principal, "calls", call=call, message=request.query_params.get("message", ""), error=request.query_params.get("error", "")),
+        _context(request, principal, "calls", call=call, diagnostics=diagnostics,
+                 diagnostic_summary=diagnostic_summary(diagnostics), feedback_categories=FEEDBACK_CATEGORIES,
+                 briefing=runtime.briefings.view(call),
+                 message=request.query_params.get("message", ""), error=request.query_params.get("error", "")),
     )
+
+
+@app.post("/calls/{call_id}/feedback")
+async def call_feedback(
+    call_id: int,
+    floodman_session: str | None = Cookie(default=None),
+    csrf_token: str = Form(default=""),
+    category: str = Form(default="other"),
+    at_seconds: str = Form(default=""),
+    note: str = Form(default=""),
+):
+    principal = _require_api(floodman_session)
+    _csrf(principal, csrf_token)
+    try:
+        if category not in FEEDBACK_CATEGORIES:
+            raise ValueError("Select the type of problem.")
+        offset = float(at_seconds) if at_seconds.strip() else None
+        if offset is not None and (not math.isfinite(offset) or not 0 <= offset <= 86400):
+            raise ValueError("Enter seconds from the start of the call, between 0 and 86400.")
+        if len(note) > 2000:
+            raise ValueError("Keep the description to 2000 characters or fewer.")
+        runtime.database.add_call_feedback(call_id, principal.user_id, principal.display_name,
+                                           category, offset, note.strip())
+    except LookupError:
+        raise HTTPException(404, "Call not found")
+    except ValueError as exc:
+        return _redirect(f"/calls/{call_id}", error=str(exc))
+    _audit(principal, "report_problem", "call", str(call_id), {"category": category, "at_seconds": offset})
+    return _redirect(f"/calls/{call_id}", message="Problem saved with this call's diagnostics.")
+
+
+@app.post("/calls/{call_id}/briefing")
+async def generate_call_briefing(call_id: int, floodman_session: str | None = Cookie(default=None),
+                                csrf_token: str = Form(default="")):
+    principal = _require_api(floodman_session, manage=True)
+    _csrf(principal, csrf_token)
+    if not runtime.briefings.enabled:
+        return _redirect(f"/calls/{call_id}", error="Local post-call briefings have not been configured.")
+    try:
+        runtime.briefings.queue(call_id, force=True)
+    except LookupError:
+        raise HTTPException(404, "Call not found")
+    except ValueError as exc:
+        return _redirect(f"/calls/{call_id}", error=str(exc))
+    _audit(principal, "queue_briefing", "call", str(call_id))
+    return _redirect(f"/calls/{call_id}", message="Briefing queued. It will run while the phone system is idle.")
+
+
+@app.get("/calls/{call_id}/diagnostics")
+async def download_call_diagnostics(call_id: int, floodman_session: str | None = Cookie(default=None)):
+    principal = _require_api(floodman_session, manage=True)
+    call = runtime.database.get_call(call_id)
+    if not call:
+        raise HTTPException(404, "Call not found")
+    diagnostics = runtime.database.get_call_diagnostics(call_id, limit=5000)
+    report = diagnostic_report(call, diagnostics)
+    report["collector_status"] = runtime.call_diagnostics.status()
+    report["briefing"] = runtime.briefings.view(call)
+    _audit(principal, "download_diagnostics", "call", str(call_id))
+    return Response(json.dumps(report, ensure_ascii=False, indent=2), media_type="application/json",
+                    headers={"Content-Disposition": f'attachment; filename="call-{call_id}-diagnostics.json"'})
 
 
 @app.post("/calls/{call_id}/edit")

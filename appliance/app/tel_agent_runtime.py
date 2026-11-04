@@ -22,6 +22,7 @@ import httpx
 import websockets
 
 from app.config import Settings
+from app.call_diagnostics import emit_current
 from app.llm import LocalLLM
 from app.stt import LocalSTT
 from app.tts import LocalTTS
@@ -36,6 +37,7 @@ class TelAgentTranscriptTurn:
     text: str
     confidence: float | None = None
     language: str = ""
+    audio_ended_at: float | None = None
 
 
 @dataclass(slots=True)
@@ -121,6 +123,7 @@ def _provider_payload(
     max_tokens: int,
     temperature: float,
     tools: Sequence[Any] | None = None,
+    local_model: bool = False,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "model": model,
@@ -136,8 +139,9 @@ def _provider_payload(
         payload["reasoning_effort"] = "none"
         payload["reasoning_format"] = "hidden"
         payload["top_p"] = _bounded_number("GROQ_LLM_TOP_P", 0.70, 0.01, 1.0)
-    elif host in {"127.0.0.1", "::1", "localhost"}:
+    elif local_model or host in {"127.0.0.1", "::1", "localhost"}:
         payload["chat_template_kwargs"] = {"enable_thinking": False}
+        payload["reasoning_effort"] = "none"
     return payload
 
 
@@ -148,7 +152,7 @@ class TelAgentLLM(LocalLLM):
         super().__init__(settings)
         self._provider: Any = None
         self._text_delta_type: Any = None
-        self._cloud_key = os.getenv("GROQ_API_KEY", "").strip()
+        self._cloud_key = "" if (settings.local_ai_only or settings.primary_model_profile == "deckard") else os.getenv("GROQ_API_KEY", "").strip()
         self._base_url = (
             os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1").strip().rstrip("/")
             if self._cloud_key
@@ -191,6 +195,7 @@ class TelAgentLLM(LocalLLM):
                     max_tokens=max_tokens,
                     temperature=temperature,
                     tools=tools,
+                    local_model=not cloud,
                 )
                 headers = {"Authorization": f"Bearer {self._settings.api_key}"}
                 url = f"{self._settings.base_url}/chat/completions"
@@ -205,7 +210,7 @@ class TelAgentLLM(LocalLLM):
                     write=5.0,
                     pool=5.0,
                 )
-                async with httpx.AsyncClient(timeout=timeout) as client:
+                async with httpx.AsyncClient(timeout=timeout, trust_env=False, follow_redirects=False) as client:
                     async for event in self._read(client, url, payload, headers):
                         yield event
 
@@ -277,11 +282,13 @@ class TelAgentLLM(LocalLLM):
             raise RuntimeError("Tel-Agent model returned an empty reply")
         except Exception as exc:
             if emitted:
+                emit_current("llm_stream_partial", level="warning", error_type=type(exc).__name__)
                 logger.warning(
                     "Tel-Agent model stream ended after partial output: %s",
                     type(exc).__name__,
                 )
                 return
+            emit_current("llm_fallback", level="warning", reason="local_completion", error_type=type(exc).__name__)
             logger.warning(
                 "Tel-Agent model unavailable; using local completion fallback: %s",
                 type(exc).__name__,
@@ -346,7 +353,7 @@ class TelAgentSTT(LocalSTT):
 
     def __init__(self, settings: Settings):
         super().__init__(settings)
-        self._cloud_key = os.getenv("DEEPGRAM_API_KEY", "").strip()
+        self._cloud_key = "" if settings.local_ai_only else os.getenv("DEEPGRAM_API_KEY", "").strip()
         self._provider: Any = None
         self._final_type: Any = None
 
@@ -518,8 +525,8 @@ class TelAgentTTS(LocalTTS):
 
     def __init__(self, settings: Settings):
         super().__init__(settings)
-        self._cloud_key = os.getenv("ELEVENLABS_API_KEY", "").strip()
-        self._voice_id = os.getenv("ELEVENLABS_VOICE_ID", "").strip()
+        self._cloud_key = "" if settings.local_ai_only else os.getenv("ELEVENLABS_API_KEY", "").strip()
+        self._voice_id = "" if settings.local_ai_only else os.getenv("ELEVENLABS_VOICE_ID", "").strip()
         self._provider: Any = None
 
     @property
@@ -584,6 +591,7 @@ class TelAgentTTS(LocalTTS):
             except Exception as exc:
                 if emitted:
                     raise
+                emit_current("tts_fallback", level="warning", reason="local_kokoro", error_type=type(exc).__name__)
                 logger.warning(
                     "Tel-Agent ElevenLabs unavailable; using local Kokoro: %s",
                     type(exc).__name__,

@@ -55,6 +55,7 @@ class VoiceCore:
         llm: LocalLLM,
         notifier: TeamNotifier,
         suite_bridge: BusinessSuiteBridge | None = None,
+        briefings=None,
     ):
         self.settings = settings
         self.database = database
@@ -63,6 +64,7 @@ class VoiceCore:
         self.llm = llm
         self.notifier = notifier
         self.suite_bridge = suite_bridge
+        self.briefings = briefings
 
     def create_session(self, call_uuid: str, caller_number: str = "", called_number: str = "") -> CallSession:
         caller = normalize_phone(caller_number)
@@ -664,6 +666,11 @@ class VoiceCore:
         if not session.state.completed and not session.notification_sent:
             await self._notify(session, kind="partial_hangup", partial=True)
         self.database.finish_call(session.call_id, outcome)
+        if self.briefings is not None:
+            try:
+                self.briefings.queue(session.call_id)
+            except Exception as exc:
+                logger.warning("Unable to queue post-call briefing: %s", type(exc).__name__)
         if self.suite_bridge is not None:
             event_type = "call-failed" if outcome == "error" else "call-ended"
             failure_reason = "Voice processing failed; local partial intake retained" if event_type == "call-failed" else ""

@@ -24,8 +24,8 @@ class Database:
         self._lock = threading.RLock()
         self.initialize()
 
-    def connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.path, timeout=30, check_same_thread=False)
+    def connect(self, *, timeout: float = 30) -> sqlite3.Connection:
+        connection = sqlite3.connect(self.path, timeout=timeout, check_same_thread=False)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA journal_mode=WAL")
         connection.execute("PRAGMA foreign_keys=ON")
@@ -98,6 +98,39 @@ class Database:
                     last_login_at TEXT,
                     created_by INTEGER REFERENCES users(id) ON DELETE SET NULL
                 );
+                CREATE TABLE IF NOT EXISTS call_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    call_id INTEGER NOT NULL REFERENCES calls(id) ON DELETE CASCADE,
+                    event TEXT NOT NULL,
+                    level TEXT NOT NULL,
+                    elapsed_ms REAL NOT NULL,
+                    turn INTEGER NOT NULL,
+                    details_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS call_feedback (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    call_id INTEGER NOT NULL REFERENCES calls(id) ON DELETE CASCADE,
+                    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                    actor_name TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    at_seconds REAL,
+                    note TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS call_briefings (
+                    call_id INTEGER PRIMARY KEY REFERENCES calls(id) ON DELETE CASCADE,
+                    model TEXT NOT NULL,
+                    source_digest TEXT NOT NULL,
+                    generation INTEGER NOT NULL DEFAULT 1,
+                    status TEXT NOT NULL CHECK(status IN ('pending','running','ready','failed')),
+                    result_json TEXT NOT NULL DEFAULT '{}',
+                    error_code TEXT NOT NULL DEFAULT '',
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    next_attempt_at REAL NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS user_sessions (
                     token_hash TEXT PRIMARY KEY,
                     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -168,6 +201,10 @@ class Database:
                 );
                 CREATE INDEX IF NOT EXISTS idx_calls_started ON calls(started_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_messages_call ON messages(call_id, id);
+                CREATE INDEX IF NOT EXISTS idx_notifications_call_status ON notifications(call_id,status);
+                CREATE INDEX IF NOT EXISTS idx_call_events_call ON call_events(call_id, id);
+                CREATE INDEX IF NOT EXISTS idx_call_feedback_call ON call_feedback(call_id, id);
+                CREATE INDEX IF NOT EXISTS idx_call_briefings_due ON call_briefings(status,next_attempt_at,updated_at);
                 CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON user_sessions(expires_at);
                 CREATE INDEX IF NOT EXISTS idx_user_notifications ON user_notifications(user_id, created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_sms_consent_events ON sms_consent_events(user_id, created_at DESC);
@@ -192,6 +229,7 @@ class Database:
             # A process can stop after claiming an item but before recording its
             # result. Return those durable local records to the retry queue.
             db.execute("UPDATE business_event_outbox SET status='pending' WHERE status='sending'")
+            db.execute("UPDATE call_briefings SET status='pending',error_code='restart' WHERE status='running'")
 
     @staticmethod
     def _ensure_column(db: sqlite3.Connection, table: str, column: str, definition: str) -> None:
@@ -396,7 +434,10 @@ class Database:
     def list_calls(self, limit: int = 100) -> list[dict[str, Any]]:
         with self.connect() as db:
             rows = db.execute(
-                """SELECT c.*, i.snapshot_json, i.completed AS intake_completed, i.notification_status
+                """SELECT c.*, i.snapshot_json, i.completed AS intake_completed, i.notification_status,
+                          (SELECT COUNT(*) FROM call_feedback f WHERE f.call_id=c.id) AS feedback_count,
+                          (SELECT COUNT(*) FROM notifications n WHERE n.call_id=c.id AND n.status IN ('failed','undelivered')) AS failed_delivery_count,
+                          (SELECT COUNT(*) FROM call_events e WHERE e.call_id=c.id AND e.level IN ('warning','error')) AS diagnostic_warning_count
                    FROM calls c LEFT JOIN intakes i ON i.call_id=c.id ORDER BY c.id DESC LIMIT ?""",
                 (max(1, min(limit, 500)),),
             ).fetchall()
@@ -437,9 +478,115 @@ class Database:
         item["notifications"] = notifications
         return item
 
+    def add_call_events(self, events: list[dict[str, Any]]) -> None:
+        # Diagnostics never take the application lock or wait on a business
+        # transaction. The background writer can retry a busy SQLite connection.
+        with self.connect(timeout=0) as db:
+            # INSERT ... SELECT tolerates an administrator deleting a call while
+            # the non-blocking diagnostic writer still has its final events.
+            db.executemany(
+                """INSERT INTO call_events(call_id,event,level,elapsed_ms,turn,details_json,created_at)
+                   SELECT ?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM calls WHERE id=?)""",
+                [(event["call_id"], event["event"], event["level"], event["elapsed_ms"], event["turn"],
+                  json.dumps(event["details"], allow_nan=False), event["created_at"], event["call_id"])
+                 for event in events],
+            )
+
+    def get_call_diagnostics(self, call_id: int, limit: int = 1000) -> dict[str, Any]:
+        with self.connect() as db:
+            count = db.execute("SELECT COUNT(*) FROM call_events WHERE call_id=?", (call_id,)).fetchone()[0]
+            rows = list(db.execute(
+                "SELECT * FROM call_events WHERE call_id=? ORDER BY id DESC LIMIT ?",
+                (call_id, max(1, min(limit, 5000))),
+            ))
+            initial = db.execute(
+                "SELECT details_json FROM call_events WHERE call_id=? AND event='call_started' ORDER BY id LIMIT 1",
+                (call_id,),
+            ).fetchone()
+            feedback = [dict(row) for row in db.execute(
+                "SELECT actor_name,category,at_seconds,note,created_at FROM call_feedback WHERE call_id=? ORDER BY id",
+                (call_id,),
+            )]
+        events = []
+        for row in reversed(rows):
+            item = dict(row)
+            item["details"] = json.loads(item.pop("details_json"))
+            events.append(item)
+        return {
+            "events": events, "feedback": feedback, "event_count": count,
+            "events_truncated": count > len(events),
+            "runtime": json.loads(initial["details_json"]) if initial else {},
+        }
+
+    def add_call_feedback(self, call_id: int, user_id: int | None, actor_name: str,
+                          category: str, at_seconds: float | None, note: str) -> None:
+        with self._lock, self.connect() as db:
+            if not db.execute("SELECT 1 FROM calls WHERE id=?", (call_id,)).fetchone():
+                raise LookupError("Call not found.")
+            db.execute(
+                """INSERT INTO call_feedback(call_id,user_id,actor_name,category,at_seconds,note,created_at)
+                   VALUES(?,?,?,?,?,?,?)""",
+                (call_id, user_id, actor_name, category, at_seconds, note, utcnow()),
+            )
+
     def delete_call_by_uuid(self, call_uuid: str) -> None:
         with self.connect() as db:
             db.execute("DELETE FROM calls WHERE call_uuid=?", (call_uuid,))
+
+    def queue_call_briefing(self, call_id: int, model: str, source_digest: str, *, force: bool = False) -> bool:
+        with self._lock, self.connect() as db:
+            existing = db.execute("SELECT * FROM call_briefings WHERE call_id=?", (call_id,)).fetchone()
+            if existing and existing["model"] == model and existing["source_digest"] == source_digest:
+                if existing["status"] in {"pending", "running"} or (existing["status"] == "ready" and not force):
+                    return False
+            now = utcnow()
+            db.execute(
+                """INSERT INTO call_briefings(call_id,model,source_digest,status,created_at,updated_at)
+                   VALUES(?,?,?,'pending',?,?) ON CONFLICT(call_id) DO UPDATE SET
+                   model=excluded.model,source_digest=excluded.source_digest,generation=generation+1,
+                   status='pending',result_json='{}',error_code='',attempts=0,next_attempt_at=0,updated_at=excluded.updated_at""",
+                (call_id, model, source_digest, now, now),
+            )
+            return True
+
+    def get_call_briefing(self, call_id: int) -> dict[str, Any] | None:
+        with self.connect() as db:
+            row = db.execute("SELECT * FROM call_briefings WHERE call_id=?", (call_id,)).fetchone()
+        if row is None:
+            return None
+        result = dict(row)
+        result["result"] = json.loads(result.pop("result_json"))
+        return result
+
+    def claim_call_briefing(self) -> dict[str, Any] | None:
+        with self._lock, self.connect() as db:
+            row = db.execute(
+                """UPDATE call_briefings SET status='running',attempts=attempts+1,updated_at=?
+                   WHERE call_id=(SELECT call_id FROM call_briefings WHERE status='pending' AND next_attempt_at<=?
+                                  ORDER BY updated_at,call_id LIMIT 1) AND status='pending' RETURNING *""",
+                (utcnow(), time.time()),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def finish_call_briefing(self, job: dict[str, Any], *, result: dict[str, Any] | None = None,
+                             error_code: str = "") -> bool:
+        status = "ready" if result is not None else ("failed" if job["attempts"] >= 3 else "pending")
+        with self._lock, self.connect() as db:
+            changed = db.execute(
+                """UPDATE call_briefings SET status=?,result_json=?,error_code=?,next_attempt_at=?,updated_at=?
+                   WHERE call_id=? AND generation=? AND status='running'""",
+                (status, json.dumps(result or {}, ensure_ascii=False), error_code,
+                 time.time() + min(30, 2 ** job["attempts"] * 2), utcnow(), job["call_id"], job["generation"]),
+            )
+            return changed.rowcount == 1
+
+    def defer_call_briefing(self, job: dict[str, Any], reason: str) -> None:
+        with self._lock, self.connect() as db:
+            db.execute(
+                """UPDATE call_briefings SET status='pending',attempts=MAX(0,attempts-1),error_code=?,
+                   next_attempt_at=?,updated_at=? WHERE call_id=? AND generation=? AND status='running'""",
+                (reason, time.time() + 0.5, utcnow(), job["call_id"], job["generation"]),
+            )
 
     def delete_call(self, call_id: int) -> bool:
         with self.connect() as db:

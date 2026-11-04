@@ -2,13 +2,41 @@
 {% set page_title = "Call #" ~ call.id %}
 {% set page_eyebrow = call.started_at %}
 {% block content %}
+{% set briefing_state = briefing | default({}) %}
+{% set briefing_job = briefing_state.get('job') %}
 <section class="page-heading compact-heading">
   <div><a class="back-link" href="/">← Back to calls</a><h1>{{ call.snapshot.get('name') or 'Unknown caller' }}</h1><div class="heading-meta"><span class="status {{ 'danger' if call.snapshot.get('urgency') == 'emergency' else 'info' }}">{{ (call.snapshot.get('urgency') or 'normal') | title }}</span><span>{{ call.caller_number }}</span><span>{{ (call.outcome or call.status) | replace('_', ' ') | title }}</span></div></div>
   {% if principal.is_admin %}<form method="post" action="/calls/{{ call.id }}/delete" data-confirm="Permanently delete this call and its conversation?" data-confirm-label="Delete call"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button danger-outline" type="submit">Delete call</button></form>{% endif %}
 </section>
-<div class="detail-grid">
-  <section class="panel span-two">
-    <div class="panel-heading"><div><h2>Intake details</h2><p>Customer information captured during the call.</p></div></div>
+<nav class="call-sections" aria-label="Call sections"><a href="#call-briefing">AI briefing</a><a href="#call-conversation">Conversation</a><a href="#call-delivery">Delivery history</a><a href="#call-diagnostics">Diagnostics and feedback</a><a href="#call-intake">Intake details</a></nav>
+<section class="panel call-briefing" id="call-briefing" aria-labelledby="briefing-title">
+  <div class="panel-heading"><div><h2 id="briefing-title">AI briefing</h2><p>A draft for staff review. Check it against the original conversation.</p></div>
+    {% if principal.can_manage and briefing_state.get('enabled') %}
+    <form method="post" action="/calls/{{ call.id }}/briefing"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button secondary" type="submit" {% if call.status == 'active' or (briefing_job and briefing_job.status in ['pending', 'running']) %}disabled{% endif %}>{{ 'Regenerate briefing' if briefing_job else 'Generate briefing' }}</button></form>
+    {% endif %}
+  </div>
+  <div class="panel-copy">
+    {% if call.status == 'active' and briefing_state.get('enabled') %}<p class="muted">Briefing generation is available after the call ends.</p>{% endif %}
+    {% if briefing_state.get('stale') %}<p class="review-note">This call changed after the draft was generated. Review the latest transcript and regenerate the briefing if needed.</p>{% endif %}
+    {% if not briefing_state.get('enabled') %}<p class="muted">Local briefing generation is not configured. The captured intake and conversation remain available below.</p>
+    {% elif not briefing_job %}<p class="muted">No AI briefing has been generated for this call.{% if not principal.can_manage %} A manager can request one.{% endif %}</p>
+    {% elif briefing_job.status in ['pending', 'running'] %}<p role="status">{{ 'Briefing queued.' if briefing_job.status == 'pending' else 'Preparing a local AI briefing.' }} Refresh this call to check its progress.</p><a class="button secondary" href="/calls/{{ call.id }}#call-briefing">Refresh briefing</a>
+    {% elif briefing_job.status == 'failed' %}<p role="alert">The local model could not prepare this briefing. The original intake and transcript are available for follow-up.</p>{% if briefing_job.error_code %}<p class="muted">Diagnostic code: {{ briefing_job.error_code }}</p>{% endif %}
+    {% elif briefing_job.status == 'ready' and briefing_job.result %}
+      <p class="briefing-summary">{{ briefing_job.result.summary }}</p>
+      {% if briefing_job.result.evidence %}<details class="briefing-evidence"><summary>Check supporting transcript passages</summary><ul>{% for evidence in briefing_job.result.evidence %}<li><a href="#transcript-message-{{ evidence.message_index }}">Message {{ evidence.message_index }}</a><blockquote>{{ evidence.quote }}</blockquote></li>{% endfor %}</ul></details>{% endif %}
+    {% endif %}
+    {% if briefing_job %}<p class="briefing-provenance muted">Model: {{ briefing_job.model }}{% if briefing_job.updated_at %} · Updated <span class="js-date">{{ briefing_job.updated_at }}</span>{% endif %}</p>{% endif %}
+    <p class="help">Generating a briefing does not change the intake or send a message to anyone.</p>
+  </div>
+</section>
+<div class="detail-grid call-record-grid">
+  <aside class="panel conversation-panel" id="call-conversation">
+    <div class="panel-heading"><div><h2>Conversation</h2><p>{{ call.messages | length }} messages</p></div></div>
+    <div class="conversation">{% for item in call.messages %}<article class="bubble {{ item.role }}" id="transcript-message-{{ loop.index }}"><small>Message {{ loop.index }} · {{ 'AI assistant' if item.role == 'assistant' else 'Caller' }}{% if item.interrupted %} · interrupted{% endif %}{% if item.language %} · {{ item.language }}{% endif %} · <span class="js-date">{{ item.created_at }}</span></small><p>{{ item.text }}</p></article>{% else %}<div class="empty-state small"><p>No transcript was captured. Review the recovered intake and delivery history for any available details.</p></div>{% endfor %}</div>
+  </aside>
+  <section class="panel intake-panel" id="call-intake">
+    <details class="intake-editor" {{ 'open' if not call.intake_completed }}><summary><strong>Intake details</strong><span>View or correct the information captured during the call.</span></summary>
     <form method="post" action="/calls/{{ call.id }}/edit" class="form-grid">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <label>Name<input name="name" value="{{ call.snapshot.get('name', '') }}" {{ 'disabled' if not principal.can_manage }}></label>
@@ -31,14 +59,33 @@
       <label class="check-field full-field"><input type="checkbox" name="completed" {{ 'checked' if call.intake_completed }} {{ 'disabled' if not principal.can_manage }}><span><strong>Intake complete</strong><small>Mark this record ready for team follow-up.</small></span></label>
       {% if principal.can_manage %}<div class="form-actions full-field"><button class="button primary" type="submit">Save call details</button></div>{% endif %}
     </form>
+    </details>
   </section>
-  <aside class="panel conversation-panel">
-    <div class="panel-heading"><div><h2>Conversation</h2><p>{{ call.messages | length }} messages</p></div></div>
-    <div class="conversation">{% for item in call.messages %}<article class="bubble {{ item.role }}"><small>{{ 'AI assistant' if item.role == 'assistant' else 'Caller' }}{% if item.interrupted %} · interrupted{% endif %}{% if item.language %} · {{ item.language }}{% endif %} · <span class="js-date">{{ item.created_at }}</span></small><p>{{ item.text }}</p></article>{% else %}<div class="empty-state small"><p>No transcript was captured.</p></div>{% endfor %}</div>
-  </aside>
 </div>
-<section class="panel">
+<section class="panel delivery-panel" id="call-delivery">
   <div class="panel-heading"><div><h2>Delivery history</h2><p>Email and SMS delivery attempts for this call.</p></div></div>
-  <div class="table-wrap"><table><thead><tr><th>Time</th><th>Channel</th><th>Event</th><th>Recipient</th><th>Status</th><th>Response</th></tr></thead><tbody>{% for item in call.notifications %}<tr><td class="js-date">{{ item.created_at }}</td><td>{{ item.channel | upper }}</td><td>{{ item.kind | replace('_', ' ') | title }}</td><td>{{ item.recipient }}</td><td><span class="status {{ 'success' if item.status in ['sent','delivered'] else ('info' if item.status == 'queued' else 'neutral') }}">{{ item.status | title }}</span></td><td class="truncate">{{ item.response }}</td></tr>{% else %}<tr><td colspan="6" class="muted">No delivery events recorded.</td></tr>{% endfor %}</tbody></table></div>
+  <div class="table-wrap"><table class="delivery-table"><caption class="sr-only">Notification delivery attempts for this call</caption><thead><tr><th scope="col">Time</th><th scope="col">Channel and event</th><th scope="col">Recipient</th><th scope="col">Status</th><th scope="col">Response</th></tr></thead><tbody>{% for item in call.notifications %}<tr><td data-label="Time" class="js-date">{{ item.created_at }}</td><td data-label="Channel and event"><strong>{{ item.channel | upper }}</strong><span>{{ item.kind | replace('_', ' ') | title }}</span></td><td data-label="Recipient">{{ item.recipient }}</td><td data-label="Status"><span class="status {{ 'success' if item.status in ['sent','delivered'] else ('info' if item.status == 'queued' else ('danger' if item.status in ['failed','undelivered'] else 'neutral')) }}">{{ item.status | title }}</span></td><td data-label="Response">{% if item.response %}<details class="delivery-response"><summary>View response</summary><p>{{ item.response }}</p></details>{% else %}<span class="muted">No response recorded</span>{% endif %}</td></tr>{% else %}<tr><td colspan="5" class="muted">No delivery events recorded.</td></tr>{% endfor %}</tbody></table></div>
+</section>
+<section class="panel diagnostic-panel" id="call-diagnostics">
+  <div class="panel-heading"><div><h2>Call diagnostics</h2><p>Timing, interruptions, errors, and your feedback stay attached to this call.</p></div>{% if principal.can_manage %}<a class="button secondary" href="/calls/{{ call.id }}/diagnostics">Download diagnostics</a>{% endif %}</div>
+  {% if diagnostics.event_count %}
+  <div class="panel-copy"><dl class="diagnostic-totals"><div><dt>Saved events</dt><dd>{{ diagnostics.event_count }}</dd></div><div><dt>Interruptions</dt><dd>{{ diagnostic_summary.interruptions }}</dd></div><div><dt>Warnings</dt><dd>{{ diagnostic_summary.warnings }}</dd></div>{% if diagnostic_summary.max_first_audio_ms is not none %}<div><dt>Longest measured reply wait</dt><dd>{{ (diagnostic_summary.max_first_audio_ms / 1000) | round(2) }} <small>seconds</small></dd></div>{% endif %}</dl>
+  <p class="muted">Reply wait includes local recognition and speech preparation after capture ends. Phone playback and the pause used to detect a finished answer add time.</p></div>
+  <details class="diagnostic-timeline"><summary>View timing and error timeline</summary>
+    {% if diagnostics.events_truncated %}<p>Showing the most recent {{ diagnostics.events | length }} events.</p>{% endif %}
+    <ol class="call-timeline">{% for event in diagnostics.events %}<li><div class="event-time">+{{ (event.elapsed_ms / 1000) | round(2) }}s<small>Turn {{ event.turn }}</small></div><div class="event-content"><strong>{{ event.event | replace('_', ' ') | title }}</strong>{% if event.level != 'info' %}<span class="event-level">{{ event.level | title }}</span>{% endif %}{% if event.details %}<details><summary>Event details</summary><dl class="event-details">{% for key, value in event.details.items() %}<div><dt>{{ key | replace('_', ' ') | title }}</dt><dd>{{ value if value is not none else 'Not reported' }}</dd></div>{% endfor %}</dl></details>{% endif %}</div></li>{% endfor %}</ol>
+  </details>
+  {% else %}<p class="panel-copy muted">No audio diagnostic timeline is saved for this call. Timelines begin with calls made after this feature is deployed. Text simulations keep their conversation records.</p>{% endif %}
+  <details class="feedback-editor">
+    <summary>Report a problem</summary>
+    <form method="post" action="/calls/{{ call.id }}/feedback" class="form-grid">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>What went wrong?<select name="category">{% for key, label in feedback_categories.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select></label>
+      <label>Seconds into the call (optional)<input type="number" name="at_seconds" min="0" max="86400" step="0.1" placeholder="For example, 24"></label>
+      <label class="full-field">What did you hear, and what should have happened?<textarea name="note" rows="3" maxlength="2000" placeholder="For example: I paused while spelling my email, and the assistant started talking."></textarea></label>
+      <div class="form-actions full-field"><button class="button primary" type="submit">Save feedback</button></div>
+    </form>
+  </details>
+  {% if diagnostics.feedback %}<div class="feedback-history"><h3>Reported problems</h3>{% for feedback in diagnostics.feedback %}<article><p><strong>{{ feedback_categories.get(feedback.category, feedback.category) }}</strong>{% if feedback.at_seconds is not none %} · {{ feedback.at_seconds }} seconds into the call{% endif %}</p><p>{{ feedback.note }}</p><small>{{ feedback.actor_name }} · <span class="js-date">{{ feedback.created_at }}</span></small></article>{% endfor %}</div>{% endif %}
 </section>
 {% endblock %}

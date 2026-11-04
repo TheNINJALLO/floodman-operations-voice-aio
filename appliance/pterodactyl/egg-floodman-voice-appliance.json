@@ -5,9 +5,9 @@
         "update_url": null
     },
     "exported_at": "2026-08-19T00:00:00+00:00",
-    "name": "Floodman Voice Appliance (RTX A1000)",
+    "name": "Floodman Voice Appliance (CPU or CUDA)",
     "author": "TheN1NJ4LL0",
-    "description": "Self-hosted Floodman voice appliance for an NVIDIA RTX A1000. Built from the appliance/ directory of TheNINJALLO/floodman-operations-voice-aio and published as the gpu-appliance image tag.",
+    "description": "Self-hosted Floodman voice appliance, CPU by default with optional NVIDIA CUDA. Built from appliance/ and published under the existing gpu-appliance image tag.",
     "features": null,
     "docker_images": {
         "Floodman Voice Appliance (current AIO repo)": "ghcr.io/theninjallo/floodman-operations-voice-aio:gpu-appliance"
@@ -509,33 +509,133 @@
             "field_type": "text"
         },
         {
-            "name": "LLM Model Repository",
-            "description": "Hugging Face GGUF repository",
-            "env_variable": "LLAMA_MODEL_REPO",
-            "default_value": "Qwen/Qwen3-4B-GGUF",
+            "name": "Primary Model Profile",
+            "description": "deckard uses the pinned Deckard 40B Q4 for live conversation and ignores stale generic LLAMA_MODEL settings. custom requires explicit model fields.",
+            "env_variable": "PRIMARY_MODEL_PROFILE",
+            "default_value": "deckard",
             "user_viewable": true,
             "user_editable": true,
-            "rules": "required|string|max:255",
+            "rules": "required|string|in:deckard,custom",
+            "field_type": "text"
+        },
+        {
+            "name": "Deckard Model Path",
+            "description": "Optional existing Deckard GGUF path. Startup verifies its size and SHA-256. Blank downloads under DATA_DIR/models/llm.",
+            "env_variable": "DECKARD_MODEL_PATH",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:1024",
+            "field_type": "text"
+        },
+        {
+            "name": "Conversation Engine",
+            "description": "Tel-Agent streams primary-model wording. local retains the deterministic local driver for recovery/testing.",
+            "env_variable": "VOICE_ENGINE",
+            "default_value": "tel_agent",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|in:tel_agent,local",
+            "field_type": "text"
+        },
+        {
+            "name": "LLM Model Repository",
+            "description": "Only for PRIMARY_MODEL_PROFILE=custom: Hugging Face GGUF repository.",
+            "env_variable": "LLAMA_MODEL_REPO",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:255",
             "field_type": "text"
         },
         {
             "name": "LLM Model File",
-            "description": "Q4 GGUF filename",
+            "description": "Only for PRIMARY_MODEL_PROFILE=custom: GGUF filename.",
             "env_variable": "LLAMA_MODEL_FILENAME",
-            "default_value": "Qwen3-4B-Q4_K_M.gguf",
+            "default_value": "",
             "user_viewable": true,
             "user_editable": true,
-            "rules": "required|string|max:255",
+            "rules": "nullable|string|max:255",
+            "field_type": "text"
+        },
+        {
+            "name": "Custom Model Alias",
+            "description": "Only for PRIMARY_MODEL_PROFILE=custom: model identifier shared by the launcher and application.",
+            "env_variable": "LLAMA_MODEL_ALIAS",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:160",
             "field_type": "text"
         },
         {
             "name": "LLM Context Size",
-            "description": "Context window reserved on the A1000",
+            "description": "Local model context window",
             "env_variable": "LLAMA_CONTEXT_SIZE",
             "default_value": "4096",
             "user_viewable": true,
             "user_editable": true,
             "rules": "required|integer|min:2048|max:8192",
+            "field_type": "text"
+        },
+        {
+            "name": "Local AI Device",
+            "description": "CPU requires no NVIDIA device. Choose cuda explicitly for a GPU host.",
+            "env_variable": "LOCAL_AI_DEVICE",
+            "default_value": "cpu",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|in:cpu,cuda",
+            "field_type": "text"
+        },
+        {
+            "name": "Local AI Only",
+            "description": "Ignore retained cloud AI credentials and use only self-hosted inference.",
+            "env_variable": "LOCAL_AI_ONLY",
+            "default_value": "true",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|in:true,false",
+            "field_type": "text"
+        },
+        {
+            "name": "LLM CPU Threads",
+            "description": "Initial inference thread budget; tune using live-call latency measurements.",
+            "env_variable": "LLAMA_THREADS",
+            "default_value": "6",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|integer|min:1|max:128",
+            "field_type": "text"
+        },
+        {
+            "name": "LLM Prompt Threads",
+            "description": "CPU thread budget for prompt evaluation.",
+            "env_variable": "LLAMA_BATCH_THREADS",
+            "default_value": "6",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|integer|min:1|max:128",
+            "field_type": "text"
+        },
+        {
+            "name": "Recognition CPU Threads",
+            "description": "Faster-Whisper thread budget. Leave capacity for voice synthesis and telephony.",
+            "env_variable": "FASTER_WHISPER_THREADS",
+            "default_value": "4",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|integer|min:1|max:128",
+            "field_type": "text"
+        },
+        {
+            "name": "Voice CPU Threads",
+            "description": "Kokoro ONNX inference thread budget.",
+            "env_variable": "KOKORO_THREADS",
+            "default_value": "2",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|integer|min:1|max:128",
             "field_type": "text"
         },
         {
@@ -566,6 +666,96 @@
             "user_viewable": true,
             "user_editable": true,
             "rules": "required|numeric|min:0.75|max:1.0",
+            "field_type": "text"
+        },
+        {
+            "name": "Briefing Backend",
+            "description": "primary reuses the resident Deckard model. ollama explicitly selects a separate private Ollama service.",
+            "env_variable": "BRIEFING_BACKEND",
+            "default_value": "primary",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|in:primary,ollama",
+            "field_type": "text"
+        },
+        {
+            "name": "Post-Call AI Briefings",
+            "description": "Generate reviewable drafts after calls using the resident primary model by default. Sends no messages.",
+            "env_variable": "POST_CALL_BRIEFINGS_ENABLED",
+            "default_value": "false",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|in:true,false",
+            "field_type": "text"
+        },
+        {
+            "name": "Private Briefing Ollama URL",
+            "description": "Private Ollama origin. Loopback refers to this container, not the separate CRM container. Never expose Ollama publicly.",
+            "env_variable": "BRIEFING_OLLAMA_URL",
+            "default_value": "http://127.0.0.1:11434",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:255",
+            "field_type": "text"
+        },
+        {
+            "name": "Briefing Model",
+            "description": "Installed local model tag. Default is the Deckard 40B Q4 profile configured in next-project.",
+            "env_variable": "BRIEFING_MODEL",
+            "default_value": "floodman-deckard:40b-q4_k_m",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:160",
+            "field_type": "text"
+        },
+        {
+            "name": "Briefing CPU Threads",
+            "description": "Bounded CPU budget for background drafts. Shared servers still need workload measurements.",
+            "env_variable": "BRIEFING_THREADS",
+            "default_value": "4",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|integer|min:1|max:16",
+            "field_type": "text"
+        },
+        {
+            "name": "Briefing Timeout Seconds",
+            "description": "Maximum duration of one background model attempt.",
+            "env_variable": "BRIEFING_TIMEOUT_SECONDS",
+            "default_value": "120",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|numeric|min:5|max:300",
+            "field_type": "text"
+        },
+        {
+            "name": "Slow Reply Diagnostic Threshold",
+            "description": "Milliseconds from completed caller capture to first reply frame before a warning is saved. Does not change call behavior.",
+            "env_variable": "CALL_SLOW_RESPONSE_MS",
+            "default_value": "2000",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|integer|min:100|max:30000",
+            "field_type": "text"
+        },
+        {
+            "name": "No Input Timeout",
+            "description": "Seconds of caller silence before the assistant checks in; silent media does not reset the timer.",
+            "env_variable": "NO_INPUT_TIMEOUT_SECONDS",
+            "default_value": "12",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|numeric|min:2|max:60",
+            "field_type": "text"
+        },
+        {
+            "name": "Caller Input Preroll",
+            "description": "Milliseconds retained before detected speech to preserve quiet word onsets.",
+            "env_variable": "INPUT_PREROLL_MS",
+            "default_value": "240",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|integer|min:0|max:1000",
             "field_type": "text"
         },
         {

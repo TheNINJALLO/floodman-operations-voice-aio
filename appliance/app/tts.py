@@ -15,6 +15,7 @@ import numpy as np
 from scipy.signal import resample_poly
 
 from app.config import Settings
+from app.call_diagnostics import emit_current
 
 logger = logging.getLogger(__name__)
 
@@ -33,11 +34,22 @@ class LocalTTS:
             if self._kokoro is not None:
                 return
             from kokoro_onnx import Kokoro
-            self._kokoro = await asyncio.to_thread(
-                Kokoro,
-                str(self.settings.kokoro_model_path),
-                str(self.settings.kokoro_voices_path),
-            )
+            import onnxruntime as ort
+
+            def load():
+                options = ort.SessionOptions()
+                options.intra_op_num_threads = self.settings.kokoro_threads
+                options.inter_op_num_threads = 1
+                options.add_session_config_entry("session.intra_op.allow_spinning", "0")
+                options.add_session_config_entry("session.inter_op.allow_spinning", "0")
+                session = ort.InferenceSession(
+                    str(self.settings.kokoro_model_path),
+                    sess_options=options,
+                    providers=["CPUExecutionProvider"],
+                )
+                return Kokoro.from_session(session, str(self.settings.kokoro_voices_path))
+
+            self._kokoro = await asyncio.to_thread(load)
             logger.info("Kokoro ready with voice %s", self.settings.kokoro_voice)
 
     def _cache_path(self, text: str, voice: str | None = None, speed: float | None = None) -> Path:
@@ -62,7 +74,10 @@ class LocalTTS:
         selected_speed = self.settings.kokoro_speed if speed is None else self._validated_speed(speed)
         path = self._cache_path(text, voice, selected_speed)
         if self.settings.tts_cache_enabled and path.exists():
+            emit_current("tts_cache_hit")
             return path.read_bytes()
+        started = time.perf_counter()
+        emit_current("tts_started")
         try:
             await self.start()
             assert self._kokoro is not None
@@ -76,10 +91,12 @@ class LocalTTS:
                 )
             pcm = self._to_pcm(samples, int(rate))
         except Exception as exc:
+            emit_current("tts_fallback", level="warning", reason="espeak", error_type=type(exc).__name__)
             logger.exception("Kokoro failed, using eSpeak fallback: %s", exc)
             pcm = await asyncio.to_thread(self._espeak, text, selected_speed)
         if self.settings.tts_cache_enabled and pcm:
             path.write_bytes(pcm)
+        emit_current("tts_completed", duration_ms=(time.perf_counter() - started) * 1000, audio_bytes=len(pcm))
         return pcm
 
     @staticmethod

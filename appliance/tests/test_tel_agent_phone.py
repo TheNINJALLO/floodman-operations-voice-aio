@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import struct
+import time
 import uuid
 from types import SimpleNamespace
 
@@ -95,6 +96,28 @@ async def test_tel_agent_falls_back_to_required_reply_when_model_is_empty(monkey
     )])
 
     assert text == reply.text
+
+
+@pytest.mark.asyncio
+async def test_local_first_audio_timer_includes_recognition_time() -> None:
+    class Connection:
+        async def utterance(self, **_kwargs):
+            return b"caller audio"
+
+    class STT:
+        recognition_started = None
+
+        async def transcribe_local(self, *_args, **_kwargs):
+            self.recognition_started = time.perf_counter()
+            await asyncio.sleep(0)
+            return "There is water downstairs"
+
+    phone = agent()
+    phone.stt = STT()
+    turn = await phone._local_turn(Connection(), session())
+
+    assert turn.text == "There is water downstairs"
+    assert turn.audio_ended_at <= phone.stt.recognition_started
 
 
 @pytest.mark.asyncio

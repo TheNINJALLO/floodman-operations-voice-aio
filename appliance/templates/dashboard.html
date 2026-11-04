@@ -3,20 +3,34 @@
 {% set page_eyebrow = "Live intake and customer requests" %}
 {% block content %}
 <section class="page-heading">
-  <div><span class="eyebrow">Operations overview</span><h1>Calls and intake</h1><p>Review every conversation, see what needs attention, and keep the team moving.</p></div>
-  {% if principal.can_manage %}<a class="button secondary" href="/simulator">Run a test call</a>{% endif %}
+  <div><h1>Calls and intake</h1><p>Find the call that needs attention, review what was captured, and follow up with the team.</p></div>
+  <div class="heading-actions"><a class="button secondary" href="/">Refresh calls</a>{% if principal.can_manage %}<a class="button primary" href="/simulator">Run a test call</a>{% endif %}</div>
 </section>
-<section class="metric-grid" aria-label="Call summary">
-  <article class="metric-card"><span class="metric-icon blue">◫</span><div><small>Total calls</small><strong>{{ counts.total }}</strong><p>All recorded intake</p></div></article>
-  <article class="metric-card"><span class="metric-icon amber">◷</span><div><small>Active now</small><strong>{{ counts.active }}</strong><p>Calls in progress</p></div></article>
-  <article class="metric-card"><span class="metric-icon green">✓</span><div><small>Intakes complete</small><strong>{{ counts.completed }}</strong><p>Ready for follow-up</p></div></article>
-  <article class="metric-card"><span class="metric-icon red">!</span><div><small>Emergencies</small><strong>{{ counts.emergencies }}</strong><p>Priority response</p></div></article>
-</section>
-<section class="panel">
-  <div class="panel-heading"><div><h2>Recent calls</h2><p>Newest activity appears first.</p></div><label class="search-box"><span aria-hidden="true">⌕</span><input type="search" placeholder="Search calls" data-table-search="calls-table" aria-label="Search calls"></label></div>
-  <div class="table-wrap"><table id="calls-table"><thead><tr><th>Started</th><th>Caller</th><th>Status</th><th>Customer</th><th>Request</th><th>Priority</th><th><span class="sr-only">Open</span></th></tr></thead><tbody>
-  {% for call in calls %}<tr><td><strong class="js-date">{{ call.started_at }}</strong><small>#{{ call.id }}</small></td><td>{{ call.caller_number }}</td><td><span class="status {{ 'success' if call.intake_completed else ('info' if call.status == 'active' else 'neutral') }}">{{ (call.outcome or call.status) | replace('_', ' ') | title }}</span></td><td>{{ call.snapshot.get('name') or 'Not captured' }}</td><td class="truncate">{{ call.snapshot.get('description') or call.current_stage | replace('_', ' ') | title }}</td><td><span class="status {{ 'danger' if call.snapshot.get('urgency') == 'emergency' else 'neutral' }}">{{ (call.snapshot.get('urgency') or 'normal') | title }}</span></td><td><a class="row-action" href="/calls/{{ call.id }}" aria-label="Open call {{ call.id }}">→</a></td></tr>
-  {% else %}<tr><td colspan="7"><div class="empty-state"><span>◫</span><h3>No calls yet</h3><p>Incoming and simulated calls will appear here.</p></div></td></tr>{% endfor %}
+<dl class="call-totals" aria-label="All recorded calls">
+  <div><dt>Total calls</dt><dd>{{ counts.total }}</dd></div><div><dt>Active now</dt><dd>{{ counts.active }}</dd></div><div><dt>Intakes complete</dt><dd>{{ counts.completed }}</dd></div><div><dt>Emergencies</dt><dd>{{ counts.emergencies }}</dd></div>
+</dl>
+<section class="panel call-list" data-call-list>
+  <div class="panel-heading"><div><h2>Recent calls</h2><p>The newest {{ calls | length }} calls are shown. Refresh to see new activity.</p></div></div>
+  {% if calls %}
+  <div class="call-filters" data-call-filters hidden>
+    <label for="call-search">Search these calls<input id="call-search" type="search" placeholder="Name, phone, request, or call ID" data-call-search autocomplete="off"></label>
+    <label for="call-filter">Show<select id="call-filter" data-call-filter><option value="all">All recent calls</option><option value="active">Active calls</option><option value="incomplete">Incomplete intake</option><option value="reported">Problems reported</option><option value="deliveryFailed">Delivery failures</option><option value="warnings">Review warnings</option><option value="emergency">Emergency priority</option></select></label>
+    <button class="button secondary" type="button" data-clear-call-filters>Clear filters</button>
+    <p class="filter-count" data-call-count role="status" aria-live="polite"></p>
+  </div>
+  <noscript><p class="panel-copy">All recent calls are listed below. Enable JavaScript to search and filter them.</p></noscript>
+  {% endif %}
+  <div class="table-wrap"><table id="calls-table" class="calls-table"><caption class="sr-only">Recent phone calls and intake records</caption><thead><tr><th scope="col">Call</th><th scope="col">Customer and request</th><th scope="col">Intake and outcome</th><th scope="col">Priority</th><th scope="col">Review</th></tr></thead><tbody>
+  {% for call in calls %}
+    <tr data-call-row data-active="{{ 'true' if call.status == 'active' else 'false' }}" data-incomplete="{{ 'false' if call.intake_completed else 'true' }}" data-reported="{{ 'true' if call.feedback_count else 'false' }}" data-delivery-failed="{{ 'true' if call.failed_delivery_count else 'false' }}" data-warnings="{{ 'true' if call.diagnostic_warning_count else 'false' }}" data-emergency="{{ 'true' if call.snapshot.get('urgency') == 'emergency' else 'false' }}">
+      <td data-label="Call"><strong>#{{ call.id }}</strong><span class="js-date">{{ call.started_at }}</span><small>{{ call.caller_number or 'Caller number unavailable' }}</small></td>
+      <td data-label="Customer and request" class="call-request"><strong>{{ call.snapshot.get('name') or 'Name not captured' }}</strong><p>{{ call.snapshot.get('description') or 'No service request captured yet.' }}</p></td>
+      <td data-label="Intake and outcome"><span class="status {{ 'success' if call.intake_completed else ('info' if call.status == 'active' else 'neutral') }}">{{ (call.outcome or call.status) | replace('_', ' ') | title }}</span><small>{{ 'Intake complete' if call.intake_completed else 'Intake incomplete' }}</small>{% if call.feedback_count %}<small class="reported-label">Problem reported ({{ call.feedback_count }})</small>{% endif %}{% if call.failed_delivery_count %}<small class="failed-delivery-label">Delivery failed ({{ call.failed_delivery_count }})</small>{% endif %}{% if call.diagnostic_warning_count %}<small class="reported-label">Review warnings ({{ call.diagnostic_warning_count }})</small>{% endif %}</td>
+      <td data-label="Priority"><span class="status {{ 'danger' if call.snapshot.get('urgency') == 'emergency' else 'neutral' }}">{{ (call.snapshot.get('urgency') or 'normal') | title }}</span></td>
+      <td class="call-row-action"><a class="button secondary compact" href="/calls/{{ call.id }}" aria-label="Open call {{ call.id }}">Open call</a></td>
+    </tr>
+  {% else %}<tr><td colspan="5"><div class="empty-state"><h3>No calls yet</h3><p>Incoming and simulated calls will appear here with their captured details.</p>{% if principal.can_manage %}<a class="button secondary" href="/simulator">Open the conversation simulator</a>{% endif %}</div></td></tr>{% endfor %}
   </tbody></table></div>
+  <div class="empty-state filter-empty" data-call-empty hidden><h3>No calls match these filters</h3><p>Try a different name or number, select all recent calls, or clear the filters.</p><button class="button secondary" type="button" data-clear-call-filters>Clear filters</button></div>
 </section>
 {% endblock %}

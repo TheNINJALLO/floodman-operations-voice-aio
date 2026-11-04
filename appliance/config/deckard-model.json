@@ -1,0 +1,10 @@
+{
+  "ollama_model": "floodman-deckard:40b-q4_k_m",
+  "repository": "DavidAU/Qwen3.6-40B-Claude-4.6-Opus-Deckard-Heretic-Uncensored-Thinking-NEO-CODE-Di-IMatrix-MAX-GGUF",
+  "revision": "a07c606ff200709e7094b1469aa8a1d9028720c9",
+  "filename": "Qwen3.6-40B-Deck-Opus-NEO-CODE-HERE-2T-OT-Q4_K_M.gguf",
+  "sha256": "6533e19802f02af3524ae499a5f10b07667913c8ffa6bf4f055e83ea525a9fba",
+  "size_bytes": 24253604896,
+  "provenance": "Model identity and publisher pin from next-project/floodman_workspace/managed_ai.py, rechecked against publisher metadata 2026-11-04. Weights are not bundled; first startup downloads and verifies them if no existing model is provided.",
+  "use": "Default primary live conversational model and optional read-only post-call drafts. Pinned weights are verified before startup."
+}

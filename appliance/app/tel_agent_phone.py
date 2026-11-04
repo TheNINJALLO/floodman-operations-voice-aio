@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from app.audiosocket import AudioSocketConnection
+from app.call_diagnostics import CallDiagnostics, current_trace, emit_current
 from app.intake_flow import contact_endpoint_stage
 from app.models import VoiceReply
 from app.registry import CallRegistry
@@ -78,6 +79,7 @@ class TelAgentPhoneAgent:
         registry: CallRegistry,
         *,
         speak_turn: SpeakTurn | None = None,
+        diagnostics: CallDiagnostics | None = None,
     ):
         self.core = core
         self.stt = stt
@@ -85,6 +87,7 @@ class TelAgentPhoneAgent:
         self.tts = tts
         self.registry = registry
         self._speak_turn = speak_turn
+        self.diagnostics = diagnostics
 
     def _speaker(self) -> SpeakTurn:
         if self._speak_turn is None:
@@ -152,10 +155,17 @@ class TelAgentPhoneAgent:
             history=self._history(session),
         )
         emitted = False
-        async for piece in stream:
-            if piece:
-                emitted = True
-                yield piece
+        started = time.perf_counter()
+        emit_current("wording_started")
+        try:
+            async for piece in stream:
+                if piece:
+                    if not emitted:
+                        emit_current("wording_first_text", duration_ms=(time.perf_counter() - started) * 1000)
+                    emitted = True
+                    yield piece
+        finally:
+            emit_current("wording_completed", duration_ms=(time.perf_counter() - started) * 1000)
         if not emitted:
             yield reply.text
 
@@ -167,7 +177,8 @@ class TelAgentPhoneAgent:
         *,
         since: float | None = None,
     ) -> SpokenTurn:
-        connection.begin_provider_output()
+        connection.event("reply_started")
+        connection.begin_provider_output(since=since)
         try:
             if connection.closed or connection.barge_in_event.is_set():
                 close = getattr(text_stream, "aclose", None)
@@ -185,6 +196,10 @@ class TelAgentPhoneAgent:
         finally:
             interrupted = connection.barge_in_event.is_set()
             await connection.finish_provider_output(interrupted=interrupted)
+        connection.event("reply_completed", interrupted=result.interrupted,
+                         audio_bytes=connection.last_stream_audio_bytes)
+        if not connection.last_stream_audio_bytes and not result.interrupted and not connection.closed:
+            connection.event("no_output_audio", level="warning")
         logger.info(
             "call_event call_uuid=%s stage=tel_agent_spoken_turn first_audio_ms=%s interrupted=%s audio_bytes=%d",
             call_uuid,
@@ -214,12 +229,16 @@ class TelAgentPhoneAgent:
     ) -> TelAgentTranscriptTurn | None:
         contact = contact_endpoint_stage(session.state.stage)
         audio = await connection.utterance(contact=contact, stage=session.state.stage)
+        audio_ended_at = time.perf_counter()
         if audio is None:
             return None
         if not audio:
             return TelAgentTranscriptTurn(text="")
+        event = getattr(connection, "event", lambda *_args, **_kwargs: None)
+        event("stt_started", stage=session.state.stage)
         text = await self.stt.transcribe_local(audio, 8000, contact=contact)
-        return TelAgentTranscriptTurn(text=text)
+        event("stt_completed", duration_ms=(time.perf_counter() - audio_ended_at) * 1000, chars=len(text))
+        return TelAgentTranscriptTurn(text=text, audio_ended_at=audio_ended_at)
 
     async def handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         connection = AudioSocketConnection(reader, writer, self.core.settings)
@@ -227,6 +246,7 @@ class TelAgentPhoneAgent:
         stream_task: asyncio.Task[None] | None = None
         outcome = "caller_hangup"
         call_uuid = ""
+        trace_token = None
         streaming = self.stt.streaming
         transcript_queue: asyncio.Queue[TelAgentTranscriptTurn | BaseException | object] = (
             asyncio.Queue()
@@ -241,6 +261,11 @@ class TelAgentPhoneAgent:
                 metadata.get("called_number", ""),
             )
             session.defer_assistant_recording = True
+            if self.diagnostics is not None:
+                connection.trace = self.diagnostics.begin(session.call_id,
+                    llm_provider=self.llm.provider_name, stt_provider=self.stt.provider_name,
+                    tts_provider=self.tts.provider_name, streaming_stt=streaming)
+                trace_token = current_trace.set(connection.trace)
             await self.core.call_started(session)
             logger.info(
                 "call_event call_uuid=%s stage=tel_agent_session_created call_id=%s streaming_stt=%s",
@@ -263,13 +288,17 @@ class TelAgentPhoneAgent:
             self.core.record_assistant(session, greeting.text)
 
             while not connection.closed:
+                if connection.trace is not None:
+                    connection.trace.turn += 1
                 if streaming:
                     try:
                         item = await asyncio.wait_for(transcript_queue.get(), timeout=12.0)
                     except asyncio.TimeoutError:
+                        connection.event("no_input", reason="stream_timeout")
                         turn = TelAgentTranscriptTurn(text="")
                     else:
                         if isinstance(item, BaseException):
+                            connection.event("stt_failed", level="error", error_type=type(item).__name__)
                             logger.warning(
                                 "call_event call_uuid=%s stage=streaming_stt_failed error=%s fallback=local_whisper",
                                 call_uuid,
@@ -300,7 +329,9 @@ class TelAgentPhoneAgent:
                     if turn is None:
                         break
 
-                turn_ended = time.perf_counter()
+                # Include local recognition in first-audio latency, rather than
+                # starting the clock after the expensive CPU work has finished.
+                turn_ended = turn.audio_ended_at if turn.audio_ended_at is not None else time.perf_counter()
                 caller_text = turn.text.strip()
                 input_stage = session.state.stage
                 if caller_text:
@@ -311,12 +342,16 @@ class TelAgentPhoneAgent:
                         turn.confidence if turn.confidence is not None else "none",
                         turn.language or "unknown",
                     )
+                    processing_started = time.perf_counter()
+                    connection.event("processing_started", stage=input_stage)
                     reply = await self.core.process(
                         session,
                         caller_text,
                         confidence=turn.confidence,
                         language=turn.language,
                     )
+                    connection.event("processing_completed", duration_ms=(time.perf_counter() - processing_started) * 1000,
+                                     stage=session.state.stage)
                 else:
                     reply = await self.core.no_input(session)
 
@@ -350,7 +385,8 @@ class TelAgentPhoneAgent:
                     break
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception as exc:
+            connection.event("call_failed", level="error", error_type=type(exc).__name__)
             logger.exception(
                 "call_event call_uuid=%s stage=tel_agent_phone_failed",
                 call_uuid or "unknown",
@@ -367,4 +403,8 @@ class TelAgentPhoneAgent:
             if session is not None:
                 with contextlib.suppress(Exception):
                     await self.core.disconnect(session, outcome)
+            connection.event("call_ended", outcome=outcome, reason=connection.close_reason,
+                             dropped_frames=connection.dropped_frames)
             await connection.close()
+            if trace_token is not None:
+                current_trace.reset(trace_token)

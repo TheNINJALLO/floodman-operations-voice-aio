@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 import textwrap
 from pathlib import Path
 
@@ -53,7 +54,10 @@ def detect_asterisk_module_dir() -> Path:
 def write(root: Path, name: str, content: str) -> None:
     path = root / name
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(textwrap.dedent(content).strip() + "\n", encoding="utf-8")
+    # Interpolated multi-line sections can prevent dedent from finding a common
+    # margin. Asterisk entries are single-line; keep every section/key aligned.
+    normalized = "\n".join(line.lstrip() for line in textwrap.dedent(content).splitlines())
+    path.write_text(normalized.strip() + "\n", encoding="utf-8")
 
 
 def main() -> int:
@@ -133,11 +137,26 @@ def main() -> int:
     write(etc, "manager.conf", "[general]\nenabled=no")
     write(etc, "indications.conf", "[general]\ncountry=us\n[us]\ndescription=United States\nringcadence=2000,4000")
 
-    sip_target = parse_sip_target(settings.sip_server, settings.sip_port) if settings.sip_server else None
+    enabled = settings.sip_mode != "disabled"
+    twilio = settings.sip_mode == "twilio"
+    sip_target = parse_sip_target(settings.sip_server, settings.sip_port) if enabled and settings.sip_server else None
     transport = (sip_target.transport if sip_target else None) or settings.sip_transport
     transport = transport if transport in {"udp", "tcp", "tls"} else "udp"
     protocol = "tls" if transport == "tls" else transport
     bind_port = settings.sip_port
+    tls_options = ""
+    media_security = ""
+    if enabled and transport == "tls":
+        if not settings.sip_tls_cert_file.is_file() or not settings.sip_tls_key_file.is_file():
+            raise ValueError("TLS requires SIP_TLS_CERT_FILE and SIP_TLS_KEY_FILE to exist")
+        tls_options = f"""cert_file={settings.sip_tls_cert_file}
+        priv_key_file={settings.sip_tls_key_file}
+        ca_list_file=/etc/ssl/certs/ca-certificates.crt
+        method=tlsv1_2
+        verify_server=yes
+        verify_client=no
+        require_client_cert=no"""
+        media_security = "media_encryption=sdes\nmedia_encryption_optimistic=no"
     external = f"external_signaling_address={settings.sip_public_ip}\nexternal_media_address={settings.sip_public_ip}" if settings.sip_public_ip else ""
     auth = ""
     endpoint_auth = ""
@@ -149,14 +168,20 @@ def main() -> int:
         username={settings.sip_username}
         password={settings.sip_password}
         """
-        endpoint_auth = "outbound_auth=floodman-trunk-auth\nauth=floodman-trunk-auth"
+        endpoint_auth = "outbound_auth=floodman-trunk-auth"
+        if not twilio:
+            endpoint_auth += "\nauth=floodman-trunk-auth"
     proxy = f"outbound_proxy={settings.sip_outbound_proxy}" if settings.sip_outbound_proxy else ""
-    from_user = f"from_user={settings.sip_from_user}" if settings.sip_from_user else ""
-    from_domain = f"from_domain={settings.sip_from_domain}" if settings.sip_from_domain else ""
+    from_number = settings.sip_from_user or (settings.outbound_caller_id_number or settings.twilio_phone_number if twilio else "")
+    from_user = f"from_user={from_number}" if from_number else ""
+    domain = settings.sip_from_domain
+    if not domain and twilio and sip_target:
+        domain = re.sub(r"\.pstn\.[a-z0-9-]+\.twilio\.com$", ".pstn.twilio.com", sip_target.host)
+    from_domain = f"from_domain={domain}" if domain else ""
     contact = f"contact={sip_target.contact_uri}" if sip_target else ""
     matches = "\n".join(f"match={value}" for value in settings.sip_match_addresses)
     registration = ""
-    if settings.sip_username and settings.sip_password and sip_target:
+    if not twilio and settings.sip_username and settings.sip_password and sip_target:
         registration = f"""
         [floodman-registration]
         type=registration
@@ -169,10 +194,15 @@ def main() -> int:
         expiration=3600
         {proxy}
         """
-    write(etc, "pjsip.conf", f"""
+    if not enabled:
+        # Do not open a SIP listener while carrier configuration is incomplete.
+        write(etc, "pjsip.conf", "[global]\ntype=global\nendpoint_identifier_order=ip")
+    else:
+        write(etc, "pjsip.conf", f"""
     [global]
     type=global
     user_agent=Floodman Voice Appliance
+    endpoint_identifier_order={"ip" if twilio else "ip,username"}
 
     [transport-{transport}]
     type=transport
@@ -180,6 +210,7 @@ def main() -> int:
     bind=0.0.0.0:{bind_port}
     local_net={settings.sip_local_net}
     {external}
+    {tls_options}
 
     {auth}
 
@@ -196,10 +227,12 @@ def main() -> int:
     allow=ulaw,alaw
     aors=floodman-trunk-aor
     direct_media=no
-    rtp_symmetric=yes
+    rtp_symmetric={"no" if twilio else "yes"}
     force_rport=yes
     rewrite_contact=yes
     dtmf_mode=rfc4733
+    {"identify_by=ip" if twilio else ""}
+    {media_security}
     {endpoint_auth}
     {proxy}
     {from_user}
@@ -211,7 +244,7 @@ def main() -> int:
     {matches}
 
     {registration}
-    """)
+        """)
     caller_id = settings.outbound_caller_id_number or settings.twilio_phone_number
     write(etc, "extensions.conf", f"""
     [globals]

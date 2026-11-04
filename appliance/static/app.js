@@ -2,12 +2,89 @@
   "use strict";
 
   const csrf = document.querySelector('meta[name="csrf-token"]')?.content || "";
+  document.documentElement.classList.remove("no-js");
+
+  const sidebar = document.querySelector(".sidebar");
+  const appMain = document.querySelector(".app-main");
+  const menuButton = document.querySelector(".mobile-menu");
+  const mobileNavigation = window.matchMedia("(max-width: 920px)");
+
+  function setMenu(open, moveFocus = false) {
+    if (!sidebar) return;
+    const visible = mobileNavigation.matches && open;
+    document.body.classList.toggle("menu-open", visible);
+    menuButton?.setAttribute("aria-expanded", String(visible));
+    sidebar.inert = mobileNavigation.matches && !visible;
+    sidebar.setAttribute("aria-hidden", String(sidebar.inert));
+    if (appMain) appMain.inert = visible;
+    if (moveFocus) {
+      if (visible) sidebar.querySelector("[data-menu-close]")?.focus();
+      else menuButton?.focus();
+    }
+  }
 
   document.querySelectorAll("[data-menu-toggle]").forEach((control) => {
-    control.addEventListener("click", () => {
-      const open = document.body.classList.toggle("menu-open");
-      document.querySelector(".mobile-menu")?.setAttribute("aria-expanded", String(open));
+    control.addEventListener("click", () => setMenu(!document.body.classList.contains("menu-open"), true));
+  });
+  document.querySelectorAll("[data-menu-close]").forEach((control) => {
+    control.addEventListener("click", () => setMenu(false, true));
+  });
+  mobileNavigation.addEventListener("change", () => setMenu(false));
+  document.addEventListener("keydown", (event) => {
+    if (!document.body.classList.contains("menu-open") || !sidebar) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setMenu(false, true);
+    } else if (event.key === "Tab") {
+      const controls = [...sidebar.querySelectorAll('a[href], button:not(:disabled)')].filter((element) => element.getClientRects().length);
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    }
+  });
+  setMenu(false);
+
+  document.querySelectorAll("[data-call-list]").forEach((list) => {
+    const search = list.querySelector("[data-call-search]");
+    const filter = list.querySelector("[data-call-filter]");
+    const count = list.querySelector("[data-call-count]");
+    const empty = list.querySelector("[data-call-empty]");
+    const rows = [...list.querySelectorAll("[data-call-row]")];
+    if (!search || !filter || !count || !rows.length) return;
+    const entries = rows.map((row) => ({ row, text: row.textContent.toLocaleLowerCase() }));
+
+    function applyFilters() {
+      const query = search.value.trim().toLocaleLowerCase();
+      const kind = filter.value;
+      let visible = 0;
+      entries.forEach(({ row, text }) => {
+        const matches = (!query || text.includes(query)) && (kind === "all" || row.dataset[kind] === "true");
+        row.hidden = !matches;
+        if (matches) visible += 1;
+      });
+      count.textContent = `${visible} of ${rows.length} recent calls shown`;
+      if (empty) empty.hidden = visible > 0;
+      list.querySelector(".table-wrap").hidden = visible === 0;
+    }
+
+    list.querySelector("[data-call-filters]").hidden = false;
+    search.addEventListener("input", applyFilters);
+    filter.addEventListener("change", applyFilters);
+    list.querySelectorAll("[data-clear-call-filters]").forEach((button) => {
+      button.addEventListener("click", () => {
+        search.value = "";
+        filter.value = "all";
+        applyFilters();
+        search.focus();
+      });
     });
+    applyFilters();
   });
 
   document.querySelectorAll("[data-dismiss]").forEach((button) => {
@@ -17,6 +94,26 @@
   document.querySelectorAll("form[data-confirm]").forEach((form) => {
     form.addEventListener("submit", (event) => {
       if (!window.confirm(form.dataset.confirm || "Continue?")) event.preventDefault();
+    });
+  });
+
+  document.querySelectorAll('form[action$="/feedback"], form[action$="/briefing"]').forEach((form) => {
+    form.addEventListener("submit", (event) => {
+      if (event.defaultPrevented) return;
+      const button = event.submitter;
+      if (!button) return;
+      button.dataset.submitLabel = button.textContent;
+      button.disabled = true;
+      button.textContent = "Saving request…";
+      form.setAttribute("aria-busy", "true");
+    });
+  });
+  window.addEventListener("pageshow", () => {
+    document.querySelectorAll("[data-submit-label]").forEach((button) => {
+      button.textContent = button.dataset.submitLabel;
+      button.disabled = false;
+      button.closest("form")?.removeAttribute("aria-busy");
+      delete button.dataset.submitLabel;
     });
   });
 

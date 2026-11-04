@@ -29,7 +29,7 @@ def test_a1000_cuda_contract(project_root: Path):
     assert "ARG CONTAINER_GID=988" in text
     assert 'useradd --uid "${CONTAINER_UID}"' in text
     assert "6d05498314db1b57f81c271080018aa2d0b89be9" in text
-    assert "Qwen3-4B-Q4_K_M.gguf" in (project_root/".env.example").read_text()
+    assert "PRIMARY_MODEL_PROFILE=deckard" in (project_root/".env.example").read_text()
 
 def test_egg(project_root: Path):
     egg=json.loads((project_root/"pterodactyl/egg-floodman-voice-appliance.json").read_text())

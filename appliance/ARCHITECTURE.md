@@ -11,7 +11,7 @@ Twilio / SIP carrier
 │                                          │               │
 │                 ┌────────────────────────┼─────────────┐ │
 │                 ▼                        ▼             ▼ │
-│       Faster-Whisper CPU       Qwen3-4B / A1000   Kokoro CPU
+│       Faster-Whisper CPU       Deckard 40B Q4     Kokoro CPU
 │                 │                        │             │ │
 │                 └──── deterministic intake state ─────┘ │
 │                                  │                       │
@@ -48,4 +48,4 @@ Twilio / SIP carrier
 
 ## Capacity target
 
-Version 0.1.0 is engineered for one concurrent live call. More concurrency should be measured on the exact A1000 host before raising `--parallel` or context size.
+Start with one concurrent live call. CPU inference is the default; CUDA is optional via `LOCAL_AI_DEVICE=cuda`. Measure recognition, model, and synthesis latency on the actual host and panel allocation before raising concurrency or context size. `LOCAL_AI_ONLY=true` ignores retained cloud provider credentials. Local recognition uses endpointed audio, so interruption handling and silence thresholds still require carrier-call validation.

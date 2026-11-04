@@ -247,7 +247,9 @@ async def test_speech_queued_during_processing_is_not_cleared_before_playback() 
 
 @pytest.mark.asyncio
 async def test_email_endpoint_allows_a_natural_spelling_pause() -> None:
-    connection = AudioSocketConnection(asyncio.StreamReader(), BufferWriter(), settings())
+    options = settings()
+    options.maximum_utterance_seconds = 5
+    connection = AudioSocketConnection(asyncio.StreamReader(), BufferWriter(), options)
     capture = asyncio.create_task(connection.utterance(contact=True, stage="email"))
 
     for _ in range(10):
@@ -334,3 +336,132 @@ async def test_reply_playback_starts_while_later_phrase_is_still_synthesizing() 
     assert not tts.release_second.is_set()
     tts.release_second.set()
     assert await asyncio.wait_for(playback, timeout=2) is False
+
+
+@pytest.mark.asyncio
+async def test_provider_handoff_preserves_speech_shorter_than_barge_in_threshold() -> None:
+    connection = AudioSocketConnection(asyncio.StreamReader(), BufferWriter(), settings())
+    first_word = int(1200).to_bytes(2, "little", signed=True) * 640  # 80 ms
+    connection.begin_provider_output()
+    connection._capture_barge_in(first_word)
+    assert not connection.barge_in_event.is_set()
+
+    await connection.finish_provider_output(interrupted=False)
+
+    assert not connection.queue.empty(), "Caller speech at the end of playback was lost"
+    connection._queue_audio(first_word)
+    connection._queue_audio(b"\x00\x00" * 800)
+    audio = await asyncio.wait_for(connection.utterance(contact=False), timeout=0.5)
+    assert audio == first_word * 2 + b"\x00\x00" * 800
+
+
+@pytest.mark.asyncio
+async def test_local_playback_handoff_preserves_the_start_of_the_callers_reply() -> None:
+    first_word = int(1200).to_bytes(2, "little", signed=True) * 640
+
+    class ReplyingWriter(BufferWriter):
+        async def drain(self) -> None:
+            if len(self.frames) == 1:
+                connection._capture_barge_in(first_word)
+
+    connection = AudioSocketConnection(asyncio.StreamReader(), ReplyingWriter(), settings())
+    assert await connection.speak(b"\x00\x00" * 160) is False
+
+    assert not connection.queue.empty(), "The local playback path discarded the reply onset"
+    connection._queue_audio(first_word)
+    connection._queue_audio(b"\x00\x00" * 800)
+    audio = await asyncio.wait_for(connection.utterance(contact=False), timeout=0.5)
+    assert audio == first_word * 2 + b"\x00\x00" * 800
+
+
+@pytest.mark.asyncio
+async def test_listening_retains_bounded_audio_before_the_energy_threshold() -> None:
+    options = settings()
+    options.input_preroll_ms = 60
+    connection = AudioSocketConnection(asyncio.StreamReader(), BufferWriter(), options)
+    silence = b"\x00\x00" * 160
+    quiet_onset = int(200).to_bytes(2, "little", signed=True) * 160
+    speech = int(1200).to_bytes(2, "little", signed=True) * 160
+    for _ in range(15):
+        connection._queue_audio(silence)
+    for _ in range(2):
+        connection._queue_audio(quiet_onset)
+    for _ in range(10):
+        connection._queue_audio(speech)
+    for _ in range(5):
+        connection._queue_audio(silence)
+
+    audio = await asyncio.wait_for(connection.utterance(contact=False), timeout=0.5)
+
+    assert audio == silence + quiet_onset * 2 + speech * 10 + silence * 5
+
+
+@pytest.mark.asyncio
+async def test_continuous_silent_media_does_not_restart_the_no_input_timer() -> None:
+    options = settings()
+    options.no_input_timeout_seconds = 0.1
+    connection = AudioSocketConnection(asyncio.StreamReader(), BufferWriter(), options)
+    for _ in range(6):
+        connection._queue_audio(b"\x00\x00" * 160)
+
+    assert await asyncio.wait_for(connection.utterance(contact=False), timeout=0.5) == b""
+
+
+@pytest.mark.asyncio
+async def test_missing_media_obeys_the_same_no_input_deadline() -> None:
+    options = settings()
+    options.no_input_timeout_seconds = 0.04
+    connection = AudioSocketConnection(asyncio.StreamReader(), BufferWriter(), options)
+
+    assert await asyncio.wait_for(connection.utterance(contact=False), timeout=0.5) == b""
+
+
+@pytest.mark.asyncio
+async def test_buffered_speech_obeys_the_maximum_utterance_duration() -> None:
+    options = settings()
+    options.maximum_utterance_seconds = 0.2
+    connection = AudioSocketConnection(asyncio.StreamReader(), BufferWriter(), options)
+    frame = int(1200).to_bytes(2, "little", signed=True) * 160
+    for _ in range(100):
+        connection._queue_audio(frame)
+
+    assert await asyncio.wait_for(connection.utterance(contact=False), timeout=0.5) == frame * 10
+    assert connection.queue.qsize() == 90
+
+
+@pytest.mark.asyncio
+async def test_cancelled_provider_guard_always_returns_to_listening() -> None:
+    options = settings()
+    options.post_tts_guard_ms = 5000
+    connection = AudioSocketConnection(asyncio.StreamReader(), BufferWriter(), options)
+    connection.begin_provider_output()
+    finishing = asyncio.create_task(connection.finish_provider_output(interrupted=False))
+    await asyncio.sleep(0)
+    finishing.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await finishing
+
+    assert connection.output_active is False
+
+
+@pytest.mark.asyncio
+async def test_brief_confirmation_does_not_wait_for_the_full_utterance_limit() -> None:
+    connection = AudioSocketConnection(asyncio.StreamReader(), BufferWriter(), settings())
+    word = int(1200).to_bytes(2, "little", signed=True) * 640  # An 80 ms "yes".
+    silence = b"\x00\x00" * 3200
+    connection._queue_audio(word)
+    connection._queue_audio(silence)
+
+    assert await asyncio.wait_for(connection.utterance(contact=False), timeout=0.5) == word + silence
+
+
+@pytest.mark.asyncio
+async def test_isolated_click_does_not_become_a_confirmation() -> None:
+    options = settings()
+    options.no_input_timeout_seconds = 0.6
+    connection = AudioSocketConnection(asyncio.StreamReader(), BufferWriter(), options)
+    connection._queue_audio(int(1200).to_bytes(2, "little", signed=True) * 160)
+    connection._queue_audio(b"\x00\x00" * 3200)
+    connection._queue_audio(b"\x00\x00" * 4800)
+
+    assert await asyncio.wait_for(connection.utterance(contact=False), timeout=0.5) == b""
