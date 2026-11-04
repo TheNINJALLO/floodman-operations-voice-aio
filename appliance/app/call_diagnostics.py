@@ -54,6 +54,7 @@ DETAIL_KEYS = {
     "dropped_frames", "dropped_events", "voiced_ms", "silence_ms", "queue_depth",
     "slow_response_ms",
     "briefing_model", "post_call_briefings_enabled", "briefing_threads", "primary_model_profile", "briefing_backend",
+    "wording_budget_ms", "llm_timeout_seconds", "briefing_timeout_seconds",
 }
 
 
@@ -117,6 +118,9 @@ def runtime_snapshot(settings: Any) -> dict[str, Any]:
         "stt_model": settings.faster_whisper_model, "voice": settings.kokoro_voice,
         "voice_speed": settings.kokoro_speed, "llm_model_file": settings.llm_model_path.name,
         "llm_threads": os.getenv("LLAMA_THREADS", "6"),
+        "wording_budget_ms": os.getenv("TEL_AGENT_WORDING_BUDGET_MS", "1200"),
+        "llm_timeout_seconds": settings.llama_timeout_seconds,
+        "briefing_timeout_seconds": settings.briefing_timeout_seconds,
         "stt_threads": settings.faster_whisper_threads, "tts_threads": settings.kokoro_threads,
         "endpoint_ms": settings.endpoint_silence_ms,
         "contact_endpoint_ms": settings.contact_endpoint_silence_ms,

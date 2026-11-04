@@ -26,6 +26,8 @@ for safety, routing, verification, customer records, and business actions.
 
 The fully local profile transcribes endpointed utterances with Faster-Whisper. Continuous streaming recognition is available only with the optional external recognizer. The local energy detector uses configurable silence thresholds; it does not determine semantic sentence completion. Live-call testing is required to tune pauses and verify response times.
 
+Optional conversational wording has a 1200 ms total budget (`TEL_AGENT_WORDING_BUDGET_MS`, bounded 200–3000 ms). A complete short rewrite must arrive within that budget; otherwise the existing approved response is spoken. Partial rewrites are buffered so a stalled model cannot leave the caller with half a question. This limits optional wording waits; it does not establish fast generative conversation on a 40B CPU model. `LLAMA_TIMEOUT_SECONDS` separately bounds complete extraction/knowledge requests, including recovery attempts.
+
 ## Reliability design
 
 The local model extracts structured information. The application owns questions, confirmations, transitions, notifications, and call-ending decisions. Tel-Agent can stream revised wording for ordinary replies while protected replies remain exact. Short phrase synthesis and warmed prompts reduce startup delay; hardware measurements determine actual response time.

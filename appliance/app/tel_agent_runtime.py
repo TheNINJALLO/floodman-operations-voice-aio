@@ -247,12 +247,13 @@ class TelAgentLLM(LocalLLM):
         temperature: float = 0.1,
     ) -> str:
         pieces: list[str] = []
-        async for piece in self.stream_text(
-            messages,
-            max_tokens=max_tokens,
-            temperature=temperature,
-        ):
-            pieces.append(piece)
+        async with asyncio.timeout(self.settings.llama_timeout_seconds):
+            async for piece in self.stream_text(
+                messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            ):
+                pieces.append(piece)
         return "".join(pieces).strip()
 
     async def stream_text(

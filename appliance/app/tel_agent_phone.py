@@ -154,20 +154,36 @@ class TelAgentPhoneAgent:
             state=session.state.to_dict(),
             history=self._history(session),
         )
-        emitted = False
+        pieces: list[str] = []
         started = time.perf_counter()
         emit_current("wording_started")
         try:
-            async for piece in stream:
-                if piece:
-                    if not emitted:
-                        emit_current("wording_first_text", duration_ms=(time.perf_counter() - started) * 1000)
-                    emitted = True
-                    yield piece
+            try:
+                budget_ms = float(os.getenv("TEL_AGENT_WORDING_BUDGET_MS", "1200"))
+            except ValueError:
+                budget_ms = 1200
+            # Complete the short optional rewrite before playing it. A slow
+            # model or broken stream must not leave a spoken half-question.
+            async with asyncio.timeout(max(200, min(budget_ms, 3000)) / 1000):
+                async for piece in stream:
+                    if piece:
+                        if not pieces:
+                            emit_current("wording_first_text", duration_ms=(time.perf_counter() - started) * 1000)
+                        pieces.append(piece)
+            candidate = "".join(pieces).strip()
+            if not candidate or ("?" in reply.text and not candidate.endswith("?")):
+                candidate = reply.text
+                emit_current("wording_fallback", reason="incomplete_reply", level="warning")
+        except Exception as exc:
+            candidate = reply.text
+            emit_current("wording_fallback", reason="required_reply", level="warning", error_type=type(exc).__name__)
         finally:
+            close = getattr(stream, "aclose", None)
+            if close is not None:
+                with contextlib.suppress(Exception):
+                    await close()
             emit_current("wording_completed", duration_ms=(time.perf_counter() - started) * 1000)
-        if not emitted:
-            yield reply.text
+        yield candidate
 
     async def _speak(
         self,

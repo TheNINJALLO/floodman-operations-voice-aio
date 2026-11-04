@@ -219,6 +219,18 @@ def test_bounded_source_keeps_original_message_numbers_and_excludes_internal_met
     assert "do-not-copy" not in json.dumps(source)
 
 
+def test_briefing_source_excludes_assistant_readbacks_and_internal_identifiers(database):
+    call = ended_call(database)
+    call["snapshot"]["call_uuid"] = "internal-reference-not-needed-for-a-draft"
+    call["messages"].append({"role": "assistant", "text": "Repeated assistant-only words"})
+    source = source_for(call)
+    assert source["messages"] == [{"message_index": 2, "role": "caller", "text": "Water in the basement."}]
+    assert source["saved_intake"]["department"] == "estimating"
+    assert "internal-reference-not-needed-for-a-draft" not in json.dumps(source)
+    assert "Repeated assistant-only words" not in json.dumps(source)
+    assert source["transcript_truncated"] is False
+
+
 @pytest.mark.asyncio
 async def test_disabled_briefings_never_connect_or_enqueue(settings, database):
     settings.post_call_briefings_enabled = False
