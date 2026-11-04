@@ -24,6 +24,17 @@ chmod 600 "${RUNTIME_ENV}"
 "${PYTHON_BIN}" /opt/floodman/scripts/envfile.py normalize "${RUNTIME_ENV}"
 eval "$("${PYTHON_BIN}" /opt/floodman/scripts/envfile.py shell-exports "${RUNTIME_ENV}" --missing-only)"
 
+# Wings uses a read-only container filesystem. Model/cache libraries must not
+# inherit /root/.cache from the base image or write outside persistent data.
+export HOME=/home/container
+export XDG_CACHE_HOME="${DATA_DIR}/cache"
+export HF_HOME="${DATA_DIR}/models/huggingface"
+export HF_HUB_CACHE="${HF_HOME}/hub"
+export HF_XET_CACHE="${HF_HOME}/xet"
+export HF_ASSETS_CACHE="${HF_HOME}/assets"
+export TMPDIR="${DATA_DIR}/cache/tmp"
+mkdir -p "${HF_HUB_CACHE}" "${HF_XET_CACHE}" "${HF_ASSETS_CACHE}" "${TMPDIR}"
+
 if [[ ! -d "${DATA_DIR}/knowledge" ]]; then
   cp -a /opt/floodman/knowledge "${DATA_DIR}/knowledge"
 fi

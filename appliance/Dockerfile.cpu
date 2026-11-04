@@ -29,6 +29,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     VIRTUAL_ENV=/opt/venv \
     PATH=/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     WEB_PORT=8002 LOCAL_AI_DEVICE=cpu LOCAL_AI_ONLY=true \
+    HOME=/home/container \
     PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 \
     LD_LIBRARY_PATH=/opt/llama
 RUN apt-get update && apt-get install -y --no-install-recommends \

@@ -68,9 +68,26 @@ def download(url: str, path: Path) -> None:
     temporary.replace(path)
 
 
+def configure_runtime_cache(data: Path) -> None:
+    """Configure persistent caches before importing Hugging Face/Xet."""
+    hf = data / "models/huggingface"
+    directories = {
+        "XDG_CACHE_HOME": data / "cache",
+        "HF_HOME": hf,
+        "HF_HUB_CACHE": hf / "hub",
+        "HF_XET_CACHE": hf / "xet",
+        "HF_ASSETS_CACHE": hf / "assets",
+        "TMPDIR": data / "cache/tmp",
+    }
+    for name, directory in directories.items():
+        directory.mkdir(parents=True, exist_ok=True)
+        os.environ[name] = str(directory)
+
+
 def main() -> int:
-    from huggingface_hub import snapshot_download
     data = Path(os.getenv("DATA_DIR", "/home/container/data"))
+    configure_runtime_cache(data)
+    from huggingface_hub import snapshot_download
     models = Path(os.getenv("MODEL_DIR", data / "models"))
     token = os.getenv("HF_TOKEN") or None
 
