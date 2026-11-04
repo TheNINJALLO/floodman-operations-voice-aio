@@ -223,7 +223,13 @@ async def test_primary_briefing_and_extraction_use_resident_deckard(configured, 
     assert await PrimaryBriefingClient(configured).generate(source) == draft
     assert all(payload["model"] == DECKARD_MODEL for payload in requests)
     assert requests[-1]["response_format"]["type"] == "json_schema"
-    assert requests[-1]["response_format"]["schema"]["additionalProperties"] is False
+    # Match the pinned server's parser, which only reads the nested wrapper.
+    server_schema = requests[-1]["response_format"].get("json_schema", {}).get("schema", {})
+    assert server_schema["additionalProperties"] is False
+    assert server_schema["required"] == ["summary", "evidence"]
+    assert server_schema["properties"]["summary"]["maxLength"] == 600
+    assert server_schema["properties"]["evidence"]["maxItems"] == 2
+    assert server_schema["$defs"]["Evidence"]["properties"]["quote"]["maxLength"] == 160
     assert all(payload["chat_template_kwargs"] == {"enable_thinking": False} for payload in requests)
 
 

@@ -52,13 +52,13 @@ def valid_model(value: str) -> str:
 class Evidence(BaseModel):
     model_config = ConfigDict(extra="forbid")
     message_index: int = Field(ge=1)
-    quote: str = Field(min_length=1, max_length=400)
+    quote: str = Field(min_length=1, max_length=160)
 
 
 class BriefingDraft(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    summary: str = Field(min_length=1, max_length=1400)
-    evidence: list[Evidence] = Field(min_length=1, max_length=6)
+    summary: str = Field(min_length=1, max_length=600)
+    evidence: list[Evidence] = Field(min_length=1, max_length=2)
 
 
 class BriefingError(Exception):

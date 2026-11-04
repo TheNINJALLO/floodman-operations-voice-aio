@@ -45,7 +45,12 @@ class LocalLLM:
             "reasoning_effort": "none",
         }
         if json_schema is not None:
-            payload["response_format"] = {"type": "json_schema", "schema": json_schema}
+            # The pinned server-common.cpp reads json_schema.schema for this
+            # type. Its README's flat example silently falls back to {}.
+            payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {"name": "floodman_call_briefing", "strict": True, "schema": json_schema},
+            }
         headers = {"Authorization": f"Bearer {self.settings.llama_api_key}"}
         deadline = self.settings.llama_timeout_seconds if timeout_seconds is None else timeout_seconds
         async with asyncio.timeout(deadline):
