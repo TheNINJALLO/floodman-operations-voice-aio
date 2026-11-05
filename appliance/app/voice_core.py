@@ -8,7 +8,7 @@ from app.business import BusinessDirectory
 from app.config import Settings
 from app.conversation import (
     DETAIL_STAGES, QUESTIONS, capture_volunteered, contact_fields, declined,
-    detail_stage, hold_requested, identity_question, memory, name_answer, phone_answer, request_kind,
+    detail_stage, hold_requested, identity_question, memory, name_answer, phone_answer, request_kind, unfinished_turn,
 )
 from app.db import Database
 from app.intake import (
@@ -16,6 +16,7 @@ from app.intake import (
     classify_service,
     classify_property_context,
     detect_emergency,
+    detect_flood_emergency,
     human_requested,
     normalize_confirmation,
     normalize_email,
@@ -42,6 +43,7 @@ class CallSession:
     interrupted_prompt_stage: str = ""
     interrupted_from_stage: str = ""
     defer_assistant_recording: bool = False
+    introduction_pending: bool = False
 
 
 class VoiceCore:
@@ -92,7 +94,7 @@ class VoiceCore:
 
     @staticmethod
     def greeting() -> str:
-        return "Hello. This is Alex with Floodman. How may I help you today?"
+        return "Thanks for calling Floodman, I'm Alex. How can I help you today?"
 
     def warm_phrases(self) -> tuple[str, ...]:
         """Return the fixed prompts callers are most likely to hear.
@@ -109,6 +111,7 @@ class VoiceCore:
                 phrases.append(text)
 
         add(self.greeting())
+        add("You're through to Floodman, I'm Alex.")
         for stage in (
             "property_context",
             "affected_area",
@@ -138,6 +141,8 @@ class VoiceCore:
         add("What's the correct email?")
         add("Are you still there? I can wait a moment.")
         add("I'm still here. Say hello when you're ready.")
+        add("Go ahead, I'm listening.")
+        add("I've added that. " + QUESTIONS["anything_else"])
         for text in QUESTIONS.values():
             add(text)
         for text in ("Take your time.", "Hi. What can I help you with?", "I can pass that along. What name should I put this under?"):
@@ -159,6 +164,14 @@ class VoiceCore:
         speech_part_speeds: tuple[float | None, ...] = (),
     ) -> VoiceReply:
         text = clean(text, 1200)
+        if session.introduction_pending:
+            session.introduction_pending = False
+            intro = "You're through to Floodman, I'm Alex."
+            text = f"{intro} {text}"
+            if speech_parts:
+                speech_parts = (intro, *speech_parts)
+                if speech_part_speeds:
+                    speech_part_speeds = (None, *speech_part_speeds)
         self._save(session)
         if not session.defer_assistant_recording:
             self.record_assistant(session, text)
@@ -332,11 +345,19 @@ class VoiceCore:
         required = [field for field in contact_fields(state) if field != "email"]
         state.completed = all(getattr(state, field) and state.confirmations.get(field) == getattr(state, field) for field in required)
         state.stage = "done"
-        await self._notify(session, kind="completed_intake", partial=not state.completed)
+        if session.defer_assistant_recording:
+            memory(state)["completion_pending"] = True
+            self._save(session)
+        else:
+            await self._notify(session, kind="completed_intake", partial=not state.completed)
         text = f"I've saved your message for the team. They'll follow up within {self.settings.callback_sla_hours} hours. Thanks for calling Floodman. Goodbye."
         reply = self._planned(session, text)
         reply.end_call = True
         return reply
+
+    async def finalize_completion(self, session: CallSession) -> None:
+        if session.state.stage == "done" and memory(session.state).pop("completion_pending", False):
+            await self._notify(session, kind="completed_intake", partial=not session.state.completed)
 
     @staticmethod
     def _answers_interrupted_prompt(stage: str, transcript: str) -> bool:
@@ -466,14 +487,17 @@ class VoiceCore:
         info = memory(state)
         info.pop("hold_timeouts", None)
         if state.stage == "done":
-            reply = self._planned(session, "Thanks for calling Floodman. Goodbye.")
-            reply.end_call = True
-            return reply
+            # A caller may interrupt the farewell with a correction. The phone
+            # driver keeps the channel open and this resumes message collection.
+            state.stage = "anything_else"
+            state.completed = False
+            info.pop("finish_after_confirmation", None)
+            info.pop("completion_pending", None)
 
         if identity_question(transcript):
             return self._planned(session, "Yes, I'm Floodman's AI phone assistant. " + self._current_question(state))
 
-        if state.urgency != "emergency" and detect_emergency(self._emergency_context(state, transcript)):
+        if detect_flood_emergency(transcript, context=self._emergency_context(state, "")):
             state.urgency = "emergency"
             state.department = "emergency"
             state.description = clean(f"{state.description} Urgent update: {transcript}" if state.description else transcript, 4000)
@@ -492,22 +516,36 @@ class VoiceCore:
                 f"This sounds urgent. If anyone is in immediate danger, call 911. {self._current_question(state)}".strip(),
             )
 
+        if state.urgency != "emergency" and detect_emergency(transcript) and re.search(
+            r"\b(?:electrical|sparks?|sparking|gas|sewage|collapse|collapsing|unsafe|danger)\b", transcript, re.I
+        ):
+            state.urgency = "emergency"
+            state.description = clean(f"{state.description} Urgent update: {transcript}", 4000)
+            await self._notify(session, kind="emergency", partial=True)
+            return self._planned(session, "If anyone is in immediate danger, call 911. I'll flag this for the team. " + self._current_question(state))
+
         if human_requested(transcript):
-            number = self.settings.live_transfer_number
-            if number:
-                if not state.description:
-                    state.description = transcript
-                await self._notify(session, kind="human_transfer", partial=True)
-                reply = self._assistant(session, "I'll connect you with the Floodman team now.")
-                reply.transfer_number = number
-                return reply
-            return self._assistant(session, "I can't complete a live transfer right now, but I'll send your information to the team for a callback.")
+            if state.stage == "issue":
+                info["kind"] = "message"
+                state.description = transcript
+                state.stage = "service_detail"
+            return self._planned(session, "I can take a message and ask the team to call you back. " + self._current_question(state))
 
         if hold_requested(transcript):
             info["hold_timeouts"] = 2
             return self._planned(session, "Take your time.")
         if state.stage == "issue" and normalized(transcript) in {"hi", "hello", "hey", "good morning", "good afternoon"}:
             return self._planned(session, "Hi. What can I help you with?")
+        if unfinished_turn(transcript):
+            if len(normalized(transcript).split()) > 2 and normalized(transcript) != "let me think":
+                fragments = info.setdefault("speech_fragments", [])
+                fragments.append(transcript)
+                info["speech_fragments"] = fragments[-8:]
+            self._save(session)
+            return VoiceReply(text="", wait_for_caller=True)
+        fragments = info.pop("speech_fragments", [])
+        if fragments and normalized(transcript) not in {"no", "nope", "nothing else", "that s all", "that is all", "no thanks", "no that s all"}:
+            transcript = clean(" ".join((*fragments, transcript)), 4000)
         if state.stage.removeprefix("confirm_") in {"name", "phone", "address", "email"}:
             info["contact_started"] = True
         kind = request_kind(transcript)
@@ -572,10 +610,11 @@ class VoiceCore:
                 state.stage = "additional_message"
                 return self._planned(session, QUESTIONS["additional_message"])
             state.description = clean(f"{state.description} Additional message: {transcript}", 4000)
-            return await self._finish_intake(session)
+            return self._planned(session, "I've added that. " + QUESTIONS["anything_else"])
         if state.stage == "additional_message":
             state.description = clean(f"{state.description} Additional message: {transcript}", 4000)
-            return await self._finish_intake(session)
+            state.stage = "anything_else"
+            return self._planned(session, "I've added that. " + QUESTIONS["anything_else"])
 
         recovered = self._recover_interrupted_prompt(session, transcript)
         if recovered is not None:
@@ -777,21 +816,28 @@ class VoiceCore:
             reply.end_call = True
             return reply
         info = memory(session.state)
+        if session.introduction_pending:
+            session.introduction_pending = False
+            return self._planned(session, self.greeting())
+        if info.get("speech_fragments") and session.no_input_count == 0:
+            session.no_input_count = 1
+            return self._planned(session, "Go ahead, I'm listening.")
         if info.get("hold_timeouts", 0) > 0:
             info["hold_timeouts"] -= 1
             self._save(session)
             return VoiceReply(text="", wait_for_caller=True)
         session.no_input_count += 1
         if session.no_input_count == 1:
-            return self._assistant(session, "Are you still there? I can wait a moment.")
+            return self._planned(session, "Are you still there? I can wait a moment.")
         if session.no_input_count == 2:
-            return self._assistant(session, "I'm still here. Say hello when you're ready.")
+            return self._planned(session, "I'm still here. Say hello when you're ready.")
         await self._notify(session, kind="partial_no_input", partial=True)
         reply = self._assistant(session, "I'm still not hearing you, so I'll send the information I have to the team. Please call back when you're ready. Goodbye.")
         reply.end_call = True
         return reply
 
     async def disconnect(self, session: CallSession, outcome: str = "caller_hangup") -> None:
+        await self.finalize_completion(session)
         if not session.state.completed and not session.notification_sent:
             await self._notify(session, kind="partial_hangup", partial=True)
         self.database.finish_call(session.call_id, outcome)

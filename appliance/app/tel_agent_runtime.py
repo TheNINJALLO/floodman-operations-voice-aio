@@ -38,6 +38,7 @@ class TelAgentTranscriptTurn:
     confidence: float | None = None
     language: str = ""
     audio_ended_at: float | None = None
+    heard_audio: bool = False
 
 
 @dataclass(slots=True)

@@ -176,7 +176,7 @@ async def test_email_confirmation_cannot_loop_forever(tmp_path,project_root,monk
 
 
 def test_greeting_uses_concise_floodman_introduction():
-    assert VoiceCore.greeting() == "Hello. This is Alex with Floodman. How may I help you today?"
+    assert VoiceCore.greeting() == "Thanks for calling Floodman, I'm Alex. How can I help you today?"
 
 
 @pytest.mark.asyncio

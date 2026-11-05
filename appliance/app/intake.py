@@ -249,6 +249,40 @@ def detect_emergency(value: Any) -> bool:
     return not inactive_water and any(term in sanitized for term in active_water)
 
 
+def detect_flood_emergency(value: Any, *, context: str = "") -> bool:
+    """Authorize a live handoff only for a reported, active flooding event.
+
+    General hazards retain their separate safety alert. A damp room, historical
+    damage, or a request for a human alone cannot authorize a live transfer.
+    The newest report takes precedence over earlier active-water descriptions.
+    """
+    text = normalized(value)
+    if re.search(r"\b(?:if|what if|suppose|hypothetically|in case)\b", text):
+        return False
+    if re.match(r"^(?:do you|does floodman|can floodman|what services|would you)\b", text) and not re.search(
+        r"\b(?:my|our|here|right now|currently)\b", text
+    ):
+        return False
+    if re.match(r"^(?:is|was|did|are|were|could|should|what|why|how)\b", text) and not re.search(r"\b(?:my|our)\b", text):
+        return False
+    if re.search(r"\b(?:no water|water (?:is not|isn t|isn t still)|not (?:still|currently|actively))\b", text):
+        return False
+    inactive = r"\b(?:not (?:an emergency|flooding|rising|actively leaking)|no (?:flooding|active leak)|water (?:is off|shut off|has stopped|stopped)|(?:leak|flooding) (?:has stopped|stopped)|shut (?:the )?water off|already contained|is contained|has been contained|stopped coming in|no longer (?:rising|flooding|coming in)|it (?:has stopped|stopped)|only (?:damp|dampness))\b"
+    if re.search(inactive, text):
+        return False
+    if re.search(r"\b(?:last (?:week|month|year|spring|summer|fall|winter)|(?:years?|months?|days?) ago|used to|previously|yesterday)\b", text) and not re.search(
+        r"\b(?:right now|currently|still|today)\b", text
+    ):
+        return False
+    water_context = bool(re.search(r"\b(?:water|flood\w*|pipe|leak\w*)\b", normalized(context) + " " + text))
+    if not water_context:
+        return False
+    return bool(re.search(
+        r"\b(?:water (?:is )?(?:rising|pouring in|gushing|spreading|coming in)|(?:still|actively) (?:flooding|flowing|leaking|coming in|rising)|(?:can t|cannot|unable to) stop (?:the )?water|(?:basement|house|home|building|room|crawlspace|crawl space) (?:is |s )?(?:flooding|flooded)|flooding (?:now|right now)|(?:flood|flooding|water) emergency)\b",
+        text,
+    ))
+
+
 def human_requested(value: Any) -> bool:
     text = normalized(value)
     return any(term in text for term in ("human", "representative", "real person", "someone on the team", "operator", "transfer me"))

@@ -37,14 +37,14 @@ The adaptive conversation flow:
 1. Listen to the request and reuse details the caller already supplied. There is no default home-or-business question.
 2. For a service request, ask up to two missing, relevant follow-ups without a routine hazard checklist. Volunteered emergency conditions still reach the deterministic emergency handler. For a general message, quote follow-up, or warranty-document request, use a shorter message-taking path.
 3. Collect name and callback number first. Property requests also collect a service address and put email last. General messages do not require an address or email; warranty-document requests can collect email. Unknown or declined fields do not trap the caller in a loop.
-4. Ask once whether there is anything else to pass along, then save the intake before queueing permission-scoped staff notifications. A partial message remains marked partial when required contact details could not be confirmed.
-5. End after the closing response. Late silence cannot start a new interview or transfer a completed call.
+4. Ask whether there is anything else to pass along. Save additions and continue listening until the caller clearly finishes; hesitations and unfinished sentences cannot close the call. A partial message remains marked partial when required contact details could not be confirmed.
+5. End after the closing response. An interrupted farewell keeps the channel open for corrections; completion notifications are queued after the final farewell or disconnect, with local data saved first.
 
 Prepared contextual questions and confirmations bypass optional wording generation, so a 40B CPU rewrite does not delay those turns. Deckard remains the primary local model for approved knowledge answers, eligible optional wording, and configured post-call briefing drafts. Warmed speech reduces generation work; actual speech recognition, synthesis, and carrier latency still require phone testing.
 
 A caller asking for a moment hears a short acknowledgement. The next two no-input intervals remain quiet and preserve the active field. Normal no-input recovery resumes afterward. Both the native and Tel-Agent audio loops recognize this intentional wait without recording a missing-audio error.
 
-Unsupported work is still collected and sent. A hangup sends whatever was recovered. Immediate electrical, sewage, rising-water, gas, or structural danger triggers emergency notification and an optional transfer.
+Unsupported work is still collected and sent. A hangup sends whatever was recovered. Live transfers require a reported active flooding emergency and the configured emergency number. Standing water alone, past damage, and ordinary requests for a person collect a callback message. Volunteered immediate hazards still trigger a safety alert and advice without authorizing a live transfer. There is no routine hazard checklist.
 
 Human handoff commits the transfer action before sending AudioSocket's explicit `0x00 0x00 0x00` termination packet. This avoids the Asterisk 20.6 behavior where a bare TCP EOF leaves the media application waiting instead of returning to the dialplan. AGI commands wait for Asterisk's acknowledgement before consuming the action file. The existing `TryExec` path then reaches `Dial`, with ringback, answered-transfer logging, and a spoken fallback if the destination cannot be reached. The CPU build runs a real Asterisk handoff check on isolated Local channels with networking disabled; it places no carrier calls.
 
@@ -228,6 +228,13 @@ speech stops further playback and the complete buffered answer is sent to local
 speech recognition. `BARGE_IN_MIN_SPEECH_MS`, `BARGE_IN_ENERGY_THRESHOLD`, and
 `BARGE_IN_PREROLL_MS` can be tuned for unusually noisy telephone lines without
 exposing AudioSocket or speech services publicly.
+
+Narrative answers use `CONVERSATION_ENDPOINT_SILENCE_MS=600` as a minimum pause,
+while yes/no confirmations retain the faster normal endpoint. An interrupted
+company introduction is resumed instead of immediately asking about availability.
+Unrecognized audio is distinguished from a full no-input interval. These local
+timers and bounded fragment checks improve turn-taking; they are not a semantic
+streaming speech model and require real telephone validation.
 
 Email spelling uses its own `EMAIL_ENDPOINT_SILENCE_MS` so natural pauses do not
 split an address into separate turns. `EMAIL_READBACK_SPEED` slows only the

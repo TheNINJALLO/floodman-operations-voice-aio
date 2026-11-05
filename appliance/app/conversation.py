@@ -11,11 +11,23 @@ DETAIL_STAGES = {"affected_area", "timing_summary", "source_summary", "safety_su
 CONTACT_FIELDS = ("name", "phone", "address", "email")
 LIGHT_KINDS = {"warranty", "quote_followup", "message"}
 QUESTIONS = {
-    "water_condition": "Are you seeing standing water, or mainly dampness?",
+    "water_condition": "Is water still coming in or rising, or has it stopped?",
     "service_detail": "What would you like the team to help with?",
     "anything_else": "Is there anything else you'd like me to pass along?",
     "additional_message": "What else would you like me to include?",
 }
+
+
+def unfinished_turn(transcript: str) -> bool:
+    """Wait for speech fragments instead of treating them as field answers."""
+    text = normalized(transcript)
+    if not text:
+        return True
+    if transcript.rstrip().endswith(("...", "…", "--")):
+        return True
+    if text in {"um", "uh", "erm", "hmm", "oh", "well", "so", "let me think", "yes okay", "yes ok"}:
+        return True
+    return bool(re.search(r"\b(?:it s been|it has been|there s|there is|i was|we were|and|because|but|my name is|my email is|my address is)$", text))
 
 
 def memory(state: IntakeState) -> dict[str, Any]:

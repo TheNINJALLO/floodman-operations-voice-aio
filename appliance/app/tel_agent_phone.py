@@ -212,6 +212,13 @@ class TelAgentPhoneAgent:
         finally:
             interrupted = connection.barge_in_event.is_set()
             await connection.finish_provider_output(interrupted=interrupted)
+        # Barge-in can arrive during the final playback guard, after the
+        # upstream speaker has already returned. Transport state is authoritative.
+        result = _StoppedTurn(
+            text=result.text if connection.last_stream_audio_bytes else "",
+            first_audio_ms=result.first_audio_ms,
+            interrupted=result.interrupted or connection.barge_in_event.is_set(),
+        )
         connection.event("reply_completed", interrupted=result.interrupted,
                          audio_bytes=connection.last_stream_audio_bytes)
         if not connection.last_stream_audio_bytes and not result.interrupted and not connection.closed:
@@ -254,7 +261,7 @@ class TelAgentPhoneAgent:
         event("stt_started", stage=session.state.stage)
         text = await self.stt.transcribe_local(audio, 8000, contact=contact)
         event("stt_completed", duration_ms=(time.perf_counter() - audio_ended_at) * 1000, chars=len(text))
-        return TelAgentTranscriptTurn(text=text, audio_ended_at=audio_ended_at)
+        return TelAgentTranscriptTurn(text=text, audio_ended_at=audio_ended_at, heard_audio=True)
 
     async def handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         connection = AudioSocketConnection(reader, writer, self.core.settings)
@@ -301,7 +308,9 @@ class TelAgentPhoneAgent:
                 _single_text(self.core.greeting()),
                 call_uuid,
             )
-            self.core.record_assistant(session, greeting.text)
+            self.core.record_assistant(session, greeting.text, interrupted=greeting.interrupted)
+            session.introduction_pending = greeting.interrupted
+            last_input_at = time.perf_counter()
 
             while not connection.closed:
                 if connection.trace is not None:
@@ -350,7 +359,13 @@ class TelAgentPhoneAgent:
                 turn_ended = turn.audio_ended_at if turn.audio_ended_at is not None else time.perf_counter()
                 caller_text = turn.text.strip()
                 input_stage = session.state.stage
+                if not caller_text and turn.heard_audio and not session.introduction_pending:
+                    # An unrecognized breath/echo is not a twelve-second silence.
+                    if time.perf_counter() - last_input_at < getattr(self.core.settings, "no_input_timeout_seconds", 12.0):
+                        connection.event("unrecognized_audio", outcome="keep_listening")
+                        continue
                 if caller_text:
+                    last_input_at = time.perf_counter()
                     logger.info(
                         "call_event call_uuid=%s stage=tel_agent_final_transcript chars=%d confidence=%s language=%s",
                         call_uuid,
@@ -370,6 +385,7 @@ class TelAgentPhoneAgent:
                                      stage=session.state.stage)
                 else:
                     reply = await self.core.no_input(session)
+                    last_input_at = time.perf_counter()
 
                 if reply.wait_for_caller:
                     continue
@@ -384,6 +400,8 @@ class TelAgentPhoneAgent:
                     result.text,
                     interrupted=result.interrupted,
                 )
+                if result.interrupted and reply.text.startswith((self.core.greeting(), "You're through to Floodman, I'm Alex.")):
+                    session.introduction_pending = True
                 if result.interrupted and caller_text and not reply.transfer_number and not reply.end_call:
                     self.core.note_prompt_interrupted(
                         session,
@@ -398,6 +416,12 @@ class TelAgentPhoneAgent:
                     outcome = "transfer"
                     break
                 if reply.end_call:
+                    if result.interrupted:
+                        connection.event("farewell_interrupted", outcome="keep_listening")
+                        continue
+                    finalize = getattr(self.core, "finalize_completion", None)
+                    if finalize is not None:
+                        await finalize(session)
                     outcome = "completed" if session.state.completed else "no_input"
                     action = "completed" if session.state.completed else "fallback_callback"
                     self.registry.write_action(call_uuid, action, "", outcome)

@@ -121,6 +121,101 @@ async def test_local_first_audio_timer_includes_recognition_time() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("audio_bytes", [0, 320])
+async def test_transport_interruption_overrides_speaker_result_and_unsent_text(audio_bytes):
+    class Connection:
+        closed = False
+        last_stream_audio_bytes = 0
+        barge_in_event = asyncio.Event()
+
+        def event(self, *_args, **_kwargs):
+            pass
+
+        def begin_provider_output(self, **_kwargs):
+            pass
+
+        async def finish_provider_output(self, **_kwargs):
+            self.barge_in_event.set()  # Caller starts in the playback guard.
+
+    async def speak_turn(*_args, **_kwargs):
+        connection.last_stream_audio_bytes = audio_bytes
+        return SimpleNamespace(text="A whole sentence.", first_audio_ms=10, interrupted=False)
+
+    connection = Connection()
+    phone = agent()
+    phone._speak_turn = speak_turn
+    result = await phone._speak(connection, single_text("A whole sentence."), "guard-test")
+    assert result.interrupted
+    assert result.text == ("A whole sentence." if audio_bytes else "")
+
+
+async def single_text(text):
+    yield text
+
+
+@pytest.mark.asyncio
+async def test_driver_keeps_listening_when_caller_interrupts_farewell(monkeypatch):
+    class Connection:
+        closed = False
+        trace = None
+        dropped_frames = 0
+        close_reason = "assistant_termination"
+
+        async def start(self):
+            return "farewell-test"
+
+        def event(self, *_args, **_kwargs):
+            pass
+
+        async def close(self):
+            self.closed = True
+
+    class Core:
+        settings = SimpleNamespace()
+        state = IntakeState(call_uuid="farewell-test", stage="anything_else", completed=True)
+
+        def create_session(self, *_args):
+            return SimpleNamespace(state=self.state, call_id=9)
+
+        async def call_started(self, *_args):
+            pass
+
+        def greeting(self):
+            return "Thanks for calling Floodman."
+
+        def record_assistant(self, *_args, **_kwargs):
+            pass
+
+        async def process(self, _session, text, **_kwargs):
+            texts.append(text)
+            return VoiceReply(text="Goodbye.", end_call=True)
+
+        async def disconnect(self, _session, outcome):
+            assert outcome == "completed"
+
+    texts, actions = [], []
+    monkeypatch.setattr("app.tel_agent_phone.AudioSocketConnection", lambda *_args: Connection())
+    registry = SimpleNamespace(read_pre=lambda *_args: {}, write_action=lambda *args: actions.append(args))
+    phone = TelAgentPhoneAgent(Core(), SimpleNamespace(streaming=False), SimpleNamespace(), SimpleNamespace(), registry)
+    input_turns = iter(("No, that's all", "Wait, one more thing"))
+    interrupted = iter((False, True, False))
+
+    async def local_turn(*_args):
+        assert not actions  # No hangup action while a caller turn remains.
+        return SimpleNamespace(text=next(input_turns), audio_ended_at=None, heard_audio=True, confidence=None, language="")
+
+    async def speak(_connection, stream, *_args, **_kwargs):
+        text = "".join([part async for part in stream])
+        return SimpleNamespace(text=text, first_audio_ms=1, interrupted=next(interrupted))
+
+    monkeypatch.setattr(phone, "_local_turn", local_turn)
+    monkeypatch.setattr(phone, "_speak", speak)
+    await phone.handle(None, SimpleNamespace(get_extra_info=lambda *_args: None))
+    assert texts == ["No, that's all", "Wait, one more thing"]
+    assert actions == [("farewell-test", "completed", "", "completed")]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("wait_first", [False, True])
 @pytest.mark.parametrize("transfer", [False, True])
 async def test_tel_agent_phone_driver_owns_call_and_commits_spoken_turns(wait_first, transfer, monkeypatch) -> None:

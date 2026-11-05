@@ -213,6 +213,7 @@ class Settings:
     tts_cache_enabled: bool
 
     endpoint_silence_ms: int
+    conversation_endpoint_silence_ms: int
     contact_endpoint_silence_ms: int
     email_endpoint_silence_ms: int
     minimum_speech_ms: int
@@ -369,6 +370,7 @@ class Settings:
             email_readback_speed=max(0.75, min(_float("EMAIL_READBACK_SPEED", 0.78), 1.0)),
             tts_cache_enabled=_bool("TTS_CACHE_ENABLED", True),
             endpoint_silence_ms=_int("ENDPOINT_SILENCE_MS", 300),
+            conversation_endpoint_silence_ms=max(300, min(_int("CONVERSATION_ENDPOINT_SILENCE_MS", 600), 2000)),
             contact_endpoint_silence_ms=_int("CONTACT_ENDPOINT_SILENCE_MS", 650),
             email_endpoint_silence_ms=max(1000, min(_int("EMAIL_ENDPOINT_SILENCE_MS", 1600), 3000)),
             minimum_speech_ms=_int("MINIMUM_SPEECH_MS", 160),

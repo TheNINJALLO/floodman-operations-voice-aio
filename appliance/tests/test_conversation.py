@@ -7,10 +7,142 @@ from app.config import Settings
 from app.conversation import capture_volunteered, contact_fields, memory, request_kind
 from app.db import Database
 from app.knowledge import KnowledgeBase
-from app.intake import detect_emergency
+from app.intake import detect_emergency, detect_flood_emergency
 from app.models import IntakeState
 from app.voice_core import VoiceCore
 from app.tel_agent_phone import TelAgentPhoneAgent
+
+
+@pytest.mark.parametrize("text, context, expected", [
+    ("Water is rising by the electrical panel", "", True),
+    ("My basement is flooding right now", "", True),
+    ("Our house is flooded", "", True),
+    ("I cannot stop the water", "", True),
+    ("It is still coming in", "Water in the basement", True),
+    ("It is still rising", "Water in the basement", True),
+    ("My basement is not flooding", "", False),
+    ("No water is rising", "", False),
+    ("The water isn't rising", "", False),
+    ("My basement was flooded last spring", "", False),
+    ("My basement flooded yesterday", "", False),
+    ("My basement is flooded but the water is off", "", False),
+    ("It has stopped", "Water is rising in the basement", False),
+    ("Only dampness", "Water in the basement", False),
+    ("There is standing water in my basement", "", False),
+    ("My electrical panel is sparking", "", False),
+    ("My basement has a musty odor", "", False),
+    ("Please transfer me to a human", "", False),
+    ("Do you respond to flood emergencies?", "", False),
+    ("What if my basement is flooding?", "", False),
+    ("Is water still coming in?", "", False),
+])
+def test_active_flood_handoff_requires_reported_current_flooding(text, context, expected):
+    assert detect_flood_emergency(text, context=context) is expected
+
+
+@pytest.mark.asyncio
+async def test_partial_closing_sentence_waits_and_saves_the_continuation(core):
+    session = core.create_session("closing-fragment")
+    session.state.stage = "anything_else"
+    session.state.description = "Water in the basement."
+    reply = await core.process(session, "Um, it's been...")
+    assert reply.wait_for_caller and not reply.end_call
+    assert not session.state.completed and not core.notifier.sent
+    reply = await core.process(session, "happening every time it rains for two weeks.")
+    assert not reply.end_call
+    assert "it's been... happening" in session.state.description
+    assert session.state.stage == "anything_else"
+    assert (await core.process(session, "No, that's all")).end_call
+
+
+@pytest.mark.asyncio
+async def test_short_hesitation_cannot_consume_a_detail_or_name(core):
+    session = core.create_session("hesitation")
+    await core.process(session, "Water in my basement")
+    assert session.state.stage == "water_condition"
+    assert (await core.process(session, "Oh.")).wait_for_caller
+    assert session.state.stage == "water_condition" and not session.state.name
+    await core.process(session, "A little bit of both.")
+    assert not session.state.name
+
+
+@pytest.mark.asyncio
+async def test_interrupted_introduction_is_recovered_before_availability_prompt(core):
+    session = core.create_session("intro-recovery")
+    session.introduction_pending = True
+    reply = await core.no_input(session)
+    assert reply.text == core.greeting()
+    assert session.no_input_count == 0 and not session.introduction_pending
+    session.introduction_pending = True
+    reply = await core.process(session, "Hello")
+    assert "Floodman" in reply.text and "Alex" in reply.text
+    assert not session.state.description and not reply.end_call
+
+
+@pytest.mark.asyncio
+async def test_real_opening_details_are_preserved_when_introduction_was_interrupted(core):
+    session = core.create_session("intro-with-details")
+    session.introduction_pending = True
+    reply = await core.process(session, "Water in my basement")
+    assert reply.text.startswith("You're through to Floodman")
+    assert session.state.description == "Water in my basement"
+    assert session.state.stage == "water_condition"
+
+
+@pytest.mark.asyncio
+async def test_answer_to_water_status_can_authorize_flood_emergency_handoff(core, monkeypatch):
+    monkeypatch.setattr(core.settings, "emergency_transfer_number", "+12315550101")
+    session = core.create_session("water-status")
+    assert not (await core.process(session, "Water in my basement")).transfer_number
+    reply = await core.process(session, "It is still coming in")
+    assert reply.transfer_number == "+12315550101"
+    assert core.notifier.sent == [("emergency", True)]
+
+
+@pytest.mark.asyncio
+async def test_non_flood_hazard_alert_does_not_authorize_live_transfer(core, monkeypatch):
+    monkeypatch.setattr(core.settings, "emergency_transfer_number", "+12315550101")
+    session = core.create_session("hazard-alert")
+    reply = await core.process(session, "My electrical panel is sparking")
+    assert not reply.transfer_number and "911" in reply.text
+    assert core.notifier.sent == [("emergency", True)]
+
+
+@pytest.mark.asyncio
+async def test_interrupted_farewell_can_resume_and_keep_new_details(core):
+    session = core.create_session("farewell-correction")
+    session.state.stage = "anything_else"
+    assert (await core.process(session, "No, that's all")).end_call
+    reply = await core.process(session, "Wait, please have Jim call after lunch.")
+    assert not reply.end_call and session.state.stage == "anything_else"
+    assert "call after lunch" in session.state.description
+
+
+@pytest.mark.asyncio
+async def test_phone_completion_alert_waits_for_corrections_before_final_delivery(core):
+    session = core.create_session("final-delivery")
+    session.defer_assistant_recording = True
+    session.state.stage = "anything_else"
+    assert (await core.process(session, "No, that's all")).end_call
+    assert not core.notifier.sent
+    await core.process(session, "Wait, please have Jim call after lunch")
+    await core.finalize_completion(session)
+    assert not core.notifier.sent
+    await core.process(session, "That's all")
+    await core.finalize_completion(session)
+    await core.finalize_completion(session)
+    assert core.notifier.sent == [("completed_intake", True)]
+    assert "call after lunch" in core.database.get_call(session.call_id)["snapshot"]["description"]
+
+
+@pytest.mark.asyncio
+async def test_phone_hangup_during_farewell_still_delivers_saved_message(core):
+    session = core.create_session("farewell-disconnect")
+    session.defer_assistant_recording = True
+    session.state.stage = "anything_else"
+    await core.process(session, "No, that's all")
+    await core.disconnect(session)
+    assert core.notifier.sent == [("completed_intake", True)]
 
 
 class OfflineModel:
@@ -50,7 +182,7 @@ async def test_opening_details_skip_property_room_timing_and_source_questions(co
     assert "basement" in session.state.affected_area
     assert session.state.timing_summary and session.state.source_summary and session.state.safety_summary
     assert session.state.stage == "water_condition"
-    assert reply.text == "Are you seeing standing water, or mainly dampness?"
+    assert reply.text == "Is water still coming in or rising, or has it stopped?"
     reply = await core.process(session, "Mainly damp walls, no standing water.")
     assert session.state.stage == "confirm_name"
     assert "home or" not in reply.text and "which room" not in reply.text
@@ -219,16 +351,24 @@ async def test_goodbye_is_final_and_does_not_reprompt_or_transfer(core):
 
 
 @pytest.mark.asyncio
-async def test_urgent_and_human_routes_still_preempt_intake(core, monkeypatch):
+async def test_only_active_flooding_preempts_intake_with_live_transfer(core, monkeypatch):
     monkeypatch.setattr(core.settings, "emergency_transfer_number", "+12315550101")
     monkeypatch.setattr(core.settings, "live_transfer_number", "+12315550102")
-    for text, number, kind in [("Water is rising by the electrical panel", "+12315550101", "emergency"),
-                               ("Please transfer me to a real person", "+12315550102", "human_transfer")]:
+    for text, number, kind in [("Water is rising by the electrical panel", "+12315550101", "emergency")]:
         session = core.create_session(kind)
         reply = await core.process(session, text)
         assert reply.transfer_number == number
         assert core.notifier.sent[-1][0] == kind
         assert text in core.database.get_call(session.call_id)["snapshot"]["description"]
+
+    session = core.create_session("human-callback")
+    reply = await core.process(session, "Please transfer me to a real person")
+    assert not reply.transfer_number and not reply.end_call
+    assert "call you back" in reply.text
+    assert session.state.stage == "service_detail"
+    await core.process(session, "Please ask Jim to call about my invoice")
+    assert session.state.stage == "name" and not session.state.address
+    assert core.notifier.sent == [("emergency", True)]
 
 
 @pytest.mark.parametrize("text", ["Are you a real person?", "Are you human?", "Am I speaking with a computer?"])
@@ -298,7 +438,8 @@ async def test_extra_details_in_final_answer_are_saved_instead_of_discarded(core
     for text in ("Leave a message for Jim about the vendor audit", "Sam Jones", "yes", "yes"):
         await core.process(session, text)
     reply = await core.process(session, last_message)
-    assert reply.end_call and last_message in session.state.description
+    assert not reply.end_call and last_message in session.state.description
+    assert (await core.process(session, "That's all")).end_call
     assert last_message in core.database.get_call(session.call_id)["snapshot"]["description"]
 
 
@@ -383,7 +524,7 @@ async def test_prepared_contextual_reply_does_not_wait_for_model_rewrite(core):
     reply = await core.process(session, "My basement gets damp every time it rains")
     phone = TelAgentPhoneAgent(core, None, None, None, None)
     text = "".join([piece async for piece in phone._reply_stream(session, "opening", reply, "issue")])
-    assert text == reply.text == "Are you seeing standing water, or mainly dampness?"
+    assert text == reply.text == "Is water still coming in or rising, or has it stopped?"
 
 
 @pytest.mark.asyncio

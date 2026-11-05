@@ -320,6 +320,10 @@ class AudioSocketConnection:
             endpoint_ms = self.settings.email_endpoint_silence_ms
         else:
             endpoint_ms = self.settings.contact_endpoint_silence_ms if contact else self.settings.endpoint_silence_ms
+        if stage in {"issue", "affected_area", "timing_summary", "source_summary", "safety_summary", "water_condition", "service_detail", "anything_else", "additional_message"}:
+            # Narratives need breathing room; short yes/no confirmations still
+            # use the faster endpoint, and spelled email retains its own timer.
+            endpoint_ms = max(endpoint_ms, getattr(self.settings, "conversation_endpoint_silence_ms", 600))
         self.event("listening_started", stage=stage, endpoint_ms=endpoint_ms)
         initial_timeout = getattr(self.settings, "no_input_timeout_seconds", 12.0)
         preroll_bytes = int(8000 * 2 * getattr(self.settings, "input_preroll_ms", 240) / 1000)
@@ -639,11 +643,13 @@ class AudioSocketServer:
                 metadata.get("sip_call_id", ""),
             )
             greeting = self.core.greeting()
-            self.core.database.add_message(session.call_id, "assistant", greeting)
+            session.defer_assistant_recording = True
             logger.info("call_event call_uuid=%s stage=greeting_synthesis_started", call_uuid)
             greeting_interrupted = await self._speak_reply(
                 connection, VoiceReply(text=greeting), call_uuid
             )
+            self.core.record_assistant(session, greeting if connection.last_stream_audio_bytes else "", interrupted=greeting_interrupted)
+            session.introduction_pending = greeting_interrupted
             logger.info(
                 "call_event call_uuid=%s stage=last_greeting_frame interrupted=%s",
                 call_uuid,
@@ -685,6 +691,9 @@ class AudioSocketServer:
                     started = time.monotonic()
                     logger.info("call_event call_uuid=%s stage=voice_core_started", call_uuid)
                     connection.event("processing_started", stage=input_stage)
+                    if not transcript and not session.introduction_pending:
+                        connection.event("unrecognized_audio", outcome="keep_listening")
+                        continue
                     reply = await self.core.process(session, transcript) if transcript else await self.core.no_input(session)
                     connection.event("processing_completed", duration_ms=(time.monotonic() - started) * 1000,
                                      stage=session.state.stage)
@@ -696,6 +705,9 @@ class AudioSocketServer:
                 if reply.wait_for_caller:
                     continue
                 response_interrupted = await self._speak_reply(connection, reply, call_uuid, since=capture_ended)
+                self.core.record_assistant(session, reply.text if connection.last_stream_audio_bytes else "", interrupted=response_interrupted)
+                if response_interrupted and reply.text.startswith((self.core.greeting(), "You're through to Floodman, I'm Alex.")):
+                    session.introduction_pending = True
                 logger.info(
                     "call_event call_uuid=%s stage=last_response_frame interrupted=%s playback_fraction=%.3f",
                     call_uuid,
@@ -716,6 +728,12 @@ class AudioSocketServer:
                     outcome = "transfer"
                     break
                 if reply.end_call:
+                    if response_interrupted:
+                        connection.event("farewell_interrupted", outcome="keep_listening")
+                        continue
+                    finalize = getattr(self.core, "finalize_completion", None)
+                    if finalize is not None:
+                        await finalize(session)
                     outcome = "completed" if session.state.completed else "no_input"
                     action = "completed" if session.state.completed else "fallback_callback"
                     self.registry.write_action(call_uuid, action, "", outcome)

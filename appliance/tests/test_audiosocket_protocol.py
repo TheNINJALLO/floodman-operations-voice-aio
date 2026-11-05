@@ -34,6 +34,9 @@ class FakeCore:
         self.outcome = outcome
         self.disconnected.set()
 
+    def record_assistant(self, _session, _text, **_kwargs):
+        return None
+
 
 class FakeTTS:
     async def synthesize(self, _text: str) -> bytes:
@@ -502,3 +505,14 @@ async def test_isolated_click_does_not_become_a_confirmation() -> None:
     connection._queue_audio(b"\x00\x00" * 4800)
 
     assert await asyncio.wait_for(connection.utterance(contact=False), timeout=0.5) == b""
+
+
+@pytest.mark.asyncio
+async def test_narrative_pause_does_not_split_the_callers_sentence():
+    connection = AudioSocketConnection(asyncio.StreamReader(), BufferWriter(), settings())
+    speech = int(1200).to_bytes(2, "little", signed=True) * 1600
+    pause = b"\x00\x00" * 2400  # 300 ms inside a thought.
+    ending = b"\x00\x00" * 4800
+    for frame in (speech, pause, speech, ending):
+        connection._queue_audio(frame)
+    assert await asyncio.wait_for(connection.utterance(contact=False, stage="anything_else"), timeout=0.5) == speech + pause + speech + ending

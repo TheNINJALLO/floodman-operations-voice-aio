@@ -336,7 +336,7 @@ async def test_live_protocol_drivers_save_the_same_call_timeline(configured, eng
         # Wait for the paced greeting to finish before the caller answers.
         await asyncio.sleep(0.04)
         voice = int(1200).to_bytes(2, "little", signed=True) * 160
-        for payload in [voice] * 10 + [b"\x00\x00" * 160] * 5:
+        for payload in [voice] * 10 + [b"\x00\x00" * 160] * 35:
             writer.write(bytes([TYPE_AUDIO]) + struct.pack("!H", len(payload)) + payload)
         await writer.drain()
         await asyncio.wait_for(reader.read(), timeout=2)
