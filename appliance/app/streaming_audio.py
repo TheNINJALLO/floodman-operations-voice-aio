@@ -43,7 +43,7 @@ async def tempo_stream(source: AsyncIterator[bytes], speed: float) -> AsyncItera
         return
     process = await asyncio.create_subprocess_exec(
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin",
-        "-f", "s16le", "-ar", "8000", "-ac", "1", "-i", "pipe:0",
+        "-f", "s16le", "-ar", "8000", "-ac", "1", "-probesize", "32", "-analyzeduration", "0", "-i", "pipe:0",
         "-af", f"atempo={speed:.2f}", "-f", "s16le", "pipe:1",
         stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.DEVNULL,

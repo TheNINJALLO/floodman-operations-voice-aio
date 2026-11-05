@@ -4,16 +4,20 @@ FROM ghcr.io/theninjallo/floodman-operations-voice-aio@sha256:803042d29d2e427c97
 USER root
 WORKDIR /opt/floodman
 COPY pyproject.toml ./
+RUN /opt/venv/bin/python -c "import tomllib; print('\n'.join(tomllib.load(open('pyproject.toml', 'rb'))['project']['optional-dependencies']['streaming_trial']))" > /tmp/streaming-trial-requirements.txt && \
+    /opt/venv/bin/pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu && \
+    /opt/venv/bin/pip install -r /tmp/streaming-trial-requirements.txt
 COPY app ./app
 COPY scripts ./scripts
 COPY config ./config
 COPY templates ./templates
 COPY supervisor ./supervisor
+COPY docs ./docs
 COPY THIRD_PARTY_LICENSES.md README.md ./
-RUN /opt/venv/bin/pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu && \
-    /opt/venv/bin/pip install '.[streaming_trial]' && \
+RUN /opt/venv/bin/pip install --no-deps . && \
     chmod +x /opt/floodman/scripts/*.sh /opt/floodman/scripts/*.py
 ENV DATA_DIR=/home/container/data LOCAL_VOICE_STACK=streaming_trial PRIMARY_MODEL_PROFILE=haiku8b \
-    LOCAL_AI_ONLY=true LOCAL_AI_DEVICE=cpu VOICE_ENGINE=tel_agent
+    LOCAL_AI_ONLY=true LOCAL_AI_DEVICE=cpu VOICE_ENGINE=tel_agent \
+    PYTHONPATH=/opt/floodman:/opt/tel-agent
 USER container
 WORKDIR /home/container
