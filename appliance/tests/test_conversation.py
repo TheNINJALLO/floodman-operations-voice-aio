@@ -50,7 +50,7 @@ async def test_partial_closing_sentence_waits_and_saves_the_continuation(core):
     assert not session.state.completed and not core.notifier.sent
     reply = await core.process(session, "happening every time it rains for two weeks.")
     assert not reply.end_call
-    assert "it's been... happening" in session.state.description
+    assert "it's been happening" in session.state.description
     assert session.state.stage == "anything_else"
     assert (await core.process(session, "No, that's all")).end_call
 
@@ -143,6 +143,34 @@ async def test_phone_hangup_during_farewell_still_delivers_saved_message(core):
     await core.process(session, "No, that's all")
     await core.disconnect(session)
     assert core.notifier.sent == [("completed_intake", True)]
+
+
+@pytest.mark.asyncio
+async def test_yes_okay_confirms_a_contact_instead_of_waiting(core):
+    session = core.create_session("yes-okay")
+    session.state.name = "Sam Jones"
+    session.state.stage = "confirm_name"
+    reply = await core.process(session, "Yes, OK.")
+    assert not reply.wait_for_caller
+    assert session.state.confirmations["name"] == "Sam Jones"
+
+
+@pytest.mark.asyncio
+async def test_partial_name_introduction_preserves_the_following_name(core):
+    session = core.create_session("name-fragment")
+    session.state.stage = "name"
+    assert (await core.process(session, "My name is...")).wait_for_caller
+    await core.process(session, "Sam Jones")
+    assert session.state.name == "Sam Jones" and session.state.stage == "confirm_name"
+
+
+@pytest.mark.asyncio
+async def test_flood_report_split_across_a_pause_still_authorizes_handoff(core, monkeypatch):
+    monkeypatch.setattr(core.settings, "emergency_transfer_number", "+12315550101")
+    session = core.create_session("split-flood")
+    assert (await core.process(session, "The water is...")).wait_for_caller
+    reply = await core.process(session, "rising")
+    assert reply.transfer_number == "+12315550101"
 
 
 class OfflineModel:

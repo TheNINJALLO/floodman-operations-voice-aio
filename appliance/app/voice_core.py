@@ -486,6 +486,12 @@ class VoiceCore:
         session.no_input_count = 0
         info = memory(state)
         info.pop("hold_timeouts", None)
+        if info.get("speech_fragments") and not unfinished_turn(transcript) and not hold_requested(transcript) and not identity_question(transcript):
+            fragments = info.pop("speech_fragments")
+            if normalized(transcript) not in {"no", "nope", "nothing else", "that s all", "that is all", "no thanks", "no that s all"}:
+                # Reassemble before routing so "water is ... rising" retains
+                # the same deterministic emergency decision as a single turn.
+                transcript = clean(" ".join((*[part.rstrip(".\u2026- ") for part in fragments], transcript)), 4000)
         if state.stage == "done":
             # A caller may interrupt the farewell with a correction. The phone
             # driver keeps the channel open and this resumes message collection.
@@ -534,18 +540,15 @@ class VoiceCore:
         if hold_requested(transcript):
             info["hold_timeouts"] = 2
             return self._planned(session, "Take your time.")
-        if state.stage == "issue" and normalized(transcript) in {"hi", "hello", "hey", "good morning", "good afternoon"}:
+        if state.stage == "issue" and normalized(transcript) in {"hi", "hello", "hey", "good morning", "good afternoon", "yes", "yes ok", "yes okay", "i m here", "i am here"}:
             return self._planned(session, "Hi. What can I help you with?")
         if unfinished_turn(transcript):
-            if len(normalized(transcript).split()) > 2 and normalized(transcript) != "let me think":
+            if normalized(transcript) and normalized(transcript) not in {"um", "uh", "erm", "hmm", "oh", "well", "so", "let me think"}:
                 fragments = info.setdefault("speech_fragments", [])
                 fragments.append(transcript)
                 info["speech_fragments"] = fragments[-8:]
             self._save(session)
             return VoiceReply(text="", wait_for_caller=True)
-        fragments = info.pop("speech_fragments", [])
-        if fragments and normalized(transcript) not in {"no", "nope", "nothing else", "that s all", "that is all", "no thanks", "no that s all"}:
-            transcript = clean(" ".join((*fragments, transcript)), 4000)
         if state.stage.removeprefix("confirm_") in {"name", "phone", "address", "email"}:
             info["contact_started"] = True
         kind = request_kind(transcript)

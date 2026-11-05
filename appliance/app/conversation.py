@@ -25,7 +25,7 @@ def unfinished_turn(transcript: str) -> bool:
         return True
     if transcript.rstrip().endswith(("...", "…", "--")):
         return True
-    if text in {"um", "uh", "erm", "hmm", "oh", "well", "so", "let me think", "yes okay", "yes ok"}:
+    if text in {"um", "uh", "erm", "hmm", "oh", "well", "so", "let me think"}:
         return True
     return bool(re.search(r"\b(?:it s been|it has been|there s|there is|i was|we were|and|because|but|my name is|my email is|my address is)$", text))
 
