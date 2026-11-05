@@ -418,6 +418,8 @@ input[type="range"] { height: 28px; min-height: 0; padding: 0; border: 0; box-sh
   .login-intro h1 { margin-top: 45px; font-size: clamp(2.1rem, 8vw, 3.5rem); }
   .login-panel { min-height: 590px; }
 }
+.review-call-links { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 14px; }
+.review-call-links .button { min-height: 44px; }
 @media (max-width: 650px) {
   .content { padding: 22px 14px 35px; }
   .topbar { min-height: 64px; padding: 8px 12px; }

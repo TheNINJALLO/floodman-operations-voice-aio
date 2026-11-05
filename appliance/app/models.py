@@ -62,3 +62,4 @@ class VoiceReply:
     speech_parts: tuple[str, ...] = ()
     pause_between_parts_ms: int = 0
     speech_part_speeds: tuple[float | None, ...] = ()
+    wait_for_caller: bool = False

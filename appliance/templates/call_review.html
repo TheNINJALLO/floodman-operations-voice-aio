@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% set page_title = "Call review" %}
+{% set page_eyebrow = "Patterns from saved call evidence" %}
+{% block content %}
+<section class="page-heading"><div><h1>What needs attention on calls</h1><p>Recurring observations from the latest {{ report.sample_limit }} ended calls. Staff reports stay linked to the original conversation.</p></div><a class="button secondary" href="/api/call-review">View review data</a></section>
+<section class="panel"><div class="panel-heading"><div><h2>{{ report.calls_reviewed }} {{ 'call' if report.calls_reviewed == 1 else 'calls' }} reviewed</h2><p>{{ report.calls_with_observations }} with observations · {{ report.calls_with_audio_timeline }} with a saved audio timeline</p></div><a class="button secondary" href="/call-review">Refresh review</a></div>
+<div class="panel-copy"><p>Observations help you choose what to investigate. An empty timeline does not establish that a call went well.</p><p>Reply waits above {{ (report.slow_response_ms / 1000) | round(2) }} seconds are flagged. {{ report.coverage.timing }}</p></div></section>
+<div class="log-stack">
+{% for pattern in report.patterns %}
+<section class="panel"><div class="panel-heading"><div><h2>{{ pattern.title }}</h2><p>{{ pattern.call_ids | length }} affected {{ 'call' if pattern.call_ids | length == 1 else 'calls' }} · {{ pattern.occurrences }} {{ 'observation' if pattern.occurrences == 1 else 'observations' }}</p></div></div><div class="panel-copy"><p>{{ pattern.next_step }}</p><div class="review-call-links" aria-label="Calls supporting this observation">{% for id in pattern.call_ids %}<a class="button secondary" href="/calls/{{ id }}#call-diagnostics">Call {{ id }}</a>{% endfor %}</div></div></section>
+{% else %}
+<section class="panel"><div class="panel-copy"><h2>{{ 'No recurring observations yet' if report.calls_reviewed else 'No ended phone calls to review yet' }}</h2><p>{{ 'Check individual calls and the available timeline coverage before drawing conclusions.' if report.calls_reviewed else 'As phone calls end, their saved diagnostics and staff feedback become available here. Simulations and deployment checks are excluded.' }}</p></div></section>
+{% endfor %}
+<details class="panel log-panel"><summary><strong>Coverage and code versions</strong></summary><div class="panel-copy"><p>{{ report.coverage.sample }} {{ report.coverage.limitations }}</p><p>Each row shows a separate call. Compare the same code version when assessing a change.</p><ul>{% for call in report.calls %}<li><a href="/calls/{{ call.call_id }}#call-diagnostics">Call {{ call.call_id }}</a> · Code {{ call.code_fingerprint }} · {{ call.metrics.measured_replies }} measured replies{% if call.coverage.events_truncated %} · Timeline truncated{% endif %}{% if not call.coverage.call_end_saved %} · Final audio event unavailable{% endif %}{% if call.coverage.reported_dropped_events %} · {{ call.coverage.reported_dropped_events }} diagnostic events dropped{% endif %}</li>{% else %}<li>No call evidence yet.</li>{% endfor %}</ul></div></details>
+<section class="panel"><div class="panel-heading"><div><h2>Turn observations into improvements</h2><p>Review version {{ report.review_version }}</p></div></div><div class="panel-copy"><ol>{% for step in report.improvement_process %}<li>{{ step }}</li>{% endfor %}</ol><p>Calls do not automatically change model weights, prompts, routing, or contact permissions. The local Deckard briefing remains a separate staff draft.</p></div></section>
+</div>
+{% endblock %}

@@ -18,15 +18,13 @@ def test_timing_question_uses_known_service_context():
     state = IntakeState(call_uuid="mold", stage="timing_summary", service_key="mold_remediation")
     assert collection_question(state) == "When did you first notice the mold or musty conditions?"
     state.service_key = "water_damage_restoration"
-    assert "actively coming in" in collection_question(state)
+    assert collection_question(state)=="When did you first notice the water?"
 
 
-def test_detailed_issue_questions_cover_location_cause_spread_and_safety():
+def test_detail_questions_ask_one_clear_question_at_a_time():
     state = IntakeState(call_uuid="details", stage="affected_area")
-    assert "where on the property" in collection_question(state).lower()
-    assert "rooms or materials" in collection_question(state).lower()
+    assert collection_question(state)=="Where are you noticing the problem?"
     state.stage = "source_summary"
-    assert "caused" in collection_question(state).lower()
-    assert "spread" in collection_question(state).lower()
+    assert collection_question(state)=="Do you know where it's coming from?"
     state.stage = "safety_summary"
     assert "safety concerns" in collection_question(state).lower()

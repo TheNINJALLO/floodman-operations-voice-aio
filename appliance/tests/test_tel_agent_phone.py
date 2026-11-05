@@ -121,7 +121,8 @@ async def test_local_first_audio_timer_includes_recognition_time() -> None:
 
 
 @pytest.mark.asyncio
-async def test_tel_agent_phone_driver_owns_call_and_commits_spoken_turns() -> None:
+@pytest.mark.parametrize("wait_first", [False, True])
+async def test_tel_agent_phone_driver_owns_call_and_commits_spoken_turns(wait_first, monkeypatch) -> None:
     settings = SimpleNamespace(
         post_tts_guard_ms=0,
         barge_in_enabled=True,
@@ -163,6 +164,8 @@ async def test_tel_agent_phone_driver_owns_call_and_commits_spoken_turns() -> No
             return VoiceReply(text="I saved that for the team. Goodbye.", end_call=True)
 
         async def no_input(self, _session):
+            if wait_first:
+                return VoiceReply(text="", wait_for_caller=True)
             raise AssertionError("speech should have been transcribed")
 
         def record_assistant(self, _session, text, **_metadata):
@@ -199,6 +202,19 @@ async def test_tel_agent_phone_driver_owns_call_and_commits_spoken_turns() -> No
     phone = TelAgentPhoneAgent(
         core, STT(), core.llm, SimpleNamespace(), registry, speak_turn=speak_turn
     )
+    if wait_first:
+        from app.tel_agent_runtime import TelAgentTranscriptTurn
+        original_turn = phone._local_turn
+        waited = False
+
+        async def local_turn(connection, call_session):
+            nonlocal waited
+            if not waited:
+                waited = True
+                return TelAgentTranscriptTurn(text="")
+            return await original_turn(connection, call_session)
+
+        monkeypatch.setattr(phone, "_local_turn", local_turn)
     server = await asyncio.start_server(phone.handle, "127.0.0.1", 0)
     port = server.sockets[0].getsockname()[1]
     reader, writer = await asyncio.open_connection("127.0.0.1", port)

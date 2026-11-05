@@ -676,6 +676,8 @@ class AudioSocketServer:
                         call_uuid,
                         int((time.monotonic() - started) * 1000),
                     )
+                if reply.wait_for_caller:
+                    continue
                 response_interrupted = await self._speak_reply(connection, reply, call_uuid, since=capture_ended)
                 logger.info(
                     "call_event call_uuid=%s stage=last_response_frame interrupted=%s playback_fraction=%.3f",

@@ -30,19 +30,19 @@ Optional conversational wording has a 1200 ms total budget (`TEL_AGENT_WORDING_B
 
 ## Reliability design
 
-The local model extracts structured information. The application owns questions, confirmations, transitions, notifications, and call-ending decisions. Tel-Agent can stream revised wording for ordinary replies while protected replies remain exact. Short phrase synthesis and warmed prompts reduce startup delay; hardware measurements determine actual response time.
+The application captures clear caller-provided details and chooses relevant questions without waiting for model extraction. A caller can give several details in one turn. Property type, location, timing, and cause are retained when explicitly provided; uncertain details remain unknown. Contact values are confirmed before being treated as confirmed intake data. Those confirmations are not identity verification or permission for protected billing actions.
 
-Intake order:
+The adaptive conversation flow:
 
-1. What happened and where
-2. Home or business
-3. When it began
-4. Safety concerns
-5. Name and one-field confirmation
-6. Email and one-field confirmation
-7. Phone and one-field confirmation
-8. Address and one-field confirmation
-9. Team SMS, permission-scoped email/browser notifications, and the 24-hour callback message
+1. Listen to the request and reuse details the caller already supplied. There is no default home-or-business question.
+2. For a service request, ask up to two missing, relevant follow-ups, then check safety if it has not been addressed. For a general message, quote follow-up, or warranty-document request, use a shorter message-taking path.
+3. Collect name and callback number first. Property requests also collect a service address and put email last. General messages do not require an address or email; warranty-document requests can collect email. Unknown or declined fields do not trap the caller in a loop.
+4. Ask once whether there is anything else to pass along, then save the intake before queueing permission-scoped staff notifications. A partial message remains marked partial when required contact details could not be confirmed.
+5. End after the closing response. Late silence cannot start a new interview or transfer a completed call.
+
+Prepared contextual questions and confirmations bypass optional wording generation, so a 40B CPU rewrite does not delay those turns. Deckard remains the primary local model for approved knowledge answers, eligible optional wording, and configured post-call briefing drafts. Warmed speech reduces generation work; actual speech recognition, synthesis, and carrier latency still require phone testing.
+
+A caller asking for a moment hears a short acknowledgement. The next two no-input intervals remain quiet and preserve the active field. Normal no-input recovery resumes afterward. Both the native and Tel-Agent audio loops recognize this intentional wait without recording a missing-audio error.
 
 Unsupported work is still collected and sent. A hangup sends whatever was recovered. Immediate electrical, sewage, rising-water, gas, or structural danger triggers emergency notification and an optional transfer.
 

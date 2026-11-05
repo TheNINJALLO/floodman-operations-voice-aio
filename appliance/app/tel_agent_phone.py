@@ -371,6 +371,8 @@ class TelAgentPhoneAgent:
                 else:
                     reply = await self.core.no_input(session)
 
+                if reply.wait_for_caller:
+                    continue
                 result = await self._speak(
                     connection,
                     self._reply_stream(session, caller_text, reply, input_stage),

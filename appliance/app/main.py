@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import logging
@@ -28,6 +29,7 @@ from app.business import BusinessDirectory
 from app.briefings import PostCallBriefings
 from app.config import Settings
 from app.call_diagnostics import CallDiagnostics, FEEDBACK_CATEGORIES, diagnostic_report, summary as diagnostic_summary
+from app.call_quality import quality_report
 from app.db import Database
 from app.emailer import normalize_user_email
 from app.knowledge import KnowledgeBase
@@ -1248,6 +1250,24 @@ async def preview_voice(
 
 
 # Diagnostics, audit, and simulator ----------------------------------
+@app.get("/call-review", response_class=HTMLResponse)
+async def call_review_page(request: Request, floodman_session: str | None = Cookie(default=None)):
+    principal = _principal(floodman_session)
+    if not principal:
+        return RedirectResponse("/login", status_code=303)
+    if not principal.can_manage:
+        return _redirect("/", error="Manager access is required to review call patterns.")
+    report = await asyncio.to_thread(quality_report, runtime.database, settings.call_slow_response_ms)
+    return templates.TemplateResponse(request, "call_review.html",
+                                      _context(request, principal, "diagnostics", report=report))
+
+
+@app.get("/api/call-review")
+async def call_review_api(floodman_session: str | None = Cookie(default=None)):
+    _require_api(floodman_session, manage=True)
+    return await asyncio.to_thread(quality_report, runtime.database, settings.call_slow_response_ms)
+
+
 @app.get("/diagnostics", response_class=HTMLResponse)
 async def diagnostics(request: Request, floodman_session: str | None = Cookie(default=None)):
     principal = _principal(floodman_session)

@@ -2,6 +2,7 @@
 {% set page_title = "System diagnostics" %}
 {% set page_eyebrow = "Local services and recent logs" %}
 {% block content %}
+{% if principal.can_manage %}<p><a class="button secondary" href="/call-review">Review recurring call problems</a></p>{% endif %}
 <section class="page-heading"><div><span class="eyebrow">System health</span><h1>Diagnostics</h1><p>Recent bounded logs from the local voice appliance. Sensitive service credentials are never displayed.</p></div><span class="health-pill {{ 'healthy' if ready else 'unhealthy' }}"><span></span>{{ 'System ready' if ready else 'Starting or unavailable' }}</span></section>
 <div class="log-stack">{% for name, text in logs.items() %}<details class="panel log-panel" {{ 'open' if loop.first }}><summary><span><strong>{{ name }}</strong><small>Newest 160 lines</small></span><span>⌄</span></summary><pre>{{ text }}</pre></details>{% else %}<div class="panel empty-state"><span>⌁</span><h3>No logs yet</h3><p>Runtime log output will appear after the services start.</p></div>{% endfor %}</div>
 {% endblock %}

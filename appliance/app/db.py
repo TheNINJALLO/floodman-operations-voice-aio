@@ -448,6 +448,19 @@ class Database:
             output.append(item)
         return output
 
+    def list_quality_calls(self, limit: int = 200) -> list[dict[str, Any]]:
+        # Filter before LIMIT so test calls cannot crowd real calls out of review.
+        with self.connect() as db:
+            return [dict(row) for row in db.execute(
+                """SELECT c.id,c.started_at,c.outcome,
+                          (SELECT COUNT(*) FROM notifications n WHERE n.call_id=c.id
+                           AND n.status IN ('failed','undelivered')) AS failed_delivery_count
+                   FROM calls c WHERE c.ended_at IS NOT NULL AND c.status != 'active'
+                     AND lower(c.call_uuid) NOT GLOB 'sim-*'
+                     AND lower(c.call_uuid) NOT GLOB 'deployment-*'
+                   ORDER BY c.ended_at DESC,c.id DESC LIMIT ?""", (max(1, min(limit, 200)),)
+            )]
+
     def get_call(self, call_id: int) -> dict[str, Any] | None:
         with self.connect() as db:
             row = db.execute(

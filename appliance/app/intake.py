@@ -218,6 +218,9 @@ def detect_emergency(value: Any) -> bool:
         "no safety concerns", "no electrical hazard", "no electrical", "not near electrical",
         "no sewage", "no gas odor", "no gas smell", "no sparks", "not sparking",
         "not unsafe", "no structural danger", "not an emergency",
+        "no standing water", "without standing water", "not standing water",
+        "not seeing standing water", "don t have standing water", "do not have standing water",
+        "isn t any standing water", "isn t standing water", "no visible standing water",
     ):
         sanitized = sanitized.replace(phrase, " ")
     immediate_hazards = (
@@ -243,7 +246,7 @@ def detect_emergency(value: Any) -> bool:
         "pipe burst", "pipe broke", "broken pipe", "overflowing", "cannot stop the water",
         "cant stop the water", "standing water",
     )
-    return not inactive_water and any(term in text for term in active_water)
+    return not inactive_water and any(term in sanitized for term in active_water)
 
 
 def human_requested(value: Any) -> bool:

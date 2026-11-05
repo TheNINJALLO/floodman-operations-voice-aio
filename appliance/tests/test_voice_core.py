@@ -43,7 +43,7 @@ def settings(tmp_path,project_root,monkeypatch):
 async def test_complete_intake(tmp_path,project_root,monkeypatch):
     s=settings(tmp_path,project_root,monkeypatch);db=Database(s.database_path);notifier=StubNotifier();core=VoiceCore(s,db,BusinessDirectory(s.service_area_path),KnowledgeBase(project_root/"knowledge"),StubLLM(),notifier)
     session=core.create_session("full-call","+12318840943","+12319354921")
-    turns=["Water is coming into my basement","home","the basement floor and drywall","this morning and it is still active","a supply line broke and it reached two rooms","no safety concerns","Josh Aldrich","yes","josh at example dot com","yes","yes","8805 East Melendy Street Ludington Michigan 49431","yes"]
+    turns=["A burst pipe leaked in the basement at my house this morning. The water is off and there are no safety concerns.","Mainly damp basement flooring and drywall, no standing water.","Josh Aldrich","yes","yes","8805 East Melendy Street Ludington Michigan 49431","yes","josh at example dot com","yes","No, that's it"]
     reply=None;replies=[]
     for turn in turns:
         reply=await core.process(session,turn);replies.append(reply.text)
@@ -51,8 +51,8 @@ async def test_complete_intake(tmp_path,project_root,monkeypatch):
     assert session.state.completed
     assert session.state.service_area_status=="published"
     assert notifier.calls[-1][0]=="completed_intake"
-    assert session.state.affected_area=="the basement floor and drywall"
-    assert session.state.source_summary=="a supply line broke and it reached two rooms"
+    assert "basement flooring and drywall" in session.state.affected_area
+    assert "burst pipe" in session.state.source_summary
     assert "within 24 hours" in reply.text
     assert reply.text.endswith("Goodbye.")
     assert not any(text.startswith(("Got it.", "Understood.", "Thanks.", "Great.", "Perfect.")) for text in replies)
@@ -141,10 +141,11 @@ async def test_email_capture_cannot_loop_forever(tmp_path,project_root,monkeypat
     assert session.state.email==""
     assert session.state.email_status=="unavailable"
     assert session.state.confirmations["email"]=="unavailable"
-    assert session.state.stage=="phone"
+    assert session.state.stage=="name"
     assert session.state.metadata["unconfirmed_email_fragments"]==["unclear","still unclear","not understood"]
     assert "confirm it by phone" in reply.text.lower()
-    assert "callback number" in reply.text.lower()
+    assert "what name" in reply.text.lower()
+    assert db.get_call(session.call_id)["messages"][-1]["text"]==reply.text
 
 
 @pytest.mark.asyncio
@@ -169,7 +170,7 @@ async def test_email_confirmation_cannot_loop_forever(tmp_path,project_root,monk
 
     assert session.state.email==""
     assert session.state.email_status=="unavailable"
-    assert session.state.stage=="phone"
+    assert session.state.stage=="name"
     assert session.state.metadata["unconfirmed_email"]=="josh@example.com"
     assert "verify it by phone" in reply.text.lower()
 
@@ -189,7 +190,7 @@ async def test_volunteered_home_context_skips_redundant_question(tmp_path,projec
     assert session.state.stage=="affected_area"
     assert "home or a business" not in reply.text.lower()
     assert not reply.text.startswith("Got it.")
-    assert "where on the property" in reply.text.lower()
+    assert reply.text=="Where are you noticing the problem?"
 
 
 @pytest.mark.asyncio
@@ -200,7 +201,7 @@ async def test_home_misheard_as_hope_advances_without_repeating_question(tmp_pat
     reply=await core.process(session,"hope")
 
     assert session.state.property_context=="Residential property"
-    assert session.state.stage=="affected_area"
+    assert session.state.stage=="service_detail"
     assert "home or a business" not in reply.text.lower()
 
 
@@ -253,8 +254,8 @@ def test_normal_call_prompts_are_prepared_for_zero_generation_delay(tmp_path,pro
     assert VoiceCore.greeting() in phrases
     assert "Is this a home or a business?" in phrases
     assert "When did you first notice the mold or musty conditions?" in phrases
-    assert "Where on the property is the problem, and which rooms or materials are affected?" in phrases
-    assert "What do you think caused it, and how far has it spread?" in phrases
+    assert "Where are you noticing the problem?" in phrases
+    assert "Do you know where it's coming from?" in phrases
     assert "Any electrical, sewage, or other safety concerns?" in phrases
     assert "I can get these details to the right team. What name should I put this under?" in phrases
     assert "What's the best email for you?" in phrases
@@ -287,8 +288,8 @@ async def test_answer_to_interrupted_question_is_accepted_without_repeating(tmp_
     reply=await core.process(session,"No safety concerns")
 
     assert session.state.safety_summary=="No safety concerns"
-    assert session.state.stage=="name"
-    assert "What name" in reply.text
+    assert session.state.stage=="service_detail"
+    assert "team to help with" in reply.text
 
 
 @pytest.mark.asyncio
@@ -312,8 +313,8 @@ async def test_free_estimate_is_answered_while_intake_moves_forward(tmp_path,pro
     reply=await core.process(session,"Can I talk to somebody about a free estimate?")
 
     assert "free inspections and consultations" in reply.text
-    assert reply.text.endswith("Is this a home or a business?")
-    assert session.state.stage=="property_context"
+    assert reply.text.endswith("What would you like the team to help with?")
+    assert session.state.stage=="service_detail"
 
 
 @pytest.mark.asyncio
@@ -352,14 +353,16 @@ async def test_name_and_address_confirmations_use_a_real_brief_pause_and_digit_r
 @pytest.mark.asyncio
 async def test_notification_failure_does_not_trigger_technical_call_failure(tmp_path,project_root,monkeypatch):
     s=settings(tmp_path,project_root,monkeypatch);db=Database(s.database_path);core=VoiceCore(s,db,BusinessDirectory(s.service_area_path),KnowledgeBase(project_root/"knowledge"),StubLLM(),FailingNotifier())
-    session=core.create_session("fail-open-notification");session.state.stage="confirm_address";session.state.address="1 Main Street";session.state.confirmations["address"]="pending"
+    session=core.create_session("fail-open-notification");session.state.stage="anything_else"
+    session.state.name="Test Caller";session.state.phone="+12315550100";session.state.address="1 Main Street"
+    session.state.confirmations={field:getattr(session.state,field) for field in ("name","phone","address")}
 
     await core.call_started(session)
-    reply=await core.process(session,"yes")
+    reply=await core.process(session,"No, that's it")
 
     assert reply.end_call
     assert session.state.completed
-    assert "all set" in reply.text.lower()
+    assert "saved your message" in reply.text.lower()
     assert db.get_call(session.call_id)["notification_status"]=="delivery_error"
 
 

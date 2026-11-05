@@ -105,8 +105,25 @@ async def connect(server: AudioSocketServer):
 
 
 @pytest.mark.asyncio
-async def test_audiosocket_sends_greeting_and_handles_hangup() -> None:
+@pytest.mark.parametrize("wait_first", [False, True])
+async def test_audiosocket_sends_greeting_and_handles_hangup(wait_first, monkeypatch) -> None:
     core = FakeCore()
+    if wait_first:
+        original_utterance = AudioSocketConnection.utterance
+        waited = False
+
+        async def utterance(connection, **kwargs):
+            nonlocal waited
+            if not waited:
+                waited = True
+                return b""
+            return await original_utterance(connection, **kwargs)
+
+        async def no_input(_session):
+            return VoiceReply(text="", wait_for_caller=True)
+
+        monkeypatch.setattr(AudioSocketConnection, "utterance", utterance)
+        monkeypatch.setattr(core, "no_input", no_input, raising=False)
     registry = FakeRegistry()
     server = AudioSocketServer(settings(), core, SimpleNamespace(), FakeTTS(), registry)
     await server.start()
