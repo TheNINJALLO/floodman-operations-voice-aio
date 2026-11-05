@@ -4,13 +4,80 @@ import pytest
 
 from app.business import BusinessDirectory
 from app.config import Settings
-from app.conversation import capture_volunteered, contact_fields, memory, request_kind
+from app.conversation import capture_volunteered, closing_finished, contact_fields, memory, request_kind
 from app.db import Database
 from app.knowledge import KnowledgeBase
 from app.intake import detect_emergency, detect_flood_emergency
 from app.models import IntakeState
 from app.voice_core import VoiceCore
 from app.tel_agent_phone import TelAgentPhoneAgent
+
+
+@pytest.mark.parametrize("text", [
+    "THAT SHOULD BE IT", "That should be all.", "That's everything.",
+    "No, I think that's all, thank you.", "I think that is it.",
+    "No, that's all for now.", "I'm all set, thanks.", "No thanks.",
+    "I don't have anything else.", "That is all.", "No, nothing more.",
+    "No, that'll be all.", "That should do it.", "I don't think so.",
+    "That's all I can think of.",
+])
+@pytest.mark.parametrize("stage", ["anything_else", "additional_message"])
+@pytest.mark.asyncio
+async def test_natural_closing_answers_finish_without_another_question(core, text, stage):
+    session = core.create_session("natural-closing")
+    session.state.stage = stage
+    session.state.description = "Dampness at the perimeter and a floor crack."
+    reply = await core.process(session, text)
+    assert reply.end_call and reply.text.endswith("Goodbye.")
+    assert session.state.stage == "done"
+    assert "anything else" not in reply.text.lower()
+    assert session.state.description == "Dampness at the perimeter and a floor crack."
+    assert len(core.notifier.sent) == 1
+
+
+@pytest.mark.parametrize("text", [
+    "No, just ask Jim to call after lunch.", "That's all I know about the water.",
+    "That should be it, but please use the side door.", "Nothing else except a crack in the floor.",
+    "I think that's all but my phone number changed.", "Not yet.", "Yes.",
+    "No water is rising.", "All but it seems like it's just around the perimeter and a crack on the floor.",
+])
+def test_closing_detection_never_matches_inside_additional_details(text):
+    assert not closing_finished(text)
+
+
+@pytest.mark.asyncio
+async def test_reported_call_details_then_that_should_be_it_closes_once(core):
+    session = core.create_session("reported-closing-loop")
+    session.defer_assistant_recording = True
+    session.state.stage = "anything_else"
+    detail = "It seems like it's just around the perimeter and a crack on the floor."
+    reply = await core.process(session, detail)
+    assert not reply.end_call and detail in session.state.description
+    reply = await core.process(session, "THAT SHOULD BE IT")
+    assert reply.end_call and not core.notifier.sent
+    await core.finalize_completion(session)
+    await core.finalize_completion(session)
+    assert len(core.notifier.sent) == 1
+    assert "THAT SHOULD BE IT" not in session.state.description
+
+
+@pytest.mark.asyncio
+async def test_natural_email_then_requested_spelling_still_requires_confirmation(core):
+    session = core.create_session("natural-email")
+    session.state.stage = "email"
+    reply = await core.process(session, "alex dot smith two at gmail dot com")
+    assert session.state.email == "alex.smithtwo@gmail.com"  # Preserve capture behavior.
+    assert "gmail dot com" in reply.text and "," not in reply.speech_parts[0]
+    assert reply.speech_part_speeds == (1.0, None)
+    reply = await core.process(session, "Could you spell that out?")
+    assert "a, l, e, x, dot, s, m, i, t, h, t, w, o at gmail dot com" in reply.text.lower()
+    assert session.state.stage == "confirm_email" and "email" not in session.state.confirmations
+    reply = await core.process(session, "No, it's alex dot smith2 at example dot com")
+    assert session.state.email == "alex.smith2@example.com"
+    assert "alex dot smith two at example dot com" in reply.text
+    assert "email" not in session.state.confirmations
+    await core.process(session, "Yes")
+    assert session.state.confirmations["email"] == "alex.smith2@example.com"
 
 
 @pytest.mark.parametrize("text, context, expected", [

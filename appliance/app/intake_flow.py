@@ -42,21 +42,21 @@ def collection_question(state: IntakeState) -> str:
     return ""
 
 
-def confirmation_question(state: IntakeState, field: str) -> str:
-    readback, question = confirmation_parts(state, field)
+def confirmation_question(state: IntakeState, field: str, *, spell_email: bool = False) -> str:
+    readback, question = confirmation_parts(state, field, spell_email=spell_email)
     if not readback:
         return question
     return f"{readback}. {question}"
 
 
-def confirmation_parts(state: IntakeState, field: str) -> tuple[str, str]:
+def confirmation_parts(state: IntakeState, field: str, *, spell_email: bool = False) -> tuple[str, str]:
     value = getattr(state, field)
     if field == "name":
         return f"I heard {value}", "Is that correct?"
     if field == "email":
         if state.email_status in {"declined", "unavailable"}:
             return "I have no email address for you", "Is that correct?"
-        return f"I heard {spoken_email(value)}", "Is that correct?"
+        return f"I heard {spoken_email(value, spell=spell_email)}", "Is that correct?"
     if field == "phone":
         if value and value == state.caller_number:
             return "", "Is this the best number to call you back on?"

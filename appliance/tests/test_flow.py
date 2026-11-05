@@ -7,7 +7,7 @@ def test_short_prompts():
     assert confirmation_question(state, "name") == "I heard Josh Aldrich. Is that correct?"
     assert confirmation_parts(state, "name") == ("I heard Josh Aldrich", "Is that correct?")
     assert "recorded" not in confirmation_question(state, "email").lower()
-    assert "j, o, s, h, at, e, x, a, m, p, l, e, dot, c, o, m" in confirmation_question(state, "email")
+    assert "josh at example dot com" in confirmation_question(state, "email")
     assert "one, Main Street" in confirmation_question(state, "address")
     assert contact_endpoint_stage("address")
     assert not contact_endpoint_stage("confirm_name")

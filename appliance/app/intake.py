@@ -156,8 +156,8 @@ def spoken_phone(value: str) -> str:
     return ", ".join(_spoken_character(character) for character in digits)
 
 
-def spoken_email(value: str) -> str:
-    """Spell an email without inventing separators between its characters."""
+def spoken_email(value: str, *, spell: bool = False) -> str:
+    """Read words naturally; reserve local-part spelling for an explicit request."""
     names = {
         "@": "at",
         ".": "dot",
@@ -165,7 +165,15 @@ def spoken_email(value: str) -> str:
         "-": "hyphen",
         "+": "plus",
     }
-    return ", ".join(names.get(character, _spoken_character(character)) for character in value.lower())
+    local, separator, domain = value.lower().partition("@")
+
+    def read(part: str, *, spelling: bool = False) -> str:
+        tokens = list(part) if spelling else re.findall(r"[a-z]+|[^a-z]", part)
+        return (", " if spelling else " ").join(
+            names.get(token, _spoken_character(token)) for token in tokens
+        )
+
+    return read(local, spelling=spell) + (" at " + read(domain) if separator else "")
 
 
 def spoken_address(value: str) -> str:

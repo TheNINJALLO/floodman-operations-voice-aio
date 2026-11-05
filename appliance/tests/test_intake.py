@@ -27,11 +27,18 @@ def test_real_email_hyphens_are_preserved():
     assert normalize_email("mary hyphen jane at example dot com") == "mary-jane@example.com"
 
 
-def test_email_readback_spells_letters_and_only_speaks_real_hyphens():
-    assert spoken_email("j2@example.com") == "j, two, at, e, x, a, m, p, l, e, dot, c, o, m"
+def test_email_readback_reads_words_and_only_speaks_real_hyphens():
+    assert spoken_email("j2@example.com") == "j two at example dot com"
     assert "hyphen" not in spoken_email("josh@example.com")
     assert "hyphen" in spoken_email("mary-jane@example.com")
     assert "dash" not in spoken_email("mary-jane@example.com")
+
+
+def test_natural_email_readback_preserves_digits_and_separators_without_letter_pauses():
+    assert spoken_email("alex.smith_02+jobs@my-company.co.uk") == (
+        "alex dot smith underscore zero two plus jobs at my hyphen company dot co dot uk"
+    )
+    assert spoken_email("alex2@gmail.com", spell=True) == "a, l, e, x, two at gmail dot com"
 
 
 def test_address_readback_speaks_every_address_and_zip_digit_separately():

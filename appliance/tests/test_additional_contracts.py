@@ -116,7 +116,7 @@ def test_conversational_endpoint_defaults(tmp_path: Path, monkeypatch):
     assert settings.endpoint_silence_ms == 300
     assert settings.contact_endpoint_silence_ms == 650
     assert settings.email_endpoint_silence_ms == 1600
-    assert settings.email_readback_speed == 0.78
+    assert settings.email_readback_speed == 1.0
 
 
 def test_ari_and_ami_are_not_exposed(project_root: Path):

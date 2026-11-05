@@ -92,9 +92,9 @@ async def test_spelled_email_confirmation_does_not_say_dash(tmp_path,project_roo
     reply=await core.process(session,"J-O-A-C-H, S-H at gmail.com.")
     assert session.state.email=="joachsh@gmail.com"
     assert "dash" not in reply.text.lower()
-    assert "j, o, a, c, h, s, h, at, g, m, a, i, l, dot, c, o, m" in reply.text.lower()
+    assert "joachsh at gmail dot com" in reply.text.lower()
     assert reply.speech_parts[-1]=="Is that correct?"
-    assert reply.pause_between_parts_ms==300
+    assert reply.pause_between_parts_ms==180
     assert reply.speech_part_speeds==(s.email_readback_speed,None)
 
 
@@ -126,7 +126,7 @@ async def test_complete_email_restart_replaces_stale_domain_fragment(tmp_path,pr
     assert session.state.email=="josh@floodband.com"
     assert session.state.stage=="confirm_email"
     assert "email_fragments" not in session.state.metadata
-    assert "j, o, s, h, at, f, l, o, o, d, b, a, n, d, dot, c, o, m" in reply.text.lower()
+    assert "josh at floodband dot com" in reply.text.lower()
 
 
 @pytest.mark.asyncio
@@ -157,7 +157,7 @@ async def test_email_correction_during_confirmation_is_used_immediately(tmp_path
 
     assert session.state.email=="josh@floodband.com"
     assert session.state.stage=="confirm_email"
-    assert "j, o, s, h, at, f, l, o, o, d, b, a, n, d, dot, c, o, m" in reply.text.lower()
+    assert "josh at floodband dot com" in reply.text.lower()
 
 
 @pytest.mark.asyncio

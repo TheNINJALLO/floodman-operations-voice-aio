@@ -398,7 +398,7 @@ class Settings:
             kokoro_voice=_voice_name(voice_settings.get("voice"), os.getenv("KOKORO_VOICE", "af_heart")),
             kokoro_speed=max(0.75, min(_number(voice_settings.get("speed"), _float("KOKORO_SPEED", 0.90)), 1.25)),
             kokoro_threads=max(1, _int("KOKORO_THREADS", 2)),
-            email_readback_speed=max(0.75, min(_float("EMAIL_READBACK_SPEED", 0.78), 1.0)),
+            email_readback_speed=max(0.75, min(_float("EMAIL_READBACK_SPEED", 1.0), 1.0)),
             tts_cache_enabled=_bool("TTS_CACHE_ENABLED", True),
             endpoint_silence_ms=_int("ENDPOINT_SILENCE_MS", 300),
             conversation_endpoint_silence_ms=max(300, min(_int("CONVERSATION_ENDPOINT_SILENCE_MS", 600), 2000)),

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from app.business import BusinessDirectory
 from app.config import Settings
 from app.conversation import (
-    DETAIL_STAGES, QUESTIONS, capture_volunteered, contact_fields, declined,
+    DETAIL_STAGES, QUESTIONS, capture_volunteered, closing_finished, contact_fields, declined,
     detail_stage, hold_requested, identity_question, memory, name_answer, phone_answer, request_kind, unfinished_turn,
 )
 from app.db import Database
@@ -200,8 +200,8 @@ class VoiceCore:
         if self.suite_bridge is not None:
             self.suite_bridge.queue(session.call_id, session.state, "transcript-updated")
 
-    def _confirmation(self, session: CallSession, field: str, *, prefix: str = "") -> VoiceReply:
-        parts = tuple(part for part in confirmation_parts(session.state, field) if part)
+    def _confirmation(self, session: CallSession, field: str, *, prefix: str = "", spell_email: bool = False) -> VoiceReply:
+        parts = tuple(part for part in confirmation_parts(session.state, field, spell_email=spell_email) if part)
         speeds: tuple[float | None, ...] = ()
         if field == "email" and parts:
             speeds = (self.settings.email_readback_speed,) + (None,) * (len(parts) - 1)
@@ -211,9 +211,9 @@ class VoiceCore:
                 speeds = (None, *speeds)
         return self._assistant(
             session,
-            (prefix + confirmation_question(session.state, field)).strip(),
+            (prefix + confirmation_question(session.state, field, spell_email=spell_email)).strip(),
             speech_parts=parts,
-            pause_between_parts_ms=300,
+            pause_between_parts_ms=180 if field == "email" else 300,
             speech_part_speeds=speeds,
         )
 
@@ -549,6 +549,8 @@ class VoiceCore:
                 info["speech_fragments"] = fragments[-8:]
             self._save(session)
             return VoiceReply(text="", wait_for_caller=True)
+        if state.stage in {"anything_else", "additional_message"} and closing_finished(transcript):
+            return await self._finish_intake(session)
         if state.stage.removeprefix("confirm_") in {"name", "phone", "address", "email"}:
             info["contact_started"] = True
         kind = request_kind(transcript)
@@ -556,10 +558,17 @@ class VoiceCore:
             info["kind"] = kind
 
         repeat_requested = normalized(transcript) in {"what was that", "say that again", "could you repeat that", "i didn t hear you", "i can t hear you"}
+        spell_email = normalized(transcript) in {
+            "spell it", "spell it out", "spell that", "spell that out", "please spell it", "please spell it out",
+            "can you spell it", "can you spell it out", "could you spell it", "could you spell that out",
+            "can you spell the email", "can you spell the email out", "spell the email", "spell the email out",
+        }
+        spell_email = state.stage == "confirm_email" and spell_email
+        repeat_requested = repeat_requested or spell_email
         if state.stage != "confirm_email" and repeat_requested:
             return self._planned(session, self._current_question(state))
         before_contacts = tuple(getattr(state, field) for field in ("name", "phone", "address", "email"))
-        question_like = self._question_like(transcript)
+        question_like = self._question_like(transcript) and not spell_email
         if not question_like or self._starts_intake(transcript) or re.search(r"\b(my|our|we have|I have)\b", transcript, re.I):
             capture_volunteered(state, transcript, expected=state.stage)
         if state.address and not state.service_area_city:
@@ -607,8 +616,6 @@ class VoiceCore:
 
         if state.stage == "anything_else":
             closing = normalized(transcript)
-            if closing in {"no", "nope", "none", "no thanks", "that s it", "that is it", "nothing else", "that s all", "thank you", "thanks", "bye", "goodbye"} or re.fullmatch(r"(?:no|nope)(?: (?:that s it|that is it|that s all|that is all|thank you|thanks|nothing else))+", closing):
-                return await self._finish_intake(session)
             if closing in {"yes", "yeah", "yep", "sure"}:
                 state.stage = "additional_message"
                 return self._planned(session, QUESTIONS["additional_message"])
@@ -741,7 +748,7 @@ class VoiceCore:
                     session,
                     "I couldn't confirm that email, so I'll have the team verify it by phone.",
                 )
-            return self._confirmation(session, "email")
+            return self._confirmation(session, "email", spell_email=spell_email)
 
         if state.stage == "phone":
             state.phone = phone_answer(transcript)
