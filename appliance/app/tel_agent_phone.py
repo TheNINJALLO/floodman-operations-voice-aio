@@ -394,6 +394,7 @@ class TelAgentPhoneAgent:
                     self.registry.write_action(
                         call_uuid, "transfer", reply.transfer_number, "assistant_transfer"
                     )
+                    connection.event("transfer_requested", outcome="action_saved")
                     outcome = "transfer"
                     break
                 if reply.end_call:
@@ -421,8 +422,8 @@ class TelAgentPhoneAgent:
             if session is not None:
                 with contextlib.suppress(Exception):
                     await self.core.disconnect(session, outcome)
+            await connection.close()
             connection.event("call_ended", outcome=outcome, reason=connection.close_reason,
                              dropped_frames=connection.dropped_frames)
-            await connection.close()
             if trace_token is not None:
                 current_trace.reset(trace_token)

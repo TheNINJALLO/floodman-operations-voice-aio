@@ -152,14 +152,12 @@ def detail_stage(state: IntakeState) -> str:
         candidates.append("water_condition")
     if not state.timing_summary:
         candidates.append("timing_summary")
-    # Two useful follow-ups, then one safety check. Unknown optional details
-    # remain unknown and available to staff; they never cause an interview loop.
+    # Ask only two useful follow-ups. Hazards volunteered by a caller still
+    # reach the deterministic emergency handler; there is no hazard checklist.
     if len([stage for stage in asked if stage != "safety_summary"]) < 2:
         for candidate in candidates:
             if candidate not in asked:
                 return candidate
-    if not state.safety_summary and "safety_summary" not in asked:
-        return "safety_summary"
     return ""
 
 

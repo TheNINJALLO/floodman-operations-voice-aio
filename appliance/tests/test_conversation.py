@@ -72,9 +72,17 @@ async def test_unknown_optional_details_do_not_loop(core):
     await core.process(session, "There is mold in my basement")
     assert session.state.stage == "timing_summary"
     await core.process(session, "I don't know")
-    assert session.state.stage == "safety_summary"
-    await core.process(session, "No safety concerns")
     assert session.state.stage == "name"
+
+
+@pytest.mark.asyncio
+async def test_no_hazard_question_and_no_invented_safety_answer(core):
+    session = core.create_session("no-hazard-checklist")
+    reply = await core.process(session, "There is mold on my bathroom wall. I noticed it yesterday.")
+    assert session.state.stage == "name"
+    assert session.state.safety_summary == ""
+    assert all(word not in reply.text.lower() for word in ("sewage", "electrical", "hazard", "unsafe"))
+    assert "safety_summary" not in memory(session.state)["asked"]
 
 
 @pytest.mark.parametrize("text,expected", [

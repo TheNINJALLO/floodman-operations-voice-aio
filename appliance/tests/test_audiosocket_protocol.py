@@ -98,6 +98,26 @@ def audio_frame(sample: int, milliseconds: int = 20) -> bytes:
     return bytes([TYPE_AUDIO]) + struct.pack("!H", len(payload)) + payload
 
 
+@pytest.mark.asyncio
+async def test_assistant_shutdown_sends_protocol_termination_exactly_once():
+    writer = BufferWriter()
+    connection = AudioSocketConnection(asyncio.StreamReader(), writer, settings())
+    await connection.close()
+    await connection.close()
+    assert writer.frames == [bytes([TYPE_HANGUP, 0, 0])]
+    assert connection.close_reason == "assistant_termination"
+
+
+@pytest.mark.asyncio
+async def test_peer_hangup_does_not_send_an_extra_termination():
+    writer = BufferWriter()
+    connection = AudioSocketConnection(asyncio.StreamReader(), writer, settings())
+    connection.closed = True
+    connection.close_reason = "asterisk_hangup_frame"
+    await connection.close()
+    assert not writer.frames
+
+
 async def connect(server: AudioSocketServer):
     assert server.server is not None
     port = server.server.sockets[0].getsockname()[1]
@@ -163,7 +183,7 @@ async def test_audiosocket_records_technical_failure_action() -> None:
     await writer.drain()
     await asyncio.wait_for(registry.action_written.wait(), timeout=1)
     assert registry.actions == [(str(call_id), "technical_failure", "", "voice_core_error")]
-    assert await asyncio.wait_for(reader.read(), timeout=1) == b""
+    assert await asyncio.wait_for(reader.read(), timeout=1) == bytes([TYPE_HANGUP, 0, 0])
 
     writer.close()
     await writer.wait_closed()

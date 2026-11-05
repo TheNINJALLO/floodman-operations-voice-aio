@@ -114,7 +114,6 @@ class VoiceCore:
             "affected_area",
             "timing_summary",
             "source_summary",
-            "safety_summary",
             "email",
             "phone",
             "address",

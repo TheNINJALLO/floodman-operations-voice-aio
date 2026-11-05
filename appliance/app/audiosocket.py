@@ -47,6 +47,7 @@ class AudioSocketConnection:
         self._response_since = time.perf_counter()
         self._first_audio_emitted = False
         self.dropped_frames = 0
+        self._shutdown_started = False
 
     def event(self, event: str, **details) -> None:
         if self.trace is not None:
@@ -391,14 +392,30 @@ class AudioSocketConnection:
         return bytes(speech)
 
     async def close(self) -> None:
+        if self._shutdown_started:
+            return
+        self._shutdown_started = True
+        notify_peer = not self.closed
         self.closed = True
         if self.reader_task:
             self.reader_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self.reader_task
+        if notify_peer:
+            try:
+                # Asterisk 20.6 treats bare EOF as a null media frame and can
+                # stay inside AudioSocket forever. Explicit protocol termination
+                # releases TryExec so AGI can consume the committed action.
+                self.writer.write(bytes([TYPE_HANGUP, 0, 0]))
+                await asyncio.wait_for(self.writer.drain(), timeout=1.0)
+                self.close_reason = "assistant_termination"
+                self.event("audiosocket_terminated", outcome="sent")
+            except (OSError, asyncio.TimeoutError):
+                self.close_reason = "termination_write_failed"
+                self.event("audiosocket_termination_failed", level="warning")
         self.writer.close()
         with contextlib.suppress(Exception):
-            await self.writer.wait_closed()
+            await asyncio.wait_for(self.writer.wait_closed(), timeout=1.0)
 
 
 class AudioSocketServer:
@@ -695,6 +712,7 @@ class AudioSocketServer:
                         )
                 if reply.transfer_number:
                     self.registry.write_action(call_uuid, "transfer", reply.transfer_number, "assistant_transfer")
+                    connection.event("transfer_requested", outcome="action_saved")
                     outcome = "transfer"
                     break
                 if reply.end_call:
@@ -713,13 +731,13 @@ class AudioSocketServer:
                 if session:
                     await self.core.disconnect(session, outcome)
             finally:
+                await connection.close()
                 connection.event("call_ended", outcome=outcome, reason=connection.close_reason,
                                  dropped_frames=connection.dropped_frames)
                 logger.info(
                     "call_event call_uuid=%s stage=socket_closed outcome=%s reason=%s",
                     call_uuid or "unknown", outcome, connection.close_reason,
                 )
-                await connection.close()
                 self.active_calls = max(0, self.active_calls - 1)
                 if trace_token is not None:
                     current_trace.reset(trace_token)

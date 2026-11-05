@@ -42,7 +42,13 @@ RUN mkdir -p /usr/share/asterisk/sounds/en && \
     ffmpeg -hide_banner -loglevel error -y \
       -i /tmp/floodman-technical-failure-source.wav -ar 8000 -ac 1 -c:a pcm_s16le \
       /usr/share/asterisk/sounds/en/floodman-technical-failure.wav && \
-    rm -f /tmp/floodman-technical-failure-source.wav
+    rm -f /tmp/floodman-technical-failure-source.wav && \
+    espeak-ng -s 155 -v en-us -w /tmp/floodman-transfer-unavailable-source.wav \
+      "I couldn't reach the team. Your call details have been saved. Please try again shortly." && \
+    ffmpeg -hide_banner -loglevel error -y \
+      -i /tmp/floodman-transfer-unavailable-source.wav -ar 8000 -ac 1 -c:a pcm_s16le \
+      /usr/share/asterisk/sounds/en/floodman-transfer-unavailable.wav && \
+    rm -f /tmp/floodman-transfer-unavailable-source.wav
 RUN groupadd --gid "${CONTAINER_GID}" container && \
     useradd --uid "${CONTAINER_UID}" --gid "${CONTAINER_GID}" \
       --create-home --home-dir /home/container --shell /bin/bash container

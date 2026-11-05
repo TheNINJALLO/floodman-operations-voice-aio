@@ -2,12 +2,7 @@
 from __future__ import annotations
 import json, os, re, sys
 from pathlib import Path
-
-
-def consume() -> None:
-    for line in sys.stdin:
-        if not line.strip():
-            break
+from agi_protocol import consume_environment, set_variable
 
 
 def safe(value: str) -> str:
@@ -15,7 +10,7 @@ def safe(value: str) -> str:
 
 
 def main() -> int:
-    consume()
+    consume_environment()
     call_uuid = sys.argv[1] if len(sys.argv) > 1 else ""
     path = Path(os.getenv("RUNTIME_DIR", "/home/container/data/runtime")) / "actions" / f"{call_uuid}.json"
     payload = {
@@ -24,15 +19,13 @@ def main() -> int:
         "reason": "no_action_file",
     }
     if path.exists():
-        try:
-            loaded = json.loads(path.read_text(encoding="utf-8"))
-            if isinstance(loaded, dict):
-                payload.update(loaded)
-        finally:
-            path.unlink(missing_ok=True)
-    print(f"SET VARIABLE FLOODMAN_ACTION {safe(payload.get('action', 'missing_action'))}")
-    print(f"SET VARIABLE FLOODMAN_TRANSFER_NUMBER {safe(payload.get('number', ''))}")
-    print(f"SET VARIABLE FLOODMAN_ACTION_REASON {safe(payload.get('reason', ''))}")
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(loaded, dict):
+            payload.update(loaded)
+    set_variable("FLOODMAN_ACTION", safe(payload.get('action', 'missing_action')))
+    set_variable("FLOODMAN_TRANSFER_NUMBER", safe(payload.get('number', '')))
+    set_variable("FLOODMAN_ACTION_REASON", safe(payload.get('reason', '')))
+    path.unlink(missing_ok=True)
     return 0
 
 

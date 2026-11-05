@@ -135,7 +135,7 @@ def main() -> int:
     """)
     write(etc, "http.conf", "[general]\nenabled=no")
     write(etc, "manager.conf", "[general]\nenabled=no")
-    write(etc, "indications.conf", "[general]\ncountry=us\n[us]\ndescription=United States\nringcadence=2000,4000")
+    write(etc, "indications.conf", "[general]\ncountry=us\n[us]\ndescription=United States\nringcadence=2000,4000\nring=440+480/2000,0/4000")
 
     enabled = settings.sip_mode != "disabled"
     twilio = settings.sip_mode == "twilio"
@@ -283,9 +283,17 @@ def main() -> int:
      same => n(normal-end),Hangup()
      same => n(human),Set(CALLERID(name)=Floodman)
      same => n,Set(CALLERID(num)={caller_id})
-     same => n,Dial(PJSIP/${{FLOODMAN_TRANSFER_NUMBER}}@floodman-trunk,45)
+     same => n,Log(NOTICE,FLOODMAN_CALL stage=transfer_start call_uuid=${{FLOODMAN_CALL_ID}})
+     same => n,Dial(PJSIP/${{FLOODMAN_TRANSFER_NUMBER}}@floodman-trunk,45,rU(floodman-transfer-connected^${{FLOODMAN_CALL_ID}}))
+     same => n,Log(NOTICE,FLOODMAN_CALL stage=transfer_result call_uuid=${{FLOODMAN_CALL_ID}} dialstatus=${{DIALSTATUS}} cause=${{HANGUPCAUSE}})
+     same => n,GotoIf($["${{DIALSTATUS}}"="ANSWER"]?normal-end)
+     same => n,Playback(floodman-transfer-unavailable)
      same => n,Hangup()
     exten => h,1,Log(NOTICE,FLOODMAN_CALL stage=hangup call_uuid=${{FLOODMAN_CALL_ID}} channel_id=${{FLOODMAN_CHANNEL_ID}} sip_call_id=${{FLOODMAN_SIP_CALL_ID}} cause=${{HANGUPCAUSE}} source=${{CHANNEL(hangupsource)}})
+
+    [floodman-transfer-connected]
+    exten => s,1,Log(NOTICE,FLOODMAN_CALL stage=transfer_connected call_uuid=${{ARG1}})
+     same => n,Return()
 
     [floodman-outbound]
     exten => _X.,1,Set(CALLERID(name)=Floodman)

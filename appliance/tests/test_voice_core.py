@@ -256,7 +256,7 @@ def test_normal_call_prompts_are_prepared_for_zero_generation_delay(tmp_path,pro
     assert "When did you first notice the mold or musty conditions?" in phrases
     assert "Where are you noticing the problem?" in phrases
     assert "Do you know where it's coming from?" in phrases
-    assert "Any electrical, sewage, or other safety concerns?" in phrases
+    assert "Any electrical, sewage, or other safety concerns?" not in phrases
     assert "I can get these details to the right team. What name should I put this under?" in phrases
     assert "What's the best email for you?" in phrases
     assert not any("skip" in phrase.lower() for phrase in phrases)

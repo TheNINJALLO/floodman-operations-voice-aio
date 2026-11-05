@@ -2,16 +2,11 @@
 from __future__ import annotations
 import json, os, sys
 from pathlib import Path
-
-
-def consume() -> None:
-    for line in sys.stdin:
-        if not line.strip():
-            break
+from agi_protocol import consume_environment, set_variable
 
 
 def main() -> int:
-    consume()
+    consume_environment()
     call_uuid = sys.argv[1] if len(sys.argv) > 1 else ""
     caller = sys.argv[2] if len(sys.argv) > 2 else ""
     called = sys.argv[3] if len(sys.argv) > 3 else ""
@@ -33,7 +28,7 @@ def main() -> int:
         encoding="utf-8",
     )
     temporary.replace(path)
-    print("SET VARIABLE FLOODMAN_PREPARED 1")
+    set_variable("FLOODMAN_PREPARED", "1")
     return 0
 
 

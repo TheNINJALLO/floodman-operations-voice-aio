@@ -122,7 +122,8 @@ async def test_local_first_audio_timer_includes_recognition_time() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("wait_first", [False, True])
-async def test_tel_agent_phone_driver_owns_call_and_commits_spoken_turns(wait_first, monkeypatch) -> None:
+@pytest.mark.parametrize("transfer", [False, True])
+async def test_tel_agent_phone_driver_owns_call_and_commits_spoken_turns(wait_first, transfer, monkeypatch) -> None:
     settings = SimpleNamespace(
         post_tts_guard_ms=0,
         barge_in_enabled=True,
@@ -161,6 +162,8 @@ async def test_tel_agent_phone_driver_owns_call_and_commits_spoken_turns(wait_fi
 
         async def process(self, _session, text, **_metadata):
             assert text == "There is water in the basement"
+            if transfer:
+                return VoiceReply(text="I'll connect you with the team now.", transfer_number="+12318840943")
             return VoiceReply(text="I saved that for the team. Goodbye.", end_call=True)
 
         async def no_input(self, _session):
@@ -172,7 +175,7 @@ async def test_tel_agent_phone_driver_owns_call_and_commits_spoken_turns(wait_fi
             self.recorded.append(text)
 
         async def disconnect(self, _session, outcome):
-            assert outcome == "no_input"
+            assert outcome == ("transfer" if transfer else "no_input")
             self.disconnected.set()
 
     class STT:
@@ -233,12 +236,16 @@ async def test_tel_agent_phone_driver_owns_call_and_commits_spoken_turns(wait_fi
     await writer.drain()
 
     await asyncio.wait_for(core.disconnected.wait(), timeout=2)
+    # Asterisk must receive an explicit termination packet after the committed
+    # action, rather than bare EOF that older receivers treat as empty audio.
+    remaining = await asyncio.wait_for(reader.read(), timeout=2)
+    assert remaining.endswith(b"\x00\x00\x00")
 
     assert core.recorded == [
         "Hello from Floodman.",
-        "I saved that for the team. Goodbye.",
+        "I'll connect you with the team now." if transfer else "I saved that for the team. Goodbye.",
     ]
-    assert registry.actions == [(str(call_uuid), "fallback_callback", "", "no_input")]
+    assert registry.actions == ([(str(call_uuid), "transfer", "+12318840943", "assistant_transfer")] if transfer else [(str(call_uuid), "fallback_callback", "", "no_input")])
     writer.close()
     await writer.wait_closed()
     server.close()

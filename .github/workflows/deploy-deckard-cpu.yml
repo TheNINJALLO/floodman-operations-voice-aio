@@ -58,3 +58,10 @@ jobs:
           provenance: mode=max
       - name: Record immutable image
         run: echo '${{ env.IMAGE }}@${{ steps.image.outputs.digest }}' >> "$GITHUB_STEP_SUMMARY"
+      - name: Verify real Asterisk transfer handoff without a carrier
+        run: >-
+          docker run --rm --network none --read-only
+          --tmpfs /home/container/data:rw,uid=988,gid=988
+          --entrypoint /opt/venv/bin/python
+          '${{ env.IMAGE }}@${{ steps.image.outputs.digest }}'
+          /opt/floodman/scripts/smoke_transfer_handoff.py

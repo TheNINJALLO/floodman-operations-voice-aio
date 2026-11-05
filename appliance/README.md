@@ -35,7 +35,7 @@ The application captures clear caller-provided details and chooses relevant ques
 The adaptive conversation flow:
 
 1. Listen to the request and reuse details the caller already supplied. There is no default home-or-business question.
-2. For a service request, ask up to two missing, relevant follow-ups, then check safety if it has not been addressed. For a general message, quote follow-up, or warranty-document request, use a shorter message-taking path.
+2. For a service request, ask up to two missing, relevant follow-ups without a routine hazard checklist. Volunteered emergency conditions still reach the deterministic emergency handler. For a general message, quote follow-up, or warranty-document request, use a shorter message-taking path.
 3. Collect name and callback number first. Property requests also collect a service address and put email last. General messages do not require an address or email; warranty-document requests can collect email. Unknown or declined fields do not trap the caller in a loop.
 4. Ask once whether there is anything else to pass along, then save the intake before queueing permission-scoped staff notifications. A partial message remains marked partial when required contact details could not be confirmed.
 5. End after the closing response. Late silence cannot start a new interview or transfer a completed call.
@@ -45,6 +45,8 @@ Prepared contextual questions and confirmations bypass optional wording generati
 A caller asking for a moment hears a short acknowledgement. The next two no-input intervals remain quiet and preserve the active field. Normal no-input recovery resumes afterward. Both the native and Tel-Agent audio loops recognize this intentional wait without recording a missing-audio error.
 
 Unsupported work is still collected and sent. A hangup sends whatever was recovered. Immediate electrical, sewage, rising-water, gas, or structural danger triggers emergency notification and an optional transfer.
+
+Human handoff commits the transfer action before sending AudioSocket's explicit `0x00 0x00 0x00` termination packet. This avoids the Asterisk 20.6 behavior where a bare TCP EOF leaves the media application waiting instead of returning to the dialplan. AGI commands wait for Asterisk's acknowledgement before consuming the action file. The existing `TryExec` path then reaches `Dial`, with ringback, answered-transfer logging, and a spoken fallback if the destination cannot be reached. The CPU build runs a real Asterisk handoff check on isolated Local channels with networking disabled; it places no carrier calls.
 
 ## Local model profile
 

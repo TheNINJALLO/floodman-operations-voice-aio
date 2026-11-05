@@ -64,6 +64,11 @@ def test_asterisk_renderer(
     assert 'FLOODMAN_ACTION}"="completed"' in extensions
     assert 'FLOODMAN_AUDIO_TRYSTATUS}"="SUCCESS"' not in extensions
     assert "stage=hangup" in extensions
+    assert "rU(floodman-transfer-connected^${FLOODMAN_CALL_ID})" in extensions
+    assert "stage=transfer_start" in extensions and "stage=transfer_connected" in extensions
+    assert "stage=transfer_result" in extensions and "dialstatus=${DIALSTATUS}" in extensions
+    assert "Playback(floodman-transfer-unavailable)" in extensions
+    assert "ring=440+480/2000,0/4000" in (etc / "indications.conf").read_text()
     assert f"{tmp_path / 'logs' / 'asterisk-full.log'} => notice,warning,error" in logger
     assert "full =>" not in logger
     assert "FLOODMAN_DID=${EXTEN}" in extensions
