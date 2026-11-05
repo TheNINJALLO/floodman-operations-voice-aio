@@ -55,6 +55,7 @@ DETAIL_KEYS = {
     "slow_response_ms",
     "briefing_model", "post_call_briefings_enabled", "briefing_threads", "primary_model_profile", "briefing_backend",
     "wording_budget_ms", "llm_timeout_seconds", "briefing_timeout_seconds",
+    "barge_in_vad_threshold", "barge_in_echo_suppression", "barge_in_resume_ms", "barge_in_max_gap_ms",
 }
 
 
@@ -132,6 +133,10 @@ def runtime_snapshot(settings: Any) -> dict[str, Any]:
         "email_endpoint_ms": settings.email_endpoint_silence_ms,
         "no_input_seconds": settings.no_input_timeout_seconds,
         "barge_in_ms": settings.barge_in_min_speech_ms, "barge_in_enabled": settings.barge_in_enabled,
+        "barge_in_vad_threshold": getattr(settings, "barge_in_vad_threshold", .75),
+        "barge_in_echo_suppression": getattr(settings, "barge_in_echo_suppression", False),
+        "barge_in_resume_ms": getattr(settings, "barge_in_resume_ms", 800),
+        "barge_in_max_gap_ms": getattr(settings, "barge_in_max_gap_ms", 120),
         "vad_threshold": settings.vad_energy_threshold, "barge_in_threshold": settings.barge_in_energy_threshold,
         "input_preroll_ms": settings.input_preroll_ms, "post_tts_guard_ms": settings.post_tts_guard_ms,
         "slow_response_ms": settings.call_slow_response_ms,

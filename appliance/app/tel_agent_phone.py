@@ -262,6 +262,8 @@ class TelAgentPhoneAgent:
     ) -> None:
         try:
             arguments = {"get_stage": lambda: session.state.stage} if getattr(self.stt, "stage_aware", False) else {}
+            if getattr(self.stt, "activity_aware", False):
+                arguments["activity"] = connection.speech_activity
             async for turn in self.stt.stream_turns(connection.inbound_frames(), **arguments):
                 await output.put(turn)
         except asyncio.CancelledError:
@@ -335,14 +337,41 @@ class TelAgentPhoneAgent:
             self.core.record_assistant(session, greeting.text, interrupted=greeting.interrupted)
             session.introduction_pending = greeting.interrupted
             last_input_at = time.perf_counter()
+            pending_reply = VoiceReply(text=self.core.greeting()) if greeting.interrupted else None
 
             while not connection.closed:
                 if connection.trace is not None:
                     connection.trace.turn += 1
                 if streaming:
                     try:
-                        item = await asyncio.wait_for(transcript_queue.get(), timeout=12.0)
+                        recovery = pending_reply is not None and getattr(self.core.settings, "local_voice_stack", "standard") == "streaming_trial"
+                        timeout = getattr(self.core.settings, "barge_in_resume_ms", 800) / 1000 if recovery else 12.0
+                        item = await asyncio.wait_for(transcript_queue.get(), timeout=timeout)
                     except asyncio.TimeoutError:
+                        if recovery:
+                            activity = getattr(connection, "speech_activity", None)
+                            if activity is not None and activity.busy():
+                                continue
+                            if activity is not None:
+                                activity.reset_requested = True
+                            connection.event("empty_interruption_recovery", outcome="repeat_interrupted_prompt")
+                            resumed = await self._speak(connection, _single_text(pending_reply.text), call_uuid, reply=pending_reply)
+                            self.core.record_assistant(session, resumed.text, interrupted=resumed.interrupted)
+                            if not resumed.interrupted:
+                                session.interrupted_prompt_stage = ""
+                                session.interrupted_from_stage = ""
+                                if pending_reply.text == self.core.greeting():
+                                    session.introduction_pending = False
+                                if pending_reply.end_call:
+                                    finalize = getattr(self.core, "finalize_completion", None)
+                                    if finalize is not None:
+                                        await finalize(session)
+                                    outcome = "completed" if session.state.completed else "no_input"
+                                    self.registry.write_action(call_uuid, "completed" if session.state.completed else "fallback_callback", "", outcome)
+                                    break
+                                pending_reply = None
+                            last_input_at = time.perf_counter()
+                            continue
                         connection.event("no_input", reason="stream_timeout")
                         turn = TelAgentTranscriptTurn(text="")
                     else:
@@ -389,6 +418,7 @@ class TelAgentPhoneAgent:
                         connection.event("unrecognized_audio", outcome="keep_listening")
                         continue
                 if caller_text:
+                    pending_reply = None
                     last_input_at = time.perf_counter()
                     logger.info(
                         "call_event call_uuid=%s stage=tel_agent_final_transcript chars=%d confidence=%s language=%s",
@@ -433,6 +463,7 @@ class TelAgentPhoneAgent:
                         previous_stage=input_stage,
                         playback_fraction=0.0,
                     )
+                pending_reply = reply if result.interrupted and not reply.transfer_number else None
                 if reply.transfer_number:
                     self.registry.write_action(
                         call_uuid, "transfer", reply.transfer_number, "assistant_transfer"

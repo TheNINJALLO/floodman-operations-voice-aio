@@ -11,6 +11,8 @@ from app.call_diagnostics import emit_current
 from app.config import Settings
 from app.conversation import unfinished_turn
 from app.local_trial_assets import verify_speech_assets
+from app.audio import rms
+from app.speech_activity import SpeechActivity
 from app.silero_gate import SileroGate, load_silero_session
 from app.stt import LocalSTT
 from app.tel_agent_runtime import TelAgentTranscriptTurn
@@ -33,6 +35,7 @@ def endpoint_ms(settings: Settings, stage: str, text: str = "") -> int:
 class StreamingLocalSTT:
     streaming = True
     stage_aware = True
+    activity_aware = True
     provider_name = "local-sherpa-zipformer-int8"
 
     def __init__(self, settings: Settings):
@@ -83,8 +86,9 @@ class StreamingLocalSTT:
             self.recognizer.decode_stream(stream)
         return self.recognizer.get_result(stream).strip()
 
-    async def stream_turns(self, audio: AsyncIterator[bytes], *, get_stage: Callable[[], str] = lambda: "issue") -> AsyncIterator[TelAgentTranscriptTurn]:
+    async def stream_turns(self, audio: AsyncIterator[bytes], *, get_stage: Callable[[], str] = lambda: "issue", activity: SpeechActivity | None = None) -> AsyncIterator[TelAgentTranscriptTurn]:
         await self.start()
+        activity = activity if activity is not None else SpeechActivity()
         stream = self.recognizer.create_stream()
         gate = SileroGate(self.settings.local_trial_dir / "vad/silero.onnx")
         buffer = bytearray()
@@ -111,17 +115,26 @@ class StreamingLocalSTT:
         async for frame in audio:
             if not frame:
                 continue
+            if activity.reset_requested:
+                stream = self.recognizer.create_stream()
+                buffer.clear()
+                voiced_ms = silence_ms = elapsed_ms = idle_ms = 0
+                active = False
+                previous_text = ""
+                gate.reset()
+                activity.reset_requested = False
             if len(frame) % 2:
                 raise ValueError("Local recognizer requires complete PCM16 samples")
             duration = len(frame) / 16
             probability = gate.probability(frame)
-            voiced = probability is not None and probability >= self.settings.silero_threshold
+            voiced = probability is not None and probability >= self.settings.silero_threshold and rms(frame) >= max(80, min(1500, activity.background_energy * 1.5))
             async with self._decode_lock:
                 text = await asyncio.to_thread(self._decode, stream, frame)
             if text and text != previous_text:
                 emit_current("stt_partial", chars=len(text), stage=get_stage())
                 previous_text = text
             if voiced:
+                activity.voiced()
                 if not active:
                     stage = get_stage()
                     active = True
@@ -137,7 +150,11 @@ class StreamingLocalSTT:
                 ended = silence_ms >= endpoint_ms(self.settings, stage, text)
                 limited = elapsed_ms >= self.settings.maximum_utterance_seconds * 1000
                 if ended or limited:
-                    turn = await finish()
+                    activity.decoding = True
+                    try:
+                        turn = await finish()
+                    finally:
+                        activity.decoding = False
                     if turn is not None:
                         yield turn
                     stream = self.recognizer.create_stream()

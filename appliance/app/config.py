@@ -243,6 +243,10 @@ class Settings:
     barge_in_min_speech_ms: int
     barge_in_energy_threshold: int
     barge_in_preroll_ms: int
+    barge_in_vad_threshold: float
+    barge_in_max_gap_ms: int
+    barge_in_echo_suppression: bool
+    barge_in_resume_ms: int
 
     sip_mode: str
     sip_server: str
@@ -417,9 +421,13 @@ class Settings:
             post_tts_guard_ms=_int("POST_TTS_GUARD_MS", 120),
             vad_energy_threshold=_int("VAD_ENERGY_THRESHOLD", 325),
             barge_in_enabled=_bool("BARGE_IN_ENABLED", True),
-            barge_in_min_speech_ms=max(80, min(_int("BARGE_IN_MIN_SPEECH_MS", 160), 1000)),
-            barge_in_energy_threshold=max(100, min(_int("BARGE_IN_ENERGY_THRESHOLD", 325), 5000)),
+            barge_in_min_speech_ms=max(80, min(_int("BARGE_IN_MIN_SPEECH_MS", 320 if local_voice_stack == "streaming_trial" else 160), 1000)),
+            barge_in_energy_threshold=max(100, min(_int("BARGE_IN_ENERGY_THRESHOLD", 500 if local_voice_stack == "streaming_trial" else 325), 5000)),
             barge_in_preroll_ms=max(0, min(_int("BARGE_IN_PREROLL_MS", 240), 1000)),
+            barge_in_vad_threshold=max(.5, min(_float("BARGE_IN_VAD_THRESHOLD", .75), .99)),
+            barge_in_max_gap_ms=max(20, min(_int("BARGE_IN_MAX_GAP_MS", 60), 200)),
+            barge_in_echo_suppression=_bool("BARGE_IN_ECHO_SUPPRESSION", local_voice_stack == "streaming_trial"),
+            barge_in_resume_ms=max(200, min(_int("BARGE_IN_RESUME_MS", 800), 3000)),
             sip_mode=os.getenv("SIP_MODE", "twilio").strip().lower(),
             sip_server=os.getenv("SIP_SERVER", "").strip(),
             sip_port=_int("SIP_PORT", 5060),

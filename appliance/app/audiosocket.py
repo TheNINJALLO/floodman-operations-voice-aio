@@ -15,6 +15,7 @@ from app.call_diagnostics import CallDiagnostics, CallTrace, current_trace
 from app.intake_flow import contact_endpoint_stage
 from app.models import VoiceReply
 from app.registry import CallRegistry
+from app.speech_activity import SpeechActivity
 from app.stt import LocalSTT
 from app.tts import LocalTTS
 from app.voice_core import VoiceCore
@@ -48,6 +49,13 @@ class AudioSocketConnection:
         self._first_audio_emitted = False
         self.dropped_frames = 0
         self._shutdown_started = False
+        self.speech_activity = SpeechActivity()
+        self._soft_speech = False
+        self._echo_reported = False
+        self._echo_filter = None
+        if getattr(settings, "barge_in_echo_suppression", False):
+            from app.playback_echo import PlaybackEchoFilter
+            self._echo_filter = PlaybackEchoFilter()
         self._barge_gate = None
         self._capture_gate = None
         if getattr(settings, "local_voice_stack", "standard") == "streaming_trial":
@@ -64,6 +72,14 @@ class AudioSocketConnection:
         if gate is not None:
             try:
                 probability = gate.probability(payload)
+                if barge:
+                    energy = rms(payload)
+                    confidence = getattr(self.settings, "barge_in_vad_threshold", .75)
+                    if probability is not None and probability < confidence:
+                        self.speech_activity.background_energy = .97 * self.speech_activity.background_energy + .03 * energy
+                    floor = max(self.settings.barge_in_energy_threshold, min(2000, self.speech_activity.background_energy * 1.8))
+                    self._soft_speech = bool(probability is not None and probability >= confidence and energy >= max(80, self.speech_activity.background_energy * 1.2)) or self._soft_speech
+                    return probability is not None and probability >= confidence and energy >= floor
                 return probability is not None and probability >= self.settings.silero_threshold
             except Exception as exc:
                 # A speech detector failure must not disable interruption or
@@ -111,6 +127,11 @@ class AudioSocketConnection:
                     self.close_reason = "asterisk_hangup_frame"
                     break
                 if kind == TYPE_AUDIO and payload:
+                    if self._echo_filter is not None:
+                        payload = self._echo_filter.filter(payload)
+                        if self._echo_filter.last_correlation and not self._echo_reported:
+                            self.event("playback_echo_suppressed", confidence=self._echo_filter.last_correlation)
+                            self._echo_reported = True
                     if self.output_active and self.settings.barge_in_enabled:
                         self._capture_barge_in(payload)
                     elif not self.output_active:
@@ -147,6 +168,7 @@ class AudioSocketConnection:
         self._barge_audio.clear()
         self._barge_voiced_ms = 0.0
         self._barge_silence_ms = 0.0
+        self._soft_speech = False
         if self._barge_gate is not None:
             self._barge_gate.reset()
 
@@ -164,11 +186,12 @@ class AudioSocketConnection:
 
         energy = rms(payload)
         if self._voiced(payload, barge=True):
+            self.speech_activity.voiced()
             self._barge_voiced_ms += duration_ms
             self._barge_silence_ms = 0.0
         elif self._barge_voiced_ms:
             self._barge_silence_ms += duration_ms
-            if self._barge_silence_ms > 120:
+            if self._barge_silence_ms > getattr(self.settings, "barge_in_max_gap_ms", 120):
                 self._barge_voiced_ms = 0.0
                 self._barge_silence_ms = 0.0
 
@@ -227,6 +250,7 @@ class AudioSocketConnection:
         self.barge_in_event.clear()
         self._reset_barge_in()
         self.output_active = True
+        self._echo_reported = False
         self.last_stream_audio_bytes = 0
         if self.settings.barge_in_enabled:
             self._queued_speech_waiting()
@@ -240,6 +264,8 @@ class AudioSocketConnection:
             if self.closed or self.barge_in_event.is_set():
                 return
             self.writer.write(bytes([TYPE_AUDIO]) + struct.pack("!H", len(chunk)) + chunk)
+            if self._echo_filter is not None:
+                self._echo_filter.record(chunk)
             await self.writer.drain()
             self._first_audio()
             self.last_stream_audio_bytes += len(chunk)
@@ -257,7 +283,7 @@ class AudioSocketConnection:
         # reaching the sustained-speech threshold needed to interrupt playback.
         # Hand that onset to the listener instead of discarding the first word.
         self.output_active = False
-        if not self.barge_in_event.is_set() and self._barge_voiced_ms:
+        if not self.barge_in_event.is_set() and (self._barge_voiced_ms or self._soft_speech):
             self._queue_audio(bytes(self._barge_audio))
         self._reset_barge_in()
 
@@ -308,6 +334,8 @@ class AudioSocketConnection:
                         interrupted = self.barge_in_event.is_set()
                         break
                     self.writer.write(bytes([TYPE_AUDIO]) + struct.pack("!H", len(chunk)) + chunk)
+                    if self._echo_filter is not None:
+                        self._echo_filter.record(chunk)
                     await self.writer.drain()
                     self._first_audio()
                     self.last_stream_audio_bytes += len(chunk)
