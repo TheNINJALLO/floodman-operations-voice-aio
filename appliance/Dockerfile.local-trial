@@ -13,7 +13,7 @@ COPY THIRD_PARTY_LICENSES.md README.md ./
 RUN /opt/venv/bin/pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu && \
     /opt/venv/bin/pip install '.[streaming_trial]' && \
     chmod +x /opt/floodman/scripts/*.sh /opt/floodman/scripts/*.py
-ENV LOCAL_VOICE_STACK=streaming_trial PRIMARY_MODEL_PROFILE=haiku8b \
+ENV DATA_DIR=/home/container/data LOCAL_VOICE_STACK=streaming_trial PRIMARY_MODEL_PROFILE=haiku8b \
     LOCAL_AI_ONLY=true LOCAL_AI_DEVICE=cpu VOICE_ENGINE=tel_agent \
     LOCAL_DECKARD_BRIEFINGS=false POCKET_THREADS=2 SHERPA_THREADS=2 \
     POCKET_VOICE=alba POCKET_SPEED=1.0 LLAMA_THREADS=4 LLAMA_BATCH_THREADS=4
