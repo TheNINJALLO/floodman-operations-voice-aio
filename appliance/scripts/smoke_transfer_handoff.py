@@ -96,6 +96,11 @@ exten => staff,1,Ringing()
                     await asyncio.sleep(.1)
                 else:
                     raise RuntimeError("Isolated Asterisk control socket was unavailable")
+                result = await asyncio.to_thread(subprocess.run,
+                    [executable, "-C", str(config), "-rx", "core waitfullybooted"],
+                    capture_output=True, text=True, timeout=15)
+                if result.returncode or "No such command" in result.stdout:
+                    raise RuntimeError("Isolated Asterisk did not finish booting")
                 # Control socket can precede module/dialplan loading.
                 for _ in range(100):
                     result = await asyncio.to_thread(subprocess.run,
