@@ -28,6 +28,7 @@ from app.auth import AuthManager, Principal
 from app.business import BusinessDirectory
 from app.briefings import PostCallBriefings
 from app.config import Settings
+from app.conversation import QUESTIONS
 from app.call_diagnostics import CallDiagnostics, FEEDBACK_CATEGORIES, diagnostic_report, summary as diagnostic_summary
 from app.call_quality import quality_report
 from app.db import Database
@@ -37,6 +38,7 @@ from app.llm import LocalLLM
 from app.notifications import TeamNotifier
 from app.registry import CallRegistry
 from app.sms_consent import SMS_DISCLOSURE, SMS_DISCLOSURE_VERSION, normalize_sms_phone
+from app.simulation import SimulationNotifier
 from app.stt import LocalSTT
 from app.suite_bridge import BusinessSuiteBridge
 from app.tel_agent_runtime import TelAgentLLM, TelAgentSTT, TelAgentTTS
@@ -53,8 +55,8 @@ templates = Jinja2Templates(directory=str(PROJECT_ROOT / "templates"))
 
 
 class SimulatorRequest(BaseModel):
-    call_uuid: str = ""
-    text: str
+    call_uuid: str = Field(default="", max_length=80)
+    text: str = Field(max_length=4000)
     reset: bool = False
 
 
@@ -102,6 +104,9 @@ class Runtime:
             self.notifier,
             self.suite_bridge,
             self.briefings,
+        )
+        self.simulator_core = VoiceCore(
+            settings, self.database, self.business, self.knowledge, self.llm, SimulationNotifier(),
         )
         self.call_diagnostics = CallDiagnostics(self.database, settings)
         self.audio = AudioSocketServer(settings, self.core, self.stt, self.tts, self.registry, self.call_diagnostics)
@@ -1196,6 +1201,25 @@ async def test_email_settings(
 
 
 # Voice configuration -------------------------------------------------
+@app.get("/assistant", response_class=HTMLResponse)
+async def assistant_page(request: Request, floodman_session: str | None = Cookie(default=None)):
+    principal = _principal(floodman_session)
+    if not principal:
+        return RedirectResponse("/login", status_code=303)
+    return templates.TemplateResponse(
+        request, "assistant.html", _context(
+            request, principal, "assistant", greeting=runtime.core.greeting(),
+            additional_question=QUESTIONS["anything_else"],
+            transfer_configured=bool(settings.emergency_transfer_number),
+            callback_hours=settings.callback_sla_hours,
+            approved_documents=len(runtime.knowledge.documents),
+            model_name={"deckard": "Deckard", "haiku8b": "Haiku-trained 8B (Llama)"}.get(settings.primary_model_profile, "Custom local model"),
+            current_voice=_voice_catalog([getattr(runtime.tts, "current_voice", settings.kokoro_voice)])[0]["name"],
+            current_speed=getattr(runtime.tts, "current_speed", settings.kokoro_speed),
+        ),
+    )
+
+
 @app.get("/voice", response_class=HTMLResponse)
 async def voice_page(request: Request, floodman_session: str | None = Cookie(default=None)):
     principal = _principal(floodman_session)
@@ -1267,7 +1291,7 @@ async def call_review_page(request: Request, floodman_session: str | None = Cook
         return _redirect("/", error="Manager access is required to review call patterns.")
     report = await asyncio.to_thread(quality_report, runtime.database, settings.call_slow_response_ms)
     return templates.TemplateResponse(request, "call_review.html",
-                                      _context(request, principal, "diagnostics", report=report))
+                                      _context(request, principal, "call-review", report=report))
 
 
 @app.get("/api/call-review")
@@ -1324,25 +1348,32 @@ async def api_simulate(
 ):
     principal = _require_api(floodman_session, manage=True)
     _csrf(principal, x_csrf_token)
-    call_uuid = payload.call_uuid or f"sim-{uuid.uuid4()}"
-    if payload.reset:
-        runtime.simulators.pop(call_uuid, None)
-        runtime.database.delete_call_by_uuid(call_uuid)
-    session = runtime.simulators.get(call_uuid)
+    session = runtime.simulators.get(payload.call_uuid) if payload.call_uuid else None
+    if payload.call_uuid and session is None:
+        raise HTTPException(404, "This test session is unavailable. Start a new test.")
+    if payload.reset and session:
+        await runtime.simulator_core.disconnect(session, "simulation_reset")
+        runtime.simulators.pop(payload.call_uuid, None)
+        session = None
     if not session:
-        session = runtime.core.create_session(call_uuid, "+12315550000", "+12319354921")
+        call_uuid = f"sim-{uuid.uuid4()}"
+        session = runtime.simulator_core.create_session(call_uuid, "+12315550000", "+12319354921")
         runtime.simulators[call_uuid] = session
-        greeting = runtime.core.greeting()
+        greeting = runtime.simulator_core.greeting()
         runtime.database.add_message(session.call_id, "assistant", greeting)
-        return {"call_uuid": call_uuid, "reply": greeting, "stage": session.state.stage, "snapshot": session.state.to_dict()}
-    reply = await runtime.core.process(session, payload.text)
+        return {"call_uuid": call_uuid, "call_id": session.call_id, "reply": greeting, "stage": session.state.stage, "snapshot": session.state.to_dict()}
+    call_uuid = session.state.call_uuid
+    reply = await runtime.simulator_core.process(session, payload.text)
     if reply.end_call or reply.transfer_number:
-        await runtime.core.disconnect(session, "simulation_completed")
+        await runtime.simulator_core.disconnect(session, "simulation_completed")
+        runtime.simulators.pop(call_uuid, None)
     return {
         "call_uuid": call_uuid,
+        "call_id": session.call_id,
         "reply": reply.text,
         "stage": session.state.stage,
         "end_call": reply.end_call,
         "transfer_number": reply.transfer_number,
+        "wait_for_caller": reply.wait_for_caller,
         "snapshot": session.state.to_dict(),
     }

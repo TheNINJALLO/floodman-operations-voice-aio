@@ -285,4 +285,7 @@ def detect_flood_emergency(value: Any, *, context: str = "") -> bool:
 
 def human_requested(value: Any) -> bool:
     text = normalized(value)
-    return any(term in text for term in ("human", "representative", "real person", "someone on the team", "operator", "transfer me"))
+    return any(term in text for term in (
+        "human", "representative", "real person", "someone on the team", "operator", "transfer me",
+        "speak to a person", "speak with a person", "talk to a person", "talk with a person",
+    ))

@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% set page_title = "Alex · Inbound assistant" %}
+{% set page_eyebrow = "Call flow, knowledge, testing, and review" %}
+{% block content %}
+<section class="page-heading">
+  <div><h1>Alex, your inbound assistant</h1><p>See how a call is handled, check the approved answers, and test a conversation.</p></div>
+  {% if principal.can_manage %}<a class="button primary" href="/simulator">Test a conversation</a>{% endif %}
+</section>
+{% include "assistant_nav.html" %}
+<div class="assistant-layout">
+  <div class="assistant-flow">
+    <section class="panel script-panel">
+      <div class="panel-heading"><div><h2>First message</h2><p>The greeting used by the running call assistant.</p></div><span class="status info">Current configuration</span></div>
+      <blockquote class="script-quote">{{ greeting }}</blockquote>
+    </section>
+    <section class="panel">
+      <div class="panel-heading"><div><h2>How the conversation unfolds</h2><p>Follow the caller's request, then collect what the team needs.</p></div></div>
+      <ol class="conversation-flow">
+        <li><div><h3>Listen to what happened</h3><p>Use details the caller already gave. Ask a short follow-up when something relevant is missing.</p></div></li>
+        <li><div><h3>Choose the right response</h3><p>Answer from approved business information. A routine request for a person becomes a callback message.</p>
+          <div class="routing-note"><strong>Active flooding emergency</strong><p>{{ 'The call can transfer to the configured emergency contact.' if transfer_configured else 'No emergency transfer contact is configured. The assistant flags the situation and continues collecting the message.' }} Other safety concerns can be flagged without transferring the call.</p></div>
+        </div></li>
+        <li><div><h3>Capture a useful message</h3><p>Confirm the caller's name and callback number. Collect the address for service requests, and offer email last. Reuse confirmed details.</p></div></li>
+        <li><div><h3>Confirm, then give the caller time</h3><p class="flow-phrase">“{{ additional_question }}”</p><p>Include additions or corrections before closing. The configured callback timeframe is {{ callback_hours }} hours.</p></div></li>
+      </ol>
+    </section>
+  </div>
+  <aside class="assistant-context" aria-label="Assistant configuration">
+    <section class="panel">
+      <div class="panel-heading"><div><h2>What Alex uses</h2></div></div>
+      <dl class="assistant-facts"><div><dt>Local language model</dt><dd>{{ model_name }}</dd></div><div><dt>Selected voice</dt><dd>{{ current_voice | replace('_', ' ') | title }}</dd></div><div><dt>Speaking pace</dt><dd>{{ '%.2f' | format(current_speed) }}×</dd></div><div><dt>Approved knowledge</dt><dd>{{ approved_documents }} document{{ '' if approved_documents == 1 else 's' }}</dd></div></dl>
+      <div class="panel-copy"><a class="button secondary full" href="/knowledge">Review approved answers</a></div>
+    </section>
+    <section class="workspace-note"><h2>Changes you can make here</h2><p>Manage business answers in Knowledge{% if principal.is_admin %}, and preview the voice and pace before saving{% endif %}. Knowledge marked as draft stays out of calls.</p><p>This call flow is a read-only view of the running configuration. Routing changes are released with tested call-handling code.</p></section>
+    {% if principal.can_manage %}<a class="workspace-link" href="/call-review"><strong>Improve from actual calls</strong><span>Review reported problems, reply waits, and the calls behind each observation.</span></a>{% endif %}
+  </aside>
+</div>
+{% endblock %}

@@ -12,6 +12,12 @@
 <section class="panel call-list" data-call-list>
   <div class="panel-heading"><div><h2>Recent calls</h2><p>The newest {{ calls | length }} calls are shown. Refresh to see new activity.</p></div></div>
   {% if calls %}
+  <div class="call-views" data-call-views role="group" aria-label="Quick call views" hidden>
+    <button type="button" data-call-view="all" aria-pressed="true">All calls <span data-view-count></span></button>
+    <button type="button" data-call-view="reported" aria-pressed="false">Reported problems <span data-view-count></span></button>
+    <button type="button" data-call-view="deliveryFailed" aria-pressed="false">Delivery failures <span data-view-count></span></button>
+    <button type="button" data-call-view="emergency" aria-pressed="false">Emergencies <span data-view-count></span></button>
+  </div>
   <div class="call-filters" data-call-filters hidden>
     <label for="call-search">Search these calls<input id="call-search" type="search" placeholder="Name, phone, request, or call ID" data-call-search autocomplete="off"></label>
     <label for="call-filter">Show<select id="call-filter" data-call-filter><option value="all">All recent calls</option><option value="active">Active calls</option><option value="incomplete">Incomplete intake</option><option value="reported">Problems reported</option><option value="deliveryFailed">Delivery failures</option><option value="warnings">Review warnings</option><option value="emergency">Emergency priority</option></select></label>

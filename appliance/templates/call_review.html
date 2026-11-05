@@ -3,6 +3,7 @@
 {% set page_eyebrow = "Patterns from saved call evidence" %}
 {% block content %}
 <section class="page-heading"><div><h1>What needs attention on calls</h1><p>Recurring observations from the latest {{ report.sample_limit }} ended calls. Staff reports stay linked to the original conversation.</p></div><a class="button secondary" href="/api/call-review">View review data</a></section>
+{% include "assistant_nav.html" %}
 <section class="panel"><div class="panel-heading"><div><h2>{{ report.calls_reviewed }} {{ 'call' if report.calls_reviewed == 1 else 'calls' }} reviewed</h2><p>{{ report.calls_with_observations }} with observations · {{ report.calls_with_audio_timeline }} with a saved audio timeline</p></div><a class="button secondary" href="/call-review">Refresh review</a></div>
 <div class="panel-copy"><p>Observations help you choose what to investigate. An empty timeline does not establish that a call went well.</p><p>Reply waits above {{ (report.slow_response_ms / 1000) | round(2) }} seconds are flagged. {{ report.coverage.timing }}</p></div></section>
 <div class="log-stack">

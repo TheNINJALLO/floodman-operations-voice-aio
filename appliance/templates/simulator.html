@@ -1,8 +1,34 @@
 {% extends "base.html" %}
-{% set page_title = "Conversation simulator" %}
-{% set page_eyebrow = "Test the production intake flow safely" %}
+{% set page_title = "Test conversation" %}
+{% set page_eyebrow = "Try the current intake flow with a test caller" %}
 {% block content %}
-<section class="page-heading"><div><span class="eyebrow">Test workspace</span><h1>Conversation simulator</h1><p>Exercise the same deterministic intake flow without placing a phone call.</p></div><button class="button secondary" type="button" id="reset">Start over</button></section>
-<section class="simulator-shell panel"><div class="simulator-head"><span class="avatar bot-avatar">F</span><div><strong>Floodman AI receptionist</strong><small><span class="system-dot"></span> Local model ready</small></div></div><div id="chat" class="chat" aria-live="polite"></div><form id="sim-form" class="composer"><input id="sim-input" autocomplete="off" placeholder="Type the caller's response…" aria-label="Caller response"><button class="button primary" type="submit">Send</button></form><p class="help centered">Simulator records are saved as calls and can be managed from the Calls page.</p></section>
-<script src="/static/simulator.js"></script>
+<section class="page-heading"><div><h1>Test a conversation</h1><p>Check what Alex says, what gets captured, and which action the call flow chooses.</p></div><button class="button primary" type="button" id="reset">Start test</button></section>
+{% include "assistant_nav.html" %}
+<div class="test-workspace">
+  <section class="simulator-shell panel">
+    <div class="simulator-head"><span class="avatar bot-avatar" aria-hidden="true">F</span><div><strong>Alex · Floodman</strong><small data-sim-status role="status">Test not started</small></div><span class="status info">Text test</span></div>
+    <div id="chat" class="chat" role="log" aria-label="Test conversation" aria-live="polite"><div class="sim-welcome"><h2>Try it as a caller</h2><p>Start a test to see the greeting. Pick a scenario or write your own response.</p></div></div>
+    <div class="sim-error" data-sim-error role="alert" hidden></div>
+    <form id="sim-form" class="composer"><input id="sim-input" autocomplete="off" placeholder="Type the caller's response" aria-label="Caller response" maxlength="4000" disabled><button class="button primary" type="submit" disabled>Send</button></form>
+    <div class="sim-footer"><p>Test transcripts are saved locally. No phone call, staff alert, or business sync.</p><a data-sim-record class="button secondary compact" hidden>Open saved test</a></div>
+    <noscript><p class="panel-copy">Enable JavaScript to start and send a test conversation.</p></noscript>
+  </section>
+  <aside class="test-context">
+    <section class="panel">
+      <div class="panel-heading"><div><h2>Try a scenario</h2><p>Choose a starting line, then send it as the caller.</p></div></div>
+      <div class="scenario-list">
+        <button type="button" data-sim-scenario="I'd like an estimate for a damp basement. There is no standing water."><strong>Routine service request</strong><span>A callback message, with relevant service details.</span></button>
+        <button type="button" data-sim-scenario="Can I speak to a person, please?"><strong>Ask for a person</strong><span>Offer a callback without a routine transfer.</span></button>
+        <button type="button" data-sim-scenario="My basement is flooding right now and the water is rising fast."><strong>Active flooding</strong><span>Inspect the emergency transfer decision.</span></button>
+        <button type="button" data-sim-scenario="It's been..."><strong>An unfinished thought</strong><span>Wait for the caller to continue.</span></button>
+      </div>
+    </section>
+    <section class="panel">
+      <div class="panel-heading"><div><h2>Captured in this test</h2><p data-sim-stage>Start a test to see the current step.</p></div></div>
+      <dl class="assistant-facts"><div><dt>Name</dt><dd data-sim-field="name">Not captured</dd></div><div><dt>Callback number</dt><dd data-sim-field="phone">Not captured</dd></div><div><dt>Request</dt><dd data-sim-field="description">Not captured</dd></div><div><dt>Priority</dt><dd data-sim-field="urgency">Not captured</dd></div></dl>
+    </section>
+    <section class="workspace-note"><h2>What this test checks</h2><p>Conversation flow and captured details use the same intake logic as phone calls. This text test does not measure recognition, voice quality, interruptions, or phone response time.</p>{% if principal.is_admin %}<a href="/voice">Preview the installed voice</a>{% endif %}</section>
+  </aside>
+</div>
+<script src="/static/simulator.js" defer></script>
 {% endblock %}

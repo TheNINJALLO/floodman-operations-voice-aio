@@ -58,6 +58,18 @@
     const rows = [...list.querySelectorAll("[data-call-row]")];
     if (!search || !filter || !count || !rows.length) return;
     const entries = rows.map((row) => ({ row, text: row.textContent.toLocaleLowerCase() }));
+    const views = [...list.querySelectorAll("[data-call-view]")];
+    const validViews = [...filter.options].map((option) => option.value);
+    const parameters = new URL(window.location.href).searchParams;
+    if (validViews.includes(parameters.get("view"))) filter.value = parameters.get("view");
+    search.value = parameters.get("q") || "";
+    views.forEach((button) => {
+      button.querySelector("[data-view-count]").textContent = rows.filter((row) => button.dataset.callView === "all" || row.dataset[button.dataset.callView] === "true").length;
+      button.addEventListener("click", () => {
+        filter.value = button.dataset.callView;
+        applyFilters();
+      });
+    });
 
     function applyFilters() {
       const query = search.value.trim().toLocaleLowerCase();
@@ -71,9 +83,18 @@
       count.textContent = `${visible} of ${rows.length} recent calls shown`;
       if (empty) empty.hidden = visible > 0;
       list.querySelector(".table-wrap").hidden = visible === 0;
+      views.forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.callView === kind)));
+      const address = new URL(window.location.href);
+      if (kind === "all") address.searchParams.delete("view");
+      else address.searchParams.set("view", kind);
+      if (search.value.trim()) address.searchParams.set("q", search.value.trim());
+      else address.searchParams.delete("q");
+      window.history.replaceState(null, "", address);
     }
 
     list.querySelector("[data-call-filters]").hidden = false;
+    const quickViews = list.querySelector("[data-call-views]");
+    if (quickViews) quickViews.hidden = false;
     search.addEventListener("input", applyFilters);
     filter.addEventListener("change", applyFilters);
     list.querySelectorAll("[data-clear-call-filters]").forEach((button) => {

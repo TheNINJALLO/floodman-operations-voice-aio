@@ -3,11 +3,12 @@
 {% set page_eyebrow = "Approved information for the voice assistant" %}
 {% block content %}
 <section class="page-heading"><div><span class="eyebrow">AI content</span><h1>Knowledge library</h1><p>Add and maintain the approved information the assistant can use during calls.</p></div>{% if principal.can_manage %}<a class="button secondary" href="/knowledge">+ New document</a>{% endif %}</section>
+{% include "assistant_nav.html" %}
 <div class="split-layout">
   <section class="panel">
-    <div class="panel-heading"><div><h2>Documents</h2><p>{{ documents | length }} managed document{{ '' if documents | length == 1 else 's' }}</p></div><label class="search-box"><span>⌕</span><input type="search" placeholder="Search documents" data-table-search="knowledge-table"></label></div>
+    <div class="panel-heading"><div><h2>Documents</h2><p>{{ documents | length }} managed document{{ '' if documents | length == 1 else 's' }}</p></div><label class="search-box"><span aria-hidden="true">⌕</span><input type="search" aria-label="Search documents" placeholder="Search documents" data-table-search="knowledge-table"></label></div>
     <div class="table-wrap"><table id="knowledge-table"><thead><tr><th>Document</th><th>Category</th><th>AI status</th><th></th></tr></thead><tbody>
-      {% for document in documents %}<tr><td><strong>{{ document.title }}</strong><small>{{ document.slug }}.md</small></td><td>{{ document.category | title }}</td><td><span class="status {{ 'success' if document.approved else 'neutral' }}">{{ 'Approved' if document.approved else 'Draft' }}</span></td><td><a class="row-action" href="/knowledge?edit={{ document.slug }}">→</a></td></tr>
+      {% for document in documents %}<tr><td><strong>{{ document.title }}</strong><small>{{ document.slug }}.md</small></td><td>{{ document.category | title }}</td><td><span class="status {{ 'success' if document.approved else 'neutral' }}">{{ 'Approved' if document.approved else 'Draft' }}</span></td><td><a class="row-action" href="/knowledge?edit={{ document.slug }}" aria-label="Open {{ document.title }}">→</a></td></tr>
       {% else %}<tr><td colspan="4"><div class="empty-state"><span>◇</span><h3>No documents</h3><p>Add a document to teach the assistant approved business information.</p></div></td></tr>{% endfor %}
     </tbody></table></div>
   </section>

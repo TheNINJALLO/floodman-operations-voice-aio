@@ -101,6 +101,13 @@ confirmations, emergency transfer, closing and protected wording retain their
 deterministic paths. Routing, consent, suppression, verification, quiet hours,
 DNC, reassignment and frequency decisions remain in application code.
 
+The live-test profile sets `TEL_AGENT_NATURALIZE=false`: the same-host Ryzen
+comparison measured 2.06 seconds for a median complete 8B rewrite, beyond the
+1.2-second budget. Ordinary prepared questions therefore start without waiting
+for a rewrite. Approved knowledge answers still use the selected local model.
+Set the switch to `true` only for a controlled wording experiment with the budget
+and validation safeguards retained.
+
 ## Deckard background service
 
 On the server with sufficient RAM, set both:

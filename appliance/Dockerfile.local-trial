@@ -11,6 +11,7 @@ COPY app ./app
 COPY scripts ./scripts
 COPY config ./config
 COPY templates ./templates
+COPY static ./static
 COPY supervisor ./supervisor
 COPY docs ./docs
 COPY THIRD_PARTY_LICENSES.md README.md ./

@@ -1,0 +1,5 @@
+ARG TRIAL_IMAGE
+FROM ${TRIAL_IMAGE}
+HEALTHCHECK NONE
+ENTRYPOINT ["/opt/venv/bin/python"]
+CMD ["/home/container/data/live-test-preparation/runner.py"]

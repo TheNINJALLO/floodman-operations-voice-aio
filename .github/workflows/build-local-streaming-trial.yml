@@ -59,6 +59,15 @@ jobs:
         run: |
           docker volume create local-streaming-trial-models
           docker run --rm --mount type=volume,source=local-streaming-trial-models,target=/home/container/data --entrypoint /opt/venv/bin/python '${{ env.IMAGE }}@${{ steps.image.outputs.digest }}' /opt/floodman/scripts/download_local_trial.py --with-whisper
+      - name: Publish isolated asset preparation image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./appliance
+          file: ./appliance/Dockerfile.live-test-prep
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.IMAGE }}:cpu-local-prep-${{ github.sha }}
+          build-args: TRIAL_IMAGE=${{ env.IMAGE }}@${{ steps.image.outputs.digest }}
       - name: Verify real CPU speech without network or a carrier
         run: >-
           docker run --rm --network none --read-only --cpus 4 --memory 6g
