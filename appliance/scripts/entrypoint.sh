@@ -35,6 +35,10 @@ export HF_ASSETS_CACHE="${HF_HOME}/assets"
 export TMPDIR="${DATA_DIR}/cache/tmp"
 export TEMP="${TMPDIR}" TMP="${TMPDIR}" TORCH_HOME="${DATA_DIR}/cache/torch"
 export LOCAL_DECKARD_BRIEFINGS="${LOCAL_DECKARD_BRIEFINGS:-false}"
+if [[ "${LOCAL_VOICE_STACK:-standard}" == "streaming_trial" ]]; then
+  export LLAMA_THREADS="${LLAMA_THREADS:-4}"
+  export LLAMA_BATCH_THREADS="${LLAMA_BATCH_THREADS:-4}"
+fi
 mkdir -p "${HF_HUB_CACHE}" "${HF_XET_CACHE}" "${HF_ASSETS_CACHE}" "${TMPDIR}"
 
 if [[ ! -d "${DATA_DIR}/knowledge" ]]; then
