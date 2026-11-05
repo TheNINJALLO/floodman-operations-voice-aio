@@ -194,6 +194,14 @@ class Settings:
     primary_model_path: Path
     local_ai_device: str
     local_ai_only: bool
+    local_voice_stack: str
+    local_trial_dir: Path
+    pocket_voice: str
+    pocket_speed: float
+    pocket_threads: int
+    sherpa_threads: int
+    sherpa_whisper_fallback: bool
+    silero_threshold: float
     llama_base_url: str
     llama_api_key: str
     llama_model_alias: str
@@ -224,6 +232,8 @@ class Settings:
     post_call_briefings_enabled: bool
     briefing_backend: str
     briefing_ollama_url: str
+    briefing_llama_url: str
+    briefing_api_key: str
     briefing_model: str
     briefing_threads: int
     briefing_timeout_seconds: float
@@ -314,9 +324,18 @@ class Settings:
         if local_only_value not in {"1", "true", "yes", "on", "0", "false", "no", "off"}:
             raise ValueError("LOCAL_AI_ONLY must be true or false")
         primary_model = select_primary_model(models)
+        local_voice_stack = os.getenv("LOCAL_VOICE_STACK", "standard").strip().lower()
+        if local_voice_stack not in {"standard", "streaming_trial"}:
+            raise ValueError("LOCAL_VOICE_STACK must be standard or streaming_trial")
+        if local_voice_stack == "streaming_trial" and (voice_engine != "tel_agent" or local_only_value not in {"1", "true", "yes", "on"} or local_ai_device != "cpu"):
+            raise ValueError("The streaming trial requires tel_agent, CPU, and LOCAL_AI_ONLY=true")
+        if local_voice_stack == "streaming_trial" and any(not path.resolve().is_relative_to(data.resolve()) for path in (models, cache)):
+            raise ValueError("Streaming trial models and caches must stay under DATA_DIR")
+        if local_voice_stack == "streaming_trial" and os.getenv("FASTER_WHISPER_MODEL", "small.en") != "small.en":
+            raise ValueError("The streaming trial pins the small.en Whisper contact model")
         briefing_backend = os.getenv("BRIEFING_BACKEND", "primary").strip().lower()
-        if briefing_backend not in {"primary", "ollama"}:
-            raise ValueError("BRIEFING_BACKEND must be primary or ollama")
+        if briefing_backend not in {"primary", "ollama", "local_api"}:
+            raise ValueError("BRIEFING_BACKEND must be primary, ollama, or local_api")
         return cls(
             data_dir=data,
             config_dir=config,
@@ -354,6 +373,14 @@ class Settings:
             primary_model_path=primary_model.path,
             local_ai_device=local_ai_device,
             local_ai_only=local_only_value in {"1", "true", "yes", "on"},
+            local_voice_stack=local_voice_stack,
+            local_trial_dir=models / "local-trial",
+            pocket_voice=os.getenv("POCKET_VOICE", "alba").strip(),
+            pocket_speed=max(0.75, min(_float("POCKET_SPEED", 1.0), 1.25)),
+            pocket_threads=max(1, min(_int("POCKET_THREADS", 2), 4)),
+            sherpa_threads=max(1, min(_int("SHERPA_THREADS", 2), 4)),
+            sherpa_whisper_fallback=_bool("SHERPA_WHISPER_FALLBACK", True),
+            silero_threshold=max(0.1, min(_float("SILERO_THRESHOLD", 0.5), 0.95)),
             llama_base_url=os.getenv("LLAMA_BASE_URL", "http://127.0.0.1:8081/v1").rstrip("/"),
             llama_api_key=os.getenv("LLAMA_API_KEY", "floodman-local"),
             llama_model_alias=primary_model.alias,
@@ -381,6 +408,8 @@ class Settings:
             post_call_briefings_enabled=_bool("POST_CALL_BRIEFINGS_ENABLED", False),
             briefing_backend=briefing_backend,
             briefing_ollama_url=os.getenv("BRIEFING_OLLAMA_URL", "http://127.0.0.1:11434").strip(),
+            briefing_llama_url=os.getenv("BRIEFING_LLAMA_URL", "http://127.0.0.1:8082/v1").strip(),
+            briefing_api_key=os.getenv("BRIEFING_API_KEY", "").strip() or os.getenv("LLAMA_API_KEY", "floodman-local"),
             briefing_model=(primary_model.alias if briefing_backend == "primary" else
                             os.getenv("BRIEFING_MODEL", "floodman-deckard:40b-q4_k_m").strip()),
             briefing_threads=max(1, min(_int("BRIEFING_THREADS", 4), 16)),

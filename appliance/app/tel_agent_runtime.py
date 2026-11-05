@@ -153,7 +153,7 @@ class TelAgentLLM(LocalLLM):
         super().__init__(settings)
         self._provider: Any = None
         self._text_delta_type: Any = None
-        self._cloud_key = "" if (settings.local_ai_only or settings.primary_model_profile == "deckard") else os.getenv("GROQ_API_KEY", "").strip()
+        self._cloud_key = "" if (settings.local_ai_only or settings.primary_model_profile in {"deckard", "haiku8b"}) else os.getenv("GROQ_API_KEY", "").strip()
         self._base_url = (
             os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1").strip().rstrip("/")
             if self._cloud_key

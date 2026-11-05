@@ -33,6 +33,8 @@ export HF_HUB_CACHE="${HF_HOME}/hub"
 export HF_XET_CACHE="${HF_HOME}/xet"
 export HF_ASSETS_CACHE="${HF_HOME}/assets"
 export TMPDIR="${DATA_DIR}/cache/tmp"
+export TEMP="${TMPDIR}" TMP="${TMPDIR}" TORCH_HOME="${DATA_DIR}/cache/torch"
+export LOCAL_DECKARD_BRIEFINGS="${LOCAL_DECKARD_BRIEFINGS:-false}"
 mkdir -p "${HF_HUB_CACHE}" "${HF_XET_CACHE}" "${HF_ASSETS_CACHE}" "${TMPDIR}"
 
 if [[ ! -d "${DATA_DIR}/knowledge" ]]; then

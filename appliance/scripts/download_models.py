@@ -19,7 +19,7 @@ def verify_primary_model(path: Path, model: PrimaryModel) -> None:
     if not path.is_file():
         raise ValueError("Primary model file is missing")
     if model.size_bytes is not None and path.stat().st_size != model.size_bytes:
-        raise ValueError("Primary model size does not match the pinned Deckard file")
+        raise ValueError("Primary model size does not match the pinned file")
     with path.open("rb") as handle:
         if handle.read(4) != b"GGUF":
             raise ValueError("Primary model is not a GGUF file")
@@ -29,7 +29,7 @@ def verify_primary_model(path: Path, model: PrimaryModel) -> None:
             for chunk in iter(lambda: handle.read(8 * 1024 * 1024), b""):
                 digest.update(chunk)
             if digest.hexdigest() != model.sha256:
-                raise ValueError("Primary model checksum does not match the pinned Deckard file")
+                raise ValueError("Primary model checksum does not match the pinned file")
 
 
 def ensure_primary_model(model: PrimaryModel, data: Path, *, fetch=None) -> None:
@@ -78,6 +78,9 @@ def configure_runtime_cache(data: Path) -> None:
         "HF_XET_CACHE": hf / "xet",
         "HF_ASSETS_CACHE": hf / "assets",
         "TMPDIR": data / "cache/tmp",
+        "TEMP": data / "cache/tmp",
+        "TMP": data / "cache/tmp",
+        "TORCH_HOME": data / "cache/torch",
     }
     for name, directory in directories.items():
         directory.mkdir(parents=True, exist_ok=True)
@@ -93,14 +96,31 @@ def main() -> int:
 
     primary = select_primary_model(models)
     ensure_primary_model(primary, data)
+    if os.getenv("LOCAL_DECKARD_BRIEFINGS", "false").lower() == "true":
+        previous = os.environ.get("PRIMARY_MODEL_PROFILE")
+        try:
+            os.environ["PRIMARY_MODEL_PROFILE"] = "deckard"
+            ensure_primary_model(select_primary_model(models), data)
+        finally:
+            if previous is None:
+                os.environ.pop("PRIMARY_MODEL_PROFILE", None)
+            else:
+                os.environ["PRIMARY_MODEL_PROFILE"] = previous
+    if os.getenv("LOCAL_VOICE_STACK", "standard") == "streaming_trial":
+        from app.local_trial_assets import ensure_speech_assets
+        ensure_speech_assets(models / "local-trial")
     print(f"Floodman primary model ready: {primary.alias} ({primary.profile})")
 
     stt_model = os.getenv("FASTER_WHISPER_MODEL", "small.en")
-    snapshot_download(
-        repo_id=f"Systran/faster-whisper-{stt_model}",
-        local_dir=models / "faster-whisper" / f"faster-whisper-{stt_model}",
-        token=token,
-    )
+    if os.getenv("LOCAL_VOICE_STACK", "standard") == "streaming_trial":
+        from app.local_trial_assets import ensure_whisper_fallback
+        ensure_whisper_fallback(models)
+    else:
+        snapshot_download(
+            repo_id=f"Systran/faster-whisper-{stt_model}",
+            local_dir=models / "faster-whisper" / f"faster-whisper-{stt_model}",
+            token=token,
+        )
 
     kokoro_dir = models / "kokoro"
     download(

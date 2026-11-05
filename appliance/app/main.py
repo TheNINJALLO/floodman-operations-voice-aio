@@ -77,8 +77,14 @@ class Runtime:
         self.knowledge = KnowledgeBase(settings.knowledge_dir)
         if settings.voice_engine == "tel_agent":
             self.llm = TelAgentLLM(settings)
-            self.stt = TelAgentSTT(settings)
-            self.tts = TelAgentTTS(settings)
+            if settings.local_voice_stack == "streaming_trial":
+                from app.streaming_stt import StreamingLocalSTT
+                from app.pocket_tts import PocketTTS
+                self.stt = StreamingLocalSTT(settings)
+                self.tts = PocketTTS(settings)
+            else:
+                self.stt = TelAgentSTT(settings)
+                self.tts = TelAgentTTS(settings)
         else:
             self.llm = LocalLLM(settings)
             self.stt = LocalSTT(settings)
@@ -250,8 +256,8 @@ def _voice_catalog(voices: list[str]) -> list[dict[str, str]]:
             {
                 "id": voice,
                 "name": parts[1].replace("_", " ").title() if len(parts) == 2 else voice,
-                "accent": "British English" if voice.startswith("b") else "American English",
-                "gender": "Female" if len(voice) > 1 and voice[1] == "f" else "Male",
+                "accent": "English" if voice.startswith("pocket_") else ("British English" if voice.startswith("b") else "American English"),
+                "gender": "Preset voice" if voice.startswith("pocket_") else ("Female" if len(voice) > 1 and voice[1] == "f" else "Male"),
             }
         )
     return output
@@ -279,14 +285,15 @@ async def health() -> dict[str, Any]:
 @app.get("/ready")
 async def ready() -> JSONResponse:
     llm = await runtime.llm.health() if runtime.ready else False
-    stt_ready = getattr(runtime.stt, "ready", runtime.stt._model is not None)
-    tts_ready = getattr(runtime.tts, "ready", runtime.tts._kokoro is not None)
+    stt_ready = getattr(runtime.stt, "ready", getattr(runtime.stt, "_model", None) is not None)
+    tts_ready = getattr(runtime.tts, "ready", getattr(runtime.tts, "_kokoro", None) is not None)
     value = {
-        "ready": bool(runtime.ready and llm),
+        "ready": bool(runtime.ready and llm and stt_ready and tts_ready),
         "llm": llm,
         "stt": stt_ready,
         "tts": tts_ready,
         "voice_engine": settings.voice_engine,
+        "local_voice_stack": settings.local_voice_stack,
         "primary_model_profile": settings.primary_model_profile,
         "primary_model": settings.llama_model_alias,
         "local_ai_device": settings.local_ai_device,
@@ -1205,8 +1212,9 @@ async def voice_page(request: Request, floodman_session: str | None = Cookie(def
             principal,
             "voice",
             voices=_voice_catalog(voices),
-            current_voice=settings.kokoro_voice,
-            current_speed=settings.kokoro_speed,
+            current_voice=getattr(runtime.tts, "current_voice", settings.kokoro_voice),
+            current_speed=getattr(runtime.tts, "current_speed", settings.kokoro_speed),
+            preview_greeting=runtime.core.greeting(),
             message=request.query_params.get("message", ""),
             error=request.query_params.get("error", ""),
         ),

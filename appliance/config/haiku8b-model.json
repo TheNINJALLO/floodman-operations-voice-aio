@@ -1,0 +1,9 @@
+{
+  "ollama_model": "floodman-haiku-distill:8b-q4_k_m",
+  "repository": "mradermacher/oh-dcft-v3.1-claude-3-5-haiku-20241022-i1-GGUF",
+  "revision": "8a30dc2d9cf496385249c9b19fb104693a62cbea",
+  "filename": "oh-dcft-v3.1-claude-3-5-haiku-20241022.i1-Q4_K_M.gguf",
+  "sha256": "29f01eee4ba45829d895620391e0c8b27df68bffc1da276cf5b2ad88744f7c5e",
+  "size_bytes": 4920736032,
+  "provenance": "Publisher metadata pinned 2026-11-05. This is an 8B Llama-family model, not Anthropic Claude weights. Experimental live-call profile; Deckard remains the default."
+}

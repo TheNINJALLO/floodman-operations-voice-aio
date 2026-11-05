@@ -31,3 +31,12 @@ LiveKit package or Tel-Agent `voice` extra is installed.
 
 Anyone distributing a combined image should review the AGPL obligations that apply to
 that distribution.
+
+## Optional local streaming trial
+
+The standalone appliance has an opt-in CPU voice profile using Sherpa-ONNX,
+Silero VAD, Pocket TTS, and an 8B Llama-family GGUF. Its component attribution,
+model-license identifiers and immutable model pins are recorded in
+`appliance/THIRD_PARTY_LICENSES.md` and `appliance/config/`. The profile downloads
+public pretrained assets into `DATA_DIR`; it does not redistribute model weights
+in the source archive or container image.

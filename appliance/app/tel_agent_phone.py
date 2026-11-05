@@ -15,7 +15,7 @@ import logging
 import os
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Protocol
 
 from app.audiosocket import AudioSocketConnection
@@ -144,7 +144,13 @@ class TelAgentPhoneAgent:
             "yes",
             "on",
         }
-        if not naturalize or self._must_speak_exactly(reply, session, input_stage):
+        trial_wording = (
+            getattr(getattr(self.core, "settings", None), "local_voice_stack", "standard") == "streaming_trial"
+            and session.state.stage in {"affected_area", "timing_summary", "source_summary", "water_condition", "service_detail"}
+            and len(reply.speech_parts) == 1 and reply.text.endswith("?")
+        )
+        protected_reply = replace(reply, speech_parts=()) if trial_wording else reply
+        if not naturalize or self._must_speak_exactly(protected_reply, session, input_stage):
             yield reply.text
             return
 
@@ -174,6 +180,11 @@ class TelAgentPhoneAgent:
             if not candidate or ("?" in reply.text and not candidate.endswith("?")):
                 candidate = reply.text
                 emit_current("wording_fallback", reason="incomplete_reply", level="warning")
+            if trial_wording:
+                from app.trial_wording import valid_question_rewrite
+                if not valid_question_rewrite(candidate, reply.text, session.state.stage):
+                    candidate = reply.text
+                    emit_current("wording_fallback", reason="question_changed", level="warning")
         except Exception as exc:
             candidate = reply.text
             emit_current("wording_fallback", reason="required_reply", level="warning", error_type=type(exc).__name__)
@@ -192,6 +203,7 @@ class TelAgentPhoneAgent:
         call_uuid: str,
         *,
         since: float | None = None,
+        reply: VoiceReply | None = None,
     ) -> SpokenTurn:
         connection.event("reply_started")
         connection.begin_provider_output(since=since)
@@ -202,12 +214,22 @@ class TelAgentPhoneAgent:
                     await close()
                 result: SpokenTurn = _StoppedTurn()
             else:
-                result = await self._speaker()(
+                local = getattr(getattr(self.core, "settings", None), "local_voice_stack", "standard") == "streaming_trial"
+                arguments = {}
+                speaker = self._speaker() if not local else None
+                if local:
+                    from app.local_speaker import speak
+                    speaker = speak
+                    if reply is not None:
+                        arguments = {"speech_parts": reply.speech_parts, "part_speeds": reply.speech_part_speeds,
+                                     "pause_ms": reply.pause_between_parts_ms}
+                result = await speaker(
                     text_stream,
                     tts=self.tts,
                     sink=_AudioSocketSink(connection),
                     should_stop=lambda: connection.closed or connection.barge_in_event.is_set(),
                     since=since,
+                    **arguments,
                 )
         finally:
             interrupted = connection.barge_in_event.is_set()
@@ -236,9 +258,11 @@ class TelAgentPhoneAgent:
         self,
         connection: AudioSocketConnection,
         output: asyncio.Queue[TelAgentTranscriptTurn | BaseException | object],
+        session: CallSession,
     ) -> None:
         try:
-            async for turn in self.stt.stream_turns(connection.inbound_frames()):
+            arguments = {"get_stage": lambda: session.state.stage} if getattr(self.stt, "stage_aware", False) else {}
+            async for turn in self.stt.stream_turns(connection.inbound_frames(), **arguments):
                 await output.put(turn)
         except asyncio.CancelledError:
             raise
@@ -299,7 +323,7 @@ class TelAgentPhoneAgent:
 
             if streaming:
                 stream_task = asyncio.create_task(
-                    self._pump_transcripts(connection, transcript_queue),
+                    self._pump_transcripts(connection, transcript_queue, session),
                     name=f"tel-agent-stt-{call_uuid}",
                 )
 
@@ -394,6 +418,7 @@ class TelAgentPhoneAgent:
                     self._reply_stream(session, caller_text, reply, input_stage),
                     call_uuid,
                     since=turn_ended,
+                    reply=reply,
                 )
                 self.core.record_assistant(
                     session,

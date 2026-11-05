@@ -48,6 +48,33 @@ class AudioSocketConnection:
         self._first_audio_emitted = False
         self.dropped_frames = 0
         self._shutdown_started = False
+        self._barge_gate = None
+        self._capture_gate = None
+        if getattr(settings, "local_voice_stack", "standard") == "streaming_trial":
+            from app.silero_gate import SileroGate
+            try:
+                self._barge_gate = SileroGate(settings.local_trial_dir / "vad/silero.onnx")
+                self._capture_gate = SileroGate(settings.local_trial_dir / "vad/silero.onnx")
+            except Exception as exc:
+                self._barge_gate = self._capture_gate = None
+                logger.warning("Local speech gate unavailable; preserving energy-based interruption: %s", type(exc).__name__)
+
+    def _voiced(self, payload: bytes, *, barge: bool = False) -> bool:
+        gate = self._barge_gate if barge else self._capture_gate
+        if gate is not None:
+            try:
+                probability = gate.probability(payload)
+                return probability is not None and probability >= self.settings.silero_threshold
+            except Exception as exc:
+                # A speech detector failure must not disable interruption or
+                # disconnect the caller. Fall back to the existing local gate.
+                self.event("vad_fallback", level="warning", reason="energy_gate", error_type=type(exc).__name__)
+                if barge:
+                    self._barge_gate = None
+                else:
+                    self._capture_gate = None
+        threshold = self.settings.barge_in_energy_threshold if barge else self.settings.vad_energy_threshold
+        return rms(payload) >= threshold
 
     def event(self, event: str, **details) -> None:
         if self.trace is not None:
@@ -120,6 +147,8 @@ class AudioSocketConnection:
         self._barge_audio.clear()
         self._barge_voiced_ms = 0.0
         self._barge_silence_ms = 0.0
+        if self._barge_gate is not None:
+            self._barge_gate.reset()
 
     def _capture_barge_in(self, payload: bytes) -> None:
         if self.barge_in_event.is_set():
@@ -134,7 +163,7 @@ class AudioSocketConnection:
             del self._barge_audio[: len(self._barge_audio) - maximum_bytes]
 
         energy = rms(payload)
-        if energy >= self.settings.barge_in_energy_threshold:
+        if self._voiced(payload, barge=True):
             self._barge_voiced_ms += duration_ms
             self._barge_silence_ms = 0.0
         elif self._barge_voiced_ms:
@@ -357,7 +386,7 @@ class AudioSocketConnection:
                 return None
             duration_ms = (len(frame) / 2 / 8000) * 1000
             energy = rms(frame)
-            voiced = energy >= self.settings.vad_energy_threshold
+            voiced = self._voiced(frame)
             if voiced:
                 if not speaking:
                     self.event("speech_started")

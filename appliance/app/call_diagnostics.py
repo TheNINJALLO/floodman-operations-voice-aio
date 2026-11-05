@@ -41,7 +41,7 @@ FEEDBACK_CATEGORIES = {
 # Diagnostic events accept only operational values. Caller text and recipient
 # details already have their own authenticated records, not a second log copy.
 DETAIL_KEYS = {
-    "voice_engine", "local_ai_device", "local_ai_only", "llm_model", "stt_model",
+    "voice_engine", "local_voice_stack", "local_ai_device", "local_ai_only", "llm_model", "stt_model",
     "llm_provider", "stt_provider", "tts_provider", "voice", "voice_speed", "code_fingerprint",
     "stt_version", "tts_version", "onnx_version", "llm_model_file", "memory_limit_bytes",
     "python_version", "cpu_count", "cpu_model", "cpu_affinity_count", "cpu_quota_cores",
@@ -113,15 +113,19 @@ def runtime_snapshot(settings: Any) -> dict[str, Any]:
         "cpu_model": cpu_model, "cpu_affinity_count": affinity,
         "cpu_quota_cores": quota, "memory_limit_bytes": memory_limit,
         "voice_engine": settings.voice_engine, "local_ai_device": settings.local_ai_device,
+        "local_voice_stack": settings.local_voice_stack,
         "primary_model_profile": settings.primary_model_profile,
         "local_ai_only": settings.local_ai_only, "llm_model": settings.llama_model_alias,
-        "stt_model": settings.faster_whisper_model, "voice": settings.kokoro_voice,
-        "voice_speed": settings.kokoro_speed, "llm_model_file": settings.llm_model_path.name,
+        "stt_model": "streaming-zipformer-en-int8" if settings.local_voice_stack == "streaming_trial" else settings.faster_whisper_model,
+        "voice": "pocket_" + settings.pocket_voice if settings.local_voice_stack == "streaming_trial" else settings.kokoro_voice,
+        "voice_speed": settings.pocket_speed if settings.local_voice_stack == "streaming_trial" else settings.kokoro_speed,
+        "llm_model_file": settings.llm_model_path.name,
         "llm_threads": os.getenv("LLAMA_THREADS", "6"),
         "wording_budget_ms": os.getenv("TEL_AGENT_WORDING_BUDGET_MS", "1200"),
         "llm_timeout_seconds": settings.llama_timeout_seconds,
         "briefing_timeout_seconds": settings.briefing_timeout_seconds,
-        "stt_threads": settings.faster_whisper_threads, "tts_threads": settings.kokoro_threads,
+        "stt_threads": settings.sherpa_threads if settings.local_voice_stack == "streaming_trial" else settings.faster_whisper_threads,
+        "tts_threads": settings.pocket_threads if settings.local_voice_stack == "streaming_trial" else settings.kokoro_threads,
         "endpoint_ms": settings.endpoint_silence_ms,
         "conversation_endpoint_ms": settings.conversation_endpoint_silence_ms,
         "contact_endpoint_ms": settings.contact_endpoint_silence_ms,
@@ -192,7 +196,9 @@ class CallDiagnostics:
     def begin(self, call_id: int, **providers: Any) -> CallTrace:
         trace = CallTrace(self, call_id)
         trace.emit("call_started", **{
-            **self.snapshot, "voice": self.settings.kokoro_voice, "voice_speed": self.settings.kokoro_speed, **providers,
+            **self.snapshot,
+            "voice": "pocket_" + self.settings.pocket_voice if self.settings.local_voice_stack == "streaming_trial" else self.settings.kokoro_voice,
+            "voice_speed": self.settings.pocket_speed if self.settings.local_voice_stack == "streaming_trial" else self.settings.kokoro_speed, **providers,
         })
         return trace
 

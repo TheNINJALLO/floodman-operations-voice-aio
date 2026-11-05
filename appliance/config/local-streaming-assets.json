@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "pocket_tts_version": "4.0.1",
+  "sherpa_onnx_version": "2.0.1",
+  "assets": [
+    {
+      "path": "asr/encoder.onnx",
+      "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26/resolve/672fbf1b30579d6585301139bb363f42a0ad4a24/encoder-epoch-99-avg-1-chunk-16-left-128.int8.onnx",
+      "sha256": "563fde436d16cf7607cf408cd6b30909819d03162652ef389c2450ced3f45ac1",
+      "size_bytes": 71083163
+    },
+    {
+      "path": "asr/decoder.onnx",
+      "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26/resolve/672fbf1b30579d6585301139bb363f42a0ad4a24/decoder-epoch-99-avg-1-chunk-16-left-128.int8.onnx",
+      "sha256": "98da299f471e38bb4e1a8df579b8cc9122d6039576a77e357b3c60f17dd83b02",
+      "size_bytes": 1307236
+    },
+    {
+      "path": "asr/joiner.onnx",
+      "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26/resolve/672fbf1b30579d6585301139bb363f42a0ad4a24/joiner-epoch-99-avg-1-chunk-16-left-128.int8.onnx",
+      "sha256": "d944208d660d67c8d72cd2acaeac971fa5ceb8c80e76c1968148846fedd6e297",
+      "size_bytes": 259335
+    },
+    {
+      "path": "asr/tokens.txt",
+      "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26/resolve/672fbf1b30579d6585301139bb363f42a0ad4a24/tokens.txt",
+      "sha256": "49e3c2646595fd907228b3c6787069658f67b17377c60aeb8619c4551b2316fb",
+      "size_bytes": 5048
+    },
+    {
+      "path": "vad/silero.onnx",
+      "url": "https://raw.githubusercontent.com/snakers4/silero-vad/066409f3d9db45a30d21dfcbf9147826ffdd7052/src/silero_vad/data/silero_vad.onnx",
+      "sha256": "1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3",
+      "size_bytes": 2327524
+    },
+    {
+      "path": "pocket/model.safetensors",
+      "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/a7056f505a4a8ca72d8b5fb1440071d6f1a35739/languages/english/model.safetensors",
+      "sha256": "4c56cbd171c63e8a26ea61f5d48b8a0cd8f3c51f4652c0ab9a19bfcced8c931d",
+      "size_bytes": 219029196
+    },
+    {
+      "path": "pocket/alba.safetensors",
+      "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/a7056f505a4a8ca72d8b5fb1440071d6f1a35739/languages/english/embeddings/alba.safetensors",
+      "sha256": "5850f417028fb2bf6de31e5e395e56ee7a21ac0e52ef31aebd4a6a2847d72e9c",
+      "size_bytes": 6244152
+    },
+    {
+      "path": "pocket/jean.safetensors",
+      "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/a7056f505a4a8ca72d8b5fb1440071d6f1a35739/languages/english/embeddings/jean.safetensors",
+      "sha256": "61a8e5b72bdffc69d58b6dc070e0b2e46ad9fc70c420916ab19f40fe111287ec",
+      "size_bytes": 6096696
+    },
+    {
+      "path": "pocket/cosette.safetensors",
+      "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/a7056f505a4a8ca72d8b5fb1440071d6f1a35739/languages/english/embeddings/cosette.safetensors",
+      "sha256": "5f0a7ce2562a9320f026bd0694c8cc18f14e8140795f46e08eddb4f1fd410aed",
+      "size_bytes": 6244152
+    },
+    {
+      "path": "pocket/fantine.safetensors",
+      "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/a7056f505a4a8ca72d8b5fb1440071d6f1a35739/languages/english/embeddings/fantine.safetensors",
+      "sha256": "2c3cde0d2324a9bf4d77dc28f9bfb9fe78e8e1f8c29a412f035fb4855b09fda3",
+      "size_bytes": 6440760
+    },
+    {
+      "path": "pocket/tokenizer.json",
+      "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/00eac05ed3d16bdc3f6b5d598874019c34a89214/languages/english/tokenizer.json",
+      "sha256": "f498428e1eafee50492f7be13dc9bfafcfc12e508cd0eb1b01c92ecd5d8c6687",
+      "size_bytes": 245020
+    }
+  ],
+  "whisper_fallback": {
+    "repository": "Systran/faster-whisper-small.en",
+    "revision": "d1d751a5f8271d482d14ca55d9e2deeebbae577f",
+    "model": "small.en"
+  }
+}

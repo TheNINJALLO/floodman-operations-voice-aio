@@ -9,6 +9,10 @@ This repository does not redistribute model weights. First boot downloads them f
 - Faster-Whisper: MIT license
 - CTranslate2: MIT license
 - Kokoro-82M / kokoro-onnx: Apache 2.0 / project-specific upstream components; review upstream notices with every model update
+- Optional local streaming trial: Sherpa-ONNX and the pinned English Zipformer model by k2-fsa/csukuangfj (Apache-2.0); Silero VAD by Silero/snakers4 (MIT).
+- Optional Pocket TTS: code by Kyutai (MIT), pretrained model and voice states from [kyutai/pocket-tts-without-voice-cloning](https://huggingface.co/kyutai/pocket-tts-without-voice-cloning) (CC-BY-4.0). Attribution: Kyutai, Pocket TTS, English model, revision `a7056f505a4a8ca72d8b5fb1440071d6f1a35739`. The generated local configuration changes only asset paths; weights are unchanged. No voice-cloning weights are used by this profile.
+- Optional 8B GGUF: quantization by [mradermacher](https://huggingface.co/mradermacher/oh-dcft-v3.1-claude-3-5-haiku-20241022-i1-GGUF), upstream mlfoundations-dev, Llama 3.1 license as identified by the publisher. This is a Llama-family model, not Anthropic Claude weights. Identity, revision and SHA-256 are in `config/haiku8b-model.json`; weights are downloaded, not redistributed in the image.
+- Optional CPU PyTorch 2.8.0 retains its upstream license and bundled notices.
 - Asterisk: GPLv2 and bundled component licenses
 - FastAPI, Uvicorn, HTTPX, PyYAML, NumPy, SciPy, SoundFile, ONNX Runtime, Hugging Face Hub: respective upstream open-source licenses
 

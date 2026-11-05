@@ -26,6 +26,8 @@ class LocalSTT:
             model_root = self.settings.model_dir / "faster-whisper"
             model_root.mkdir(parents=True, exist_ok=True)
             local_model = model_root / f"faster-whisper-{self.settings.faster_whisper_model}"
+            if getattr(self.settings, "local_voice_stack", "standard") == "streaming_trial" and not (local_model / "model.bin").exists():
+                raise ValueError("Prepare the pinned Whisper contact model before starting the local streaming trial")
             model_reference = str(local_model) if (local_model / "model.bin").exists() else self.settings.faster_whisper_model
             self._model = await asyncio.to_thread(
                 WhisperModel,

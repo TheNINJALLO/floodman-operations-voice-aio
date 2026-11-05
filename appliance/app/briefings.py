@@ -7,6 +7,7 @@ import ipaddress
 import json
 import logging
 import re
+from dataclasses import replace
 from typing import Any, Callable
 from urllib.parse import urlsplit
 
@@ -209,8 +210,18 @@ class PostCallBriefings:
         self.active_calls = active_calls
         self.configuration_error = False
         try:
-            self.client = client or (PrimaryBriefingClient(settings) if settings.briefing_backend == "primary"
-                                      else OllamaBriefingClient(settings))
+            if client is not None:
+                self.client = client
+            elif settings.briefing_backend == "primary":
+                self.client = PrimaryBriefingClient(settings)
+            elif settings.briefing_backend == "local_api":
+                origin = private_ollama_url(settings.briefing_llama_url.removesuffix("/v1"))
+                self.client = PrimaryBriefingClient(replace(
+                    settings, llama_base_url=origin + "/v1", llama_model_alias=valid_model(settings.briefing_model),
+                    llama_api_key=settings.briefing_api_key,
+                ))
+            else:
+                self.client = OllamaBriefingClient(settings)
         except ValueError:
             self.client = None
             self.configuration_error = True

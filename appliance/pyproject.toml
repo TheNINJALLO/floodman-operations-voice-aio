@@ -27,6 +27,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8,<9", "pytest-asyncio>=0.25,<1"]
+streaming_trial = ["sherpa-onnx==2.0.1", "pocket-tts==4.0.1"]
 
 [tool.pytest.ini_options]
 addopts = "-ra"
