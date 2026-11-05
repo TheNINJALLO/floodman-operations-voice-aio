@@ -1,0 +1,5 @@
+# Reuse exactly the production inference binary and libraries. Only startup changes.
+FROM ghcr.io/theninjallo/floodman-operations-voice-aio@sha256:803042d29d2e427c97e1511c1715e35b9cdd6f25d62275f33516e091b03911cb
+HEALTHCHECK NONE
+ENTRYPOINT ["/opt/venv/bin/python"]
+CMD ["/home/container/data/model-comparison/runner.py"]
