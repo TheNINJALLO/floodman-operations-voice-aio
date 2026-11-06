@@ -24,6 +24,56 @@ class Gate:
         pass
 
 
+@pytest.mark.asyncio
+async def test_normal_stream_timeout_waits_while_contact_recognition_is_busy(monkeypatch):
+    from app.models import IntakeState, VoiceReply
+    from app.tel_agent_phone import TelAgentPhoneAgent
+    from app.tel_agent_runtime import TelAgentTranscriptTurn
+    activity = SpeechActivity(decoding=True)
+    class Connection:
+        closed = False
+        trace = None
+        dropped_frames = 0
+        close_reason = 'assistant_termination'
+        speech_activity = activity
+        async def start(self): return 'busy-contact-recognition'
+        def event(self, *_args, **_kwargs): pass
+        async def close(self): self.closed = True
+    connection = Connection()
+    session = SimpleNamespace(state=IntakeState(call_uuid='busy-contact-recognition', stage='last_name'), call_id=1)
+    class Core:
+        settings = SimpleNamespace(local_voice_stack='streaming_trial')
+        def create_session(self, *_): return session
+        async def call_started(self, *_): pass
+        def greeting(self): return 'Hello from Avery.'
+        def record_assistant(self, *_args, **_kwargs): pass
+        async def no_input(self, *_): raise AssertionError('Recognition is still busy')
+        async def process(self, _session, text, **_):
+            assert text == 'Jones'
+            return VoiceReply(text='Thank you.')
+        async def disconnect(self, *_): pass
+    monkeypatch.setattr('app.tel_agent_phone.AudioSocketConnection', lambda *_: connection)
+    waits = []
+    async def timeout_then_recognize(awaitable, **_):
+        awaitable.close()
+        waits.append(True)
+        if len(waits) == 1:
+            raise asyncio.TimeoutError
+        activity.decoding = False
+        return TelAgentTranscriptTurn(text='Jones', heard_audio=True)
+    monkeypatch.setattr('app.tel_agent_phone.asyncio.wait_for', timeout_then_recognize)
+    phone = TelAgentPhoneAgent(Core(), SimpleNamespace(streaming=True), None, None,
+                             SimpleNamespace(read_pre=lambda *_: {}, write_action=lambda *_: None))
+    async def pump(*_): await asyncio.Event().wait()
+    async def speak(_connection, stream, *_args, **_kwargs):
+        text = ''.join([part async for part in stream])
+        if text == 'Thank you.': connection.closed = True
+        return SimpleNamespace(text=text, interrupted=False, first_audio_ms=1)
+    monkeypatch.setattr(phone, '_pump_transcripts', pump)
+    monkeypatch.setattr(phone, '_speak', speak)
+    await phone.handle(None, SimpleNamespace(get_extra_info=lambda *_: None))
+    assert len(waits) == 2
+
 def pcm(level, ms=20):
     return int(level).to_bytes(2, 'little', signed=True) * (8 * ms)
 

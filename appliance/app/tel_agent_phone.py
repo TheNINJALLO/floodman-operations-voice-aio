@@ -372,6 +372,9 @@ class TelAgentPhoneAgent:
                                 pending_reply = None
                             last_input_at = time.perf_counter()
                             continue
+                        activity = getattr(connection, "speech_activity", None)
+                        if activity is not None and activity.busy():
+                            continue
                         connection.event("no_input", reason="stream_timeout")
                         turn = TelAgentTranscriptTurn(text="")
                     else:

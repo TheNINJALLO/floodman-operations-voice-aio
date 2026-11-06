@@ -28,7 +28,7 @@
     const element = document.createElement("div");
     element.className = `message ${role}`;
     const label = document.createElement("strong");
-    label.textContent = role === "caller" ? "Test caller" : "Alex";
+    label.textContent = role === "caller" ? "Test caller" : "Avery";
     const body = document.createElement("p");
     body.textContent = text;
     element.append(label, body);
@@ -40,7 +40,7 @@
     if (busy) return;
     busy = true;
     error.hidden = true;
-    status.textContent = text ? "Alex is responding…" : "Starting test…";
+    status.textContent = text ? "Avery is responding…" : "Starting test…";
     controls();
     try {
       const response = await fetch("/api/simulate", {

@@ -6,13 +6,15 @@ from dataclasses import dataclass
 
 from app.business import BusinessDirectory
 from app.config import Settings
+from app.call_style import GREETING, INTRODUCTION, IDENTITY, farewell_body, extra_acknowledgment
 from app.conversation import (
     DETAIL_STAGES, QUESTIONS, capture_volunteered, closing_finished, contact_fields, declined,
-    detail_stage, hold_requested, identity_question, memory, name_answer, phone_answer, request_kind, unfinished_turn,
+    detail_stage, hold_requested, identity_question, last_name_answer, memory, name_answer, phone_answer, request_kind, unfinished_turn,
 )
 from app.db import Database
 from app.intake import (
     clean,
+    address_answer,
     classify_service,
     classify_property_context,
     detect_emergency,
@@ -94,7 +96,7 @@ class VoiceCore:
 
     @staticmethod
     def greeting() -> str:
-        return "Thanks for calling Floodman, I'm Alex. How can I help you today?"
+        return GREETING
 
     def warm_phrases(self) -> tuple[str, ...]:
         """Return the fixed prompts callers are most likely to hear.
@@ -111,7 +113,7 @@ class VoiceCore:
                 phrases.append(text)
 
         add(self.greeting())
-        add("You're through to Floodman, I'm Alex.")
+        add(INTRODUCTION)
         for stage in (
             "property_context",
             "affected_area",
@@ -121,6 +123,7 @@ class VoiceCore:
             "phone",
             "address",
             "name",
+            "last_name",
         ):
             add(collection_question(IntakeState(call_uuid="warm", stage=stage)))
         for service_key in (
@@ -131,7 +134,7 @@ class VoiceCore:
             "sump_pump_and_drainage",
         ):
             add(collection_question(IntakeState(call_uuid="warm", stage="timing_summary", service_key=service_key)))
-        add("I can get these details to the right team. What name should I put this under?")
+        add("I can pass that along. May I have your first and last name, please?")
         add("Is that correct?")
         add("Is this the best number to call you back on?")
         add("Sorry, I cut you off.")
@@ -142,12 +145,15 @@ class VoiceCore:
         add("Are you still there? I can wait a moment.")
         add("I'm still here. Say hello when you're ready.")
         add("Go ahead, I'm listening.")
-        add("I've added that. " + QUESTIONS["anything_else"])
+        for index in range(3):
+            add(extra_acknowledgment(index))
+        add("Thank you. " + QUESTIONS["anything_else"])
+        add(farewell_body(self.settings.callback_sla_hours))
+        add("You're all set.")
         for text in QUESTIONS.values():
             add(text)
-        for text in ("Take your time.", "Hi. What can I help you with?", "I can pass that along. What name should I put this under?"):
+        for text in ("Take your time.", "Hi. What can I help you with?"):
             add(text)
-        add(f"I've saved your message for the team. They'll follow up within {self.settings.callback_sla_hours} hours. Thanks for calling Floodman. Goodbye.")
         add("Thanks for calling Floodman. Goodbye.")
         return tuple(phrases)
 
@@ -166,7 +172,7 @@ class VoiceCore:
         text = clean(text, 1200)
         if session.introduction_pending:
             session.introduction_pending = False
-            intro = "You're through to Floodman, I'm Alex."
+            intro = INTRODUCTION
             text = f"{intro} {text}"
             if speech_parts:
                 speech_parts = (intro, *speech_parts)
@@ -200,7 +206,7 @@ class VoiceCore:
         if self.suite_bridge is not None:
             self.suite_bridge.queue(session.call_id, session.state, "transcript-updated")
 
-    def _confirmation(self, session: CallSession, field: str, *, prefix: str = "", spell_email: bool = False) -> VoiceReply:
+    def _confirmation(self, session: CallSession, field: str, *, prefix: str = "", spell_email: bool = True) -> VoiceReply:
         parts = tuple(part for part in confirmation_parts(session.state, field, spell_email=spell_email) if part)
         speeds: tuple[float | None, ...] = ()
         if field == "email" and parts:
@@ -218,6 +224,8 @@ class VoiceCore:
         )
 
     def _current_question(self, state: IntakeState) -> str:
+        if state.stage == "anything_else" and memory(state).get("wrapup_asked"):
+            return ""
         if state.stage.startswith("confirm_"):
             return confirmation_question(state, state.stage.removeprefix("confirm_"))
         return collection_question(state)
@@ -288,10 +296,25 @@ class VoiceCore:
         # Prepared conversational wording needs no CPU rewrite before playback.
         return self._assistant(session, text, speech_parts=(text,))
 
+    def _name_reply(self, session: CallSession, *, prefix: str = "") -> VoiceReply:
+        info = memory(session.state)
+        if len(session.state.name.split()) == 1 and not info.get("last_name_asked"):
+            info["last_name_asked"] = True
+            session.state.stage = "last_name"
+            return self._planned(session, prefix + collection_question(session.state))
+        session.state.stage = "confirm_name"
+        return self._confirmation(session, "name", prefix=prefix)
+
+    def _acknowledge_extra(self, session: CallSession) -> VoiceReply:
+        info = memory(session.state)
+        index = info.get("wrapup_ack_count", 0)
+        info.update(wrapup_ack_count=index + 1, wrapup_followup=True)
+        return self._planned(session, extra_acknowledgment(index))
+
     def _next_reply(self, session: CallSession, *, prefix: str = "") -> VoiceReply:
         state = session.state
         info = memory(state)
-        next_detail = "" if info.get("contact_started") else detail_stage(state)
+        next_detail = "" if info.get("contact_started") or info.get("wrapup_asked") else detail_stage(state)
         if next_detail:
             state.stage = next_detail
             info["asked"].append(next_detail)
@@ -302,6 +325,8 @@ class VoiceCore:
                 continue
             if getattr(state, field):
                 info["contact_started"] = True
+                if field == "name":
+                    return self._name_reply(session, prefix=prefix)
                 state.stage = f"confirm_{field}"
                 return self._confirmation(session, field, prefix=prefix)
             state.stage = field
@@ -310,8 +335,10 @@ class VoiceCore:
                 info["contact_started"] = True
             return self._planned(session, prefix + collection_question(state))
         state.stage = "anything_else"
+        if info.get("wrapup_asked"):
+            return self._acknowledge_extra(session)
         info["wrapup_asked"] = True
-        return self._planned(session, prefix + QUESTIONS["anything_else"])
+        return self._planned(session, prefix + "Thank you. " + QUESTIONS["anything_else"])
 
     async def _after_confirmation(self, session: CallSession) -> VoiceReply:
         state = session.state
@@ -350,8 +377,10 @@ class VoiceCore:
             self._save(session)
         else:
             await self._notify(session, kind="completed_intake", partial=not state.completed)
-        text = f"I've saved your message for the team. They'll follow up within {self.settings.callback_sla_hours} hours. Thanks for calling Floodman. Goodbye."
-        reply = self._planned(session, text)
+        first_name = state.name.split()[0] if state.name and re.fullmatch(r"[A-Za-z][A-Za-z'-]*", state.name.split()[0]) else ""
+        opening = f"You're all set, {first_name}." if first_name else "You're all set."
+        body = farewell_body(self.settings.callback_sla_hours)
+        reply = self._assistant(session, f"{opening} {body}", speech_parts=(opening, body), pause_between_parts_ms=120)
         reply.end_call = True
         return reply
 
@@ -400,7 +429,7 @@ class VoiceCore:
                 "caused", "cause", "pipe", "valve", "leak", "rain", "storm", "drain",
                 "pump", "seep", "overflow", "not sure", "dont know", "do not know",
             ))
-        if stage == "name":
+        if stage in {"name", "last_name"}:
             return bool(re.search(r"[A-Za-z]{2}", transcript))
         return stage == "issue"
 
@@ -501,7 +530,7 @@ class VoiceCore:
             info.pop("completion_pending", None)
 
         if identity_question(transcript):
-            return self._planned(session, "Yes, I'm Floodman's AI phone assistant. " + self._current_question(state))
+            return self._planned(session, (IDENTITY + " " + self._current_question(state)).strip())
 
         if detect_flood_emergency(transcript, context=self._emergency_context(state, "")):
             state.urgency = "emergency"
@@ -549,9 +578,11 @@ class VoiceCore:
                 info["speech_fragments"] = fragments[-8:]
             self._save(session)
             return VoiceReply(text="", wait_for_caller=True)
+        if state.stage in {"anything_else", "additional_message"}:
+            info.update(wrapup_asked=True, wrapup_followup=True)
         if state.stage in {"anything_else", "additional_message"} and closing_finished(transcript):
             return await self._finish_intake(session)
-        if state.stage.removeprefix("confirm_") in {"name", "phone", "address", "email"}:
+        if state.stage.removeprefix("confirm_") in {"name", "last_name", "phone", "address", "email"}:
             info["contact_started"] = True
         kind = request_kind(transcript)
         if kind != "service" and not info.get("contact_started"):
@@ -563,12 +594,13 @@ class VoiceCore:
             "can you spell it", "can you spell it out", "could you spell it", "could you spell that out",
             "can you spell the email", "can you spell the email out", "spell the email", "spell the email out",
         }
-        spell_email = state.stage == "confirm_email" and spell_email
-        repeat_requested = repeat_requested or spell_email
+        spelling_requested = state.stage == "confirm_email" and spell_email
+        repeat_requested = repeat_requested or spelling_requested
+        spell_email = True
         if state.stage != "confirm_email" and repeat_requested:
-            return self._planned(session, self._current_question(state))
+            return self._planned(session, self._current_question(state) or "Go ahead, I'm listening.")
         before_contacts = tuple(getattr(state, field) for field in ("name", "phone", "address", "email"))
-        question_like = self._question_like(transcript) and not spell_email
+        question_like = self._question_like(transcript) and not spelling_requested
         if not question_like or self._starts_intake(transcript) or re.search(r"\b(my|our|we have|I have)\b", transcript, re.I):
             capture_volunteered(state, transcript, expected=state.stage)
         if state.address and not state.service_area_city:
@@ -579,7 +611,10 @@ class VoiceCore:
             return self._next_reply(session)
 
         field = state.stage.removeprefix("confirm_")
-        if field in {"name", "phone", "address", "email"} and declined(transcript):
+        negative_confirmation = state.stage.startswith("confirm_") and normalized(transcript) in {
+            "no", "nope", "nah", "none", "not sure", "i don t know", "i do not know",
+        }
+        if field in {"name", "phone", "address", "email"} and declined(transcript) and not negative_confirmation:
             if field == "email":
                 if state.email:
                     state.metadata["unconfirmed_email"] = state.email
@@ -620,11 +655,11 @@ class VoiceCore:
                 state.stage = "additional_message"
                 return self._planned(session, QUESTIONS["additional_message"])
             state.description = clean(f"{state.description} Additional message: {transcript}", 4000)
-            return self._planned(session, "I've added that. " + QUESTIONS["anything_else"])
+            return self._acknowledge_extra(session)
         if state.stage == "additional_message":
             state.description = clean(f"{state.description} Additional message: {transcript}", 4000)
             state.stage = "anything_else"
-            return self._planned(session, "I've added that. " + QUESTIONS["anything_else"])
+            return self._acknowledge_extra(session)
 
         recovered = self._recover_interrupted_prompt(session, transcript)
         if recovered is not None:
@@ -663,9 +698,16 @@ class VoiceCore:
         if state.stage == "name":
             state.name = name_answer(transcript)
             if not state.name:
-                return self._assistant(session, "What name should I put this under?")
-            state.stage = "confirm_name"
-            return self._confirmation(session, "name")
+                return self._assistant(session, collection_question(state))
+            return self._name_reply(session)
+
+        if state.stage == "last_name":
+            surname = "" if declined(transcript) else last_name_answer(transcript)
+            if surname and normalized(surname) != normalized(state.name):
+                state.name = surname if normalized(surname).startswith(normalized(state.name) + " ") else clean(f"{state.name} {surname}", 120)
+            else:
+                info["last_name_unavailable"] = True
+            return self._name_reply(session)
 
         if state.stage == "confirm_name":
             decision = normalize_confirmation(transcript)
@@ -676,7 +718,7 @@ class VoiceCore:
                 replacement = re.sub(r"^no[,\s]+(?:(?:it is|it's|my name is)\s+)?", "", transcript, flags=re.I)
                 if replacement != transcript and re.fullmatch(r"[A-Za-z][A-Za-z' -]{0,119}[.!]?", replacement) and not declined(replacement):
                     state.name = normalize_name(replacement)
-                    return self._confirmation(session, "name")
+                    return self._name_reply(session)
                 state.stage = "name"
                 state.name = ""
                 return self._assistant(session, "What's the correct name?")
@@ -775,9 +817,10 @@ class VoiceCore:
             return self._unavailable_contact(session, "phone") if attempts["phone"] >= 2 else self._confirmation(session, "phone")
 
         if state.stage == "address":
-            if not re.search(r"\d", transcript):
+            candidate = address_answer(transcript)
+            if not re.search(r"\d", candidate):
                 return self._retry_contact(session, "address", "Could you give me the street address?")
-            state.address = transcript
+            state.address = candidate
             area = self.business.service_area(state.address)
             state.service_area_status = area.status
             state.service_area_city = area.city
@@ -786,19 +829,27 @@ class VoiceCore:
 
         if state.stage == "confirm_address":
             decision = normalize_confirmation(transcript)
+            replacement = address_answer(transcript)
+            if re.match(r"\d", replacement) and replacement != state.address:
+                state.address = clean(replacement, 500)
+                state.confirmations.pop("address", None)
+                area = self.business.service_area(state.address)
+                state.service_area_status, state.service_area_city = area.status, area.city
+                return self._confirmation(session, "address")
             if decision == "yes":
                 state.confirmations["address"] = state.address
                 return await self._after_confirmation(session)
             if decision == "no":
-                replacement = re.sub(r"^no[,\s]+(?:(?:it is|it's|the address is)\s+)?", "", transcript, flags=re.I)
-                if replacement != transcript and re.match(r"\d", replacement):
-                    state.address = clean(replacement, 500)
-                    area = self.business.service_area(state.address)
-                    state.service_area_status, state.service_area_city = area.status, area.city
-                    return self._confirmation(session, "address")
+                state.metadata["rejected_address"] = state.address
+                corrections = info.setdefault("correction_attempts", {})
+                corrections["address"] = corrections.get("address", 0) + 1
+                if corrections["address"] >= 2:
+                    return self._unavailable_contact(session, "address")
                 state.stage = "address"
                 state.address = ""
-                return self._assistant(session, "What's the correct service address?")
+                state.confirmations.pop("address", None)
+                state.service_area_status, state.service_area_city = "unknown", ""
+                return self._assistant(session, "Let's get that right. Please repeat the service address.")
             attempts = info.setdefault("confirmation_attempts", {})
             attempts["address"] = attempts.get("address", 0) + 1
             return self._unavailable_contact(session, "address") if attempts["address"] >= 2 else self._confirmation(session, "address")
@@ -836,6 +887,8 @@ class VoiceCore:
             info["hold_timeouts"] -= 1
             self._save(session)
             return VoiceReply(text="", wait_for_caller=True)
+        if info.get("wrapup_followup") and not info.get("speech_fragments") and session.state.stage in {"anything_else", "additional_message"}:
+            return await self._finish_intake(session)
         session.no_input_count += 1
         if session.no_input_count == 1:
             return self._planned(session, "Are you still there? I can wait a moment.")

@@ -21,6 +21,7 @@ from urllib.parse import urlencode, urlparse
 import httpx
 import websockets
 
+from app.call_style import STYLE_GUIDANCE
 from app.config import Settings
 from app.call_diagnostics import emit_current
 from app.llm import LocalLLM
@@ -317,7 +318,7 @@ class TelAgentLLM(LocalLLM):
             {
                 "role": "system",
                 "content": (
-                    "You are Alex, Floodman's automated phone assistant. The deterministic "
+                    STYLE_GUIDANCE + " The deterministic "
                     "policy engine has already decided the facts, action, and next question. "
                     "Rewrite only the wording so it sounds like a warm, concise phone "
                     "conversation. Preserve every fact and the same next question. Use one or "

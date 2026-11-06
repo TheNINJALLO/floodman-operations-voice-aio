@@ -763,7 +763,7 @@ class AudioSocketServer:
                     continue
                 response_interrupted = await self._speak_reply(connection, reply, call_uuid, since=capture_ended)
                 self.core.record_assistant(session, reply.text if connection.last_stream_audio_bytes else "", interrupted=response_interrupted)
-                if response_interrupted and reply.text.startswith((self.core.greeting(), "You're through to Floodman, I'm Alex.")):
+                if response_interrupted and reply.text.startswith((self.core.greeting(), "You're through to Floodman. I'm Avery, the digital assistant.")):
                     session.introduction_pending = True
                 logger.info(
                     "call_event call_uuid=%s stage=last_response_frame interrupted=%s playback_fraction=%.3f",

@@ -23,7 +23,7 @@ def endpoint_ms(settings: Settings, stage: str, text: str = "") -> int:
         result = settings.email_endpoint_silence_ms
     elif stage.startswith("confirm_"):
         result = settings.endpoint_silence_ms
-    elif stage in {"name", "phone", "address"}:
+    elif stage in {"name", "last_name", "phone", "address"}:
         result = settings.contact_endpoint_silence_ms
     else:
         result = max(settings.endpoint_silence_ms, settings.conversation_endpoint_silence_ms)
@@ -103,7 +103,7 @@ class StreamingLocalSTT:
                 text = await asyncio.to_thread(self._decode, stream, final=True)
             if voiced_ms < min(80, self.settings.minimum_speech_ms):
                 return None
-            contact = stage.removeprefix("confirm_") in {"name", "phone", "address", "email"}
+            contact = stage.removeprefix("confirm_") in {"name", "last_name", "phone", "address", "email"}
             # Contact values retain the established higher-accuracy decoder.
             # Streaming partials are for turn timing, never verified facts.
             if self.settings.sherpa_whisper_fallback and (contact or not text):

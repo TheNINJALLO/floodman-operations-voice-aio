@@ -41,7 +41,7 @@ def test_assistant_view_uses_current_configuration_without_exposing_secrets(work
     assert response.status_code == 200
     assert "Current configuration" in response.text
     assert "Deckard" in response.text
-    assert "I'm Alex" in response.text or "I&#39;m Alex" in response.text
+    assert "this is Avery" in response.text and "digital assistant" in response.text
     assert 'href="/simulator"' not in response.text
     assert 'href="/voice"' not in response.text
     assert str(module.settings.database_path) not in response.text

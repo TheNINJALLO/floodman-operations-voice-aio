@@ -67,14 +67,14 @@ async def test_natural_email_then_requested_spelling_still_requires_confirmation
     session.state.stage = "email"
     reply = await core.process(session, "alex dot smith two at gmail dot com")
     assert session.state.email == "alex.smithtwo@gmail.com"  # Preserve capture behavior.
-    assert "gmail dot com" in reply.text and "," not in reply.speech_parts[0]
+    assert "a, l, e, x, dot, s, m, i, t, h, t, w, o, at gmail dot com" in reply.text.lower()
     assert reply.speech_part_speeds == (1.0, None)
     reply = await core.process(session, "Could you spell that out?")
-    assert "a, l, e, x, dot, s, m, i, t, h, t, w, o at gmail dot com" in reply.text.lower()
+    assert "a, l, e, x, dot, s, m, i, t, h, t, w, o, at gmail dot com" in reply.text.lower()
     assert session.state.stage == "confirm_email" and "email" not in session.state.confirmations
     reply = await core.process(session, "No, it's alex dot smith2 at example dot com")
     assert session.state.email == "alex.smith2@example.com"
-    assert "alex dot smith two at example dot com" in reply.text
+    assert "a, l, e, x, dot, s, m, i, t, h, two, at example dot com" in reply.text.lower()
     assert "email" not in session.state.confirmations
     await core.process(session, "Yes")
     assert session.state.confirmations["email"] == "alex.smith2@example.com"
@@ -142,7 +142,7 @@ async def test_interrupted_introduction_is_recovered_before_availability_prompt(
     assert session.no_input_count == 0 and not session.introduction_pending
     session.introduction_pending = True
     reply = await core.process(session, "Hello")
-    assert "Floodman" in reply.text and "Alex" in reply.text
+    assert "Floodman" in reply.text and "Avery" in reply.text
     assert not session.state.description and not reply.end_call
 
 
@@ -266,6 +266,135 @@ def core(tmp_path, monkeypatch, project_root):
     database = Database(settings.database_path)
     return VoiceCore(settings, database, BusinessDirectory(project_root / "config/service_area.yaml"),
                      KnowledgeBase(project_root / "knowledge"), OfflineModel(), Notifier(database))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field,value,next_stage", [
+    ("address", "99 Wrong Road, Ludington MI 49431", "address"),
+    ("phone", "+12315550100", "phone"), ("name", "Sam Jones", "name"),
+    ("email", "sam@example.com", "email"),
+])
+async def test_no_rejects_a_confirmation_instead_of_declining_the_field(core, field, value, next_stage):
+    session = core.create_session("negative-confirmation")
+    session.state.stage = "confirm_" + field
+    setattr(session.state, field, value)
+    reply = await core.process(session, "No.")
+    assert session.state.stage == next_stage and not reply.end_call
+    assert field not in memory(session.state)["declined"]
+    assert field not in session.state.confirmations
+    assert not getattr(session.state, field)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("answer", ["No", "That's wrong", "That's not right", "That is not correct", "Nah"])
+async def test_wrong_address_cannot_advance_to_email(core, answer):
+    session = core.create_session("wrong-address")
+    session.state.stage = "confirm_address"
+    session.state.address = "99 Wrong Road, Ludington MI 49431"
+    session.state.service_area_status, session.state.service_area_city = "published", "Ludington"
+    await core.process(session, answer)
+    assert session.state.stage == "address" and not session.state.address
+    assert session.state.service_area_status == "unknown" and not session.state.service_area_city
+    await core.process(session, "eight eight zero five East Example Street Ludington Michigan 49431")
+    assert session.state.stage == "confirm_address"
+    assert session.state.address == "8805 East Example Street Ludington Michigan 49431"
+    assert "address" not in session.state.confirmations
+
+
+@pytest.mark.asyncio
+async def test_repeatedly_rejected_address_is_flagged_unavailable_and_never_confirmed(core):
+    session = core.create_session("address-loop-break")
+    session.state.stage = "confirm_address"
+    session.state.address = "99 Wrong Road"
+    await core.process(session, "No")
+    await core.process(session, "98 Wrong Road")
+    reply = await core.process(session, "No")
+    assert not session.state.address and session.state.confirmations["address"] == "unavailable"
+    assert session.state.metadata["unconfirmed_address"] == "98 Wrong Road"
+    assert "team to confirm" in reply.text and not reply.end_call
+
+
+@pytest.mark.asyncio
+async def test_address_correction_after_wrapup_is_reconfirmed_and_does_not_reask_wrapup(core):
+    session = core.create_session("late-address-correction")
+    state = session.state
+    state.name, state.phone, state.address = "Sam Jones", "+12315550100", "99 Wrong Road"
+    state.confirmations.update(name=state.name, phone=state.phone, address=state.address)
+    memory(state)["declined"].append("email")
+    state.stage = "anything_else"
+    reply = await core.process(session, "The building address is eight eight zero five East Example Street")
+    assert state.stage == "confirm_address" and "address" not in state.confirmations
+    assert state.address.startswith("8805 East Example Street") and not reply.end_call
+    reply = await core.process(session, "Yes")
+    assert reply.end_call and "anything else" not in reply.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_first_name_prompts_for_last_name_once_and_confirms_the_combined_name(core):
+    session = core.create_session("missing-surname", "+12315550100")
+    session.state.stage = "name"
+    memory(session.state)["kind"] = "message"
+    reply = await core.process(session, "Sam")
+    assert session.state.stage == "last_name" and "last name" in reply.text.lower()
+    assert "name" not in session.state.confirmations
+    reply = await core.process(session, "My last name is Van Buren.")
+    assert session.state.stage == "confirm_name" and session.state.name == "Sam Van Buren"
+    assert "Sam Van Buren" in reply.text
+    await core.process(session, "Yes")
+    assert session.state.confirmations["name"] == "Sam Van Buren"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("answer", ["I'd rather not", "I don't want to give that", "I only use one name"])
+async def test_missing_surname_is_not_invented_or_asked_for_in_a_loop(core, answer):
+    session = core.create_session("surname-refusal")
+    session.state.stage = "name"
+    await core.process(session, "Sam")
+    reply = await core.process(session, answer)
+    assert session.state.stage == "confirm_name" and session.state.name == "Sam"
+    assert memory(session.state)["last_name_unavailable"]
+    assert "last name" not in reply.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_wrapup_question_appears_once_while_details_questions_and_hold_remain_open(core):
+    session = core.create_session("wrapup-once", "+12315550100")
+    memory(session.state)["kind"] = "message"
+    session.state.name = "Sam Jones"
+    session.state.confirmations.update(name="Sam Jones", phone=session.state.phone)
+    first = core._next_reply(session)
+    replies = [first.text]
+    assert first.text.count("anything else") == 1
+    for text in ["Yes", "Please use the side door", "And call after lunch", "Is the estimate free?"]:
+        reply = await core.process(session, text)
+        replies.append(reply.text)
+        assert not reply.end_call
+    assert sum(text.lower().count("anything else") for text in replies) == 1
+    assert replies[2] != replies[3]  # Different short acknowledgments.
+    assert "side door" in session.state.description and "after lunch" in session.state.description
+    await core.process(session, "Please wait")
+    assert (await core.no_input(session)).wait_for_caller
+    assert (await core.no_input(session)).wait_for_caller
+    reply = await core.process(session, "That's all")
+    assert reply.end_call and "take care" in reply.text and "Sam" in reply.text
+
+
+@pytest.mark.asyncio
+async def test_silence_after_acknowledging_an_extra_detail_closes_without_another_question(core):
+    session = core.create_session("wrapup-silence")
+    session.state.stage = "anything_else"
+    await core.process(session, "Please use the side door")
+    reply = await core.no_input(session)
+    assert reply.end_call and "anything else" not in reply.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_active_flooding_still_takes_priority_over_a_wrapup_correction(core, monkeypatch):
+    monkeypatch.setattr(core.settings, "emergency_transfer_number", "+12315550101")
+    session = core.create_session("wrapup-emergency")
+    session.state.stage = "anything_else"
+    reply = await core.process(session, "Actually my basement is flooding right now and the water is rising.")
+    assert reply.transfer_number == "+12315550101"
 
 
 @pytest.mark.asyncio
@@ -471,7 +600,7 @@ async def test_only_active_flooding_preempts_intake_with_live_transfer(core, mon
 async def test_identity_answer_is_truthful_and_is_not_a_transfer_request(core, text, monkeypatch):
     monkeypatch.setattr(core.settings, "live_transfer_number", "+12315550102")
     reply = await core.process(core.create_session("identity"), text)
-    assert "AI phone assistant" in reply.text and not reply.transfer_number
+    assert "digital assistant" in reply.text and not reply.transfer_number
 
 
 def test_unknown_property_and_contact_data_are_not_invented():

@@ -71,11 +71,26 @@ def classify_service(description: Any) -> dict[str, str]:
 
 def normalize_confirmation(value: Any) -> str:
     text = normalized(value)
-    if text in AFFIRMATIVE or text.startswith("yes ") or text.startswith("correct "):
-        return "yes"
-    if text in NEGATIVE or text.startswith("no ") or text.startswith("wrong "):
+    if text in {normalized(item) for item in NEGATIVE} | {"nah", "not correct", "not quite", "i don t think so"} or text.startswith(("no ", "nope ", "wrong ")) or re.search(r"\b(?:that s|that is|it s|it is) (?:wrong|incorrect|not (?:right|correct))\b", text):
         return "no"
+    if text.startswith(("yes but ", "yeah but ")):
+        return ""
+    if text in {normalized(item) for item in AFFIRMATIVE} | {"mhm", "mm hmm", "i think so"} or text.startswith(("yes ", "correct ")):
+        return "yes"
     return ""
+
+
+def address_answer(value: str) -> str:
+    """Remove an introduction and convert only an explicitly spoken digit run."""
+    text = re.sub(
+        r"^(?:(?:no|nope|actually|sorry)[,\s]+)*(?:(?:it is|it's|(?:the |my )?(?:correct |building |service )?address is)\s+)?",
+        "", clean(value, 500), flags=re.I,
+    )
+    words = {"zero": "0", "one": "1", "two": "2", "three": "3", "four": "4", "five": "5", "six": "6", "seven": "7", "eight": "8", "nine": "9"}
+    match = re.match(r"(?:(?:zero|one|two|three|four|five|six|seven|eight|nine)[ ,]+)+", text, re.I)
+    if match:
+        text = "".join(words[word.lower()] for word in re.findall(r"[a-z]+", match[0], re.I)) + " " + text[match.end():]
+    return text
 
 
 def classify_property_context(value: Any) -> str:
@@ -106,6 +121,7 @@ def normalize_phone(value: Any, *, default_country: str = "1") -> str:
 
 def normalize_email(value: Any) -> str:
     text = clean(value, 320).lower()
+    text = re.sub(r",\s*(?=(?:at|dot)\b)", " ", text)
     # A caller may give the correction in the same turn as "no" or introduce
     # the address conversationally. Remove only a leading introduction; the
     # address itself remains deterministic and still has to pass EMAIL_RE.
@@ -170,10 +186,10 @@ def spoken_email(value: str, *, spell: bool = False) -> str:
     def read(part: str, *, spelling: bool = False) -> str:
         tokens = list(part) if spelling else re.findall(r"[a-z]+|[^a-z]", part)
         return (", " if spelling else " ").join(
-            names.get(token, _spoken_character(token)) for token in tokens
+            names.get(token, _spoken_character(token.upper() if spelling and token.isalpha() else token)) for token in tokens
         )
 
-    return read(local, spelling=spell) + (" at " + read(domain) if separator else "")
+    return read(local, spelling=spell) + ((", at " if spell else " at ") + read(domain) if separator else "")
 
 
 def spoken_address(value: str) -> str:

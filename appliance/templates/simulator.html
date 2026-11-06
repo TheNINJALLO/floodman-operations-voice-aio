@@ -2,11 +2,11 @@
 {% set page_title = "Test conversation" %}
 {% set page_eyebrow = "Try the current intake flow with a test caller" %}
 {% block content %}
-<section class="page-heading"><div><h1>Test a conversation</h1><p>Check what Alex says, what gets captured, and which action the call flow chooses.</p></div><button class="button primary" type="button" id="reset">Start test</button></section>
+<section class="page-heading"><div><h1>Test a conversation</h1><p>Check what Avery says, what gets captured, and which action the call flow chooses.</p></div><button class="button primary" type="button" id="reset">Start test</button></section>
 {% include "assistant_nav.html" %}
 <div class="test-workspace">
   <section class="simulator-shell panel">
-    <div class="simulator-head"><span class="avatar bot-avatar" aria-hidden="true">F</span><div><strong>Alex · Floodman</strong><small data-sim-status role="status">Test not started</small></div><span class="status info">Text test</span></div>
+    <div class="simulator-head"><span class="avatar bot-avatar" aria-hidden="true">F</span><div><strong>Avery · Floodman</strong><small data-sim-status role="status">Test not started</small></div><span class="status info">Text test</span></div>
     <div id="chat" class="chat" role="log" aria-label="Test conversation" aria-live="polite"><div class="sim-welcome"><h2>Try it as a caller</h2><p>Start a test to see the greeting. Pick a scenario or write your own response.</p></div></div>
     <div class="sim-error" data-sim-error role="alert" hidden></div>
     <form id="sim-form" class="composer"><input id="sim-input" autocomplete="off" placeholder="Type the caller's response" aria-label="Caller response" maxlength="4000" disabled><button class="button primary" type="submit" disabled>Send</button></form>

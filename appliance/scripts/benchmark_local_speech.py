@@ -87,7 +87,7 @@ async def benchmark(output: Path, *, realtime=False, strict=False, contacts=Fals
               "realtime_input": realtime, "speech_cache_enabled": False, "carrier_calls": 0, "staff_messages": 0,
               "uses_customer_data": False, "cloud_ai_requests": 0, "cases": []}
     cases = [
-        ("greeting", "issue", ("Thanks for calling Floodman, I'm Alex. How can I help you today?",), None),
+        ("greeting", "issue", ("Hello, this is Avery, Floodman's digital assistant. How may I help you today?",), None),
         ("active-flood", "issue", ("Water is rising in my basement and I cannot stop the water.",), True),
         ("stopped-water", "issue", ("The water has stopped. My basement is just damp now.",), False),
         ("callback", "issue", ("Please ask Jim to call me after lunch.",), False),
@@ -96,6 +96,7 @@ async def benchmark(output: Path, *, realtime=False, strict=False, contacts=Fals
     recognized_turns = []
     if contacts:
         cases += [
+            ("last-name", "last_name", ("My last name is Jones.",), None),
             ("email-address", "email", ("Sam dot Jones at example dot com.",), None),
             ("phone-number", "phone", ("My number is two three one, five five five, zero one nine nine.",), None),
         ]
@@ -155,6 +156,9 @@ async def benchmark(output: Path, *, realtime=False, strict=False, contacts=Fals
         recognized = {case["case"]: case["recognized_text"] for case in report["cases"]}
         contact_text = {"email": recognized["email-address"], "phone": recognized["phone-number"]}
     report["pause_preserved"], report["contact_checks"], report["contact_first_attempt_exact"] = await validate_intake_recovery(settings, output, recognized_turns, contact_text)
+    if contacts:
+        from app.conversation import last_name_answer
+        report["contact_checks"]["last_name"] = last_name_answer(recognized["last-name"]).lower() == "jones"
     report["passed"] = all(case["recognized_text"] for case in report["cases"]) and report["routing_semantics_preserved"] and report["pause_preserved"] and all(report["contact_checks"].values()) and report["cancelled_voice_worker_stopped"] and report["barge_in_cancel_ms"] < 1500 and not warnings
     (output / "speech-report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     logging.getLogger("pocket_tts").removeHandler(handler)

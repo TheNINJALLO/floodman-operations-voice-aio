@@ -33,7 +33,7 @@
 <div class="detail-grid call-record-grid">
   <aside class="panel conversation-panel" id="call-conversation">
     <div class="panel-heading"><div><h2>Conversation</h2><p>{{ call.messages | length }} messages</p></div></div>
-    <div class="conversation">{% for item in call.messages %}<article class="bubble {{ item.role }}" id="transcript-message-{{ loop.index }}"><small>Message {{ loop.index }} · {{ 'AI assistant' if item.role == 'assistant' else 'Caller' }}{% if item.interrupted %} · interrupted{% endif %}{% if item.language %} · {{ item.language }}{% endif %} · <span class="js-date">{{ item.created_at }}</span></small><p>{{ item.text }}</p></article>{% else %}<div class="empty-state small"><p>No transcript was captured. Review the recovered intake and delivery history for any available details.</p></div>{% endfor %}</div>
+    <div class="conversation">{% for item in call.messages %}<article class="bubble {{ item.role }}" id="transcript-message-{{ loop.index }}"><small>Message {{ loop.index }} · {{ 'Digital assistant' if item.role == 'assistant' else 'Caller' }}{% if item.interrupted %} · interrupted{% endif %}{% if item.language %} · {{ item.language }}{% endif %} · <span class="js-date">{{ item.created_at }}</span></small><p>{{ item.text }}</p></article>{% else %}<div class="empty-state small"><p>No transcript was captured. Review the recovered intake and delivery history for any available details.</p></div>{% endfor %}</div>
   </aside>
   <section class="panel intake-panel" id="call-intake">
     <details class="intake-editor" {{ 'open' if not call.intake_completed }}><summary><strong>Intake details</strong><span>View or correct the information captured during the call.</span></summary>

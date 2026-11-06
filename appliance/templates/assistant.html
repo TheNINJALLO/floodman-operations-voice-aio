@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% set page_title = "Alex · Inbound assistant" %}
+{% set page_title = "Avery · Inbound assistant" %}
 {% set page_eyebrow = "Call flow, knowledge, testing, and review" %}
 {% block content %}
 <section class="page-heading">
-  <div><h1>Alex, your inbound assistant</h1><p>See how a call is handled, check the approved answers, and test a conversation.</p></div>
+  <div><h1>Avery, your inbound assistant</h1><p>See how a call is handled, check the approved answers, and test a conversation.</p></div>
   {% if principal.can_manage %}<a class="button primary" href="/simulator">Test a conversation</a>{% endif %}
 </section>
 {% include "assistant_nav.html" %}
@@ -27,7 +27,7 @@
   </div>
   <aside class="assistant-context" aria-label="Assistant configuration">
     <section class="panel">
-      <div class="panel-heading"><div><h2>What Alex uses</h2></div></div>
+      <div class="panel-heading"><div><h2>What Avery uses</h2></div></div>
       <dl class="assistant-facts"><div><dt>Local language model</dt><dd>{{ model_name }}</dd></div><div><dt>Selected voice</dt><dd>{{ current_voice | replace('_', ' ') | title }}</dd></div><div><dt>Speaking pace</dt><dd>{{ '%.2f' | format(current_speed) }}×</dd></div><div><dt>Approved knowledge</dt><dd>{{ approved_documents }} document{{ '' if approved_documents == 1 else 's' }}</dd></div></dl>
       <div class="panel-copy"><a class="button secondary full" href="/knowledge">Review approved answers</a></div>
     </section>

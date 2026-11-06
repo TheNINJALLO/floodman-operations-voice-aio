@@ -32,7 +32,9 @@ def collection_question(state: IntakeState) -> str:
     if stage == "source_summary":
         return "Do you know where it's coming from?"
     if stage == "name":
-        return "What name should I put this under?"
+        return "May I have your first and last name, please?"
+    if stage == "last_name":
+        return "And your last name, please?"
     if stage == "email":
         return "What's the best email for you?"
     if stage == "phone":
@@ -42,14 +44,14 @@ def collection_question(state: IntakeState) -> str:
     return ""
 
 
-def confirmation_question(state: IntakeState, field: str, *, spell_email: bool = False) -> str:
+def confirmation_question(state: IntakeState, field: str, *, spell_email: bool = True) -> str:
     readback, question = confirmation_parts(state, field, spell_email=spell_email)
     if not readback:
         return question
     return f"{readback}. {question}"
 
 
-def confirmation_parts(state: IntakeState, field: str, *, spell_email: bool = False) -> tuple[str, str]:
+def confirmation_parts(state: IntakeState, field: str, *, spell_email: bool = True) -> tuple[str, str]:
     value = getattr(state, field)
     if field == "name":
         return f"I heard {value}", "Is that correct?"
@@ -74,4 +76,4 @@ def contact_endpoint_stage(stage: str) -> bool:
     # Collection fields may contain spelling or natural pauses. Confirmation
     # answers are normally one-word yes/no responses and should endpoint on the
     # faster conversational timing path.
-    return stage in {"name", "email", "phone", "address"}
+    return stage in {"name", "last_name", "email", "phone", "address"}

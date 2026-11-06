@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 from pathlib import Path
 import sys
 import uuid
@@ -91,7 +92,7 @@ async def run(data: Path):
     reply = await core.process(call, recognized_closing)
     checks = {
         "natural_readback_shorter": natural_metrics["audio_seconds"] < legacy_metrics["audio_seconds"] * 0.9,
-        "email_words_intelligible": all(word in recognized_email.lower() for word in ("sam", "jones", "example", "com")),
+        "email_words_intelligible": all(word in re.sub(r"[^a-z]", "", recognized_email.lower()) for word in ("sam", "jones", "example", "com")),
         "email_not_auto_confirmed": "email" not in call.state.confirmations,
         "spoken_closing_ends_without_repeat": reply.end_call and "anything else" not in reply.text.lower(),
     }

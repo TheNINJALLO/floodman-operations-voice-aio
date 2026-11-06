@@ -7,6 +7,7 @@ def test_service_classification():
 
 def test_contact_normalizers():
     assert normalize_email("josh at example dot com") == "josh@example.com"
+    assert normalize_email("josh, at example dot com") == "josh@example.com"
     assert normalize_email("No, it's josh at example dot com") == "josh@example.com"
     assert normalize_email("My email address is josh at example dot com") == "josh@example.com"
     assert normalize_phone("231 884 0943") == "+12318840943"
@@ -38,7 +39,7 @@ def test_natural_email_readback_preserves_digits_and_separators_without_letter_p
     assert spoken_email("alex.smith_02+jobs@my-company.co.uk") == (
         "alex dot smith underscore zero two plus jobs at my hyphen company dot co dot uk"
     )
-    assert spoken_email("alex2@gmail.com", spell=True) == "a, l, e, x, two at gmail dot com"
+    assert spoken_email("alex2@gmail.com", spell=True) == "A, L, E, X, two, at gmail dot com"
 
 
 def test_address_readback_speaks_every_address_and_zip_digit_separately():

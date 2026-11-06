@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from app.intake import clean, classify_property_context, normalize_email, normalize_name, normalize_phone, normalized
+from app.intake import address_answer, clean, classify_property_context, normalize_email, normalize_name, normalize_phone, normalized
 from app.models import IntakeState
 
 DETAIL_STAGES = {"affected_area", "timing_summary", "source_summary", "safety_summary", "water_condition", "service_detail"}
@@ -14,7 +14,7 @@ QUESTIONS = {
     "water_condition": "Is water still coming in or rising, or has it stopped?",
     "service_detail": "What would you like the team to help with?",
     "anything_else": "Is there anything else you'd like me to pass along?",
-    "additional_message": "What else would you like me to include?",
+    "additional_message": "Of course. Go ahead, I'm listening.",
 }
 
 
@@ -105,6 +105,14 @@ def name_answer(transcript: str) -> str:
     return normalize_name(value)
 
 
+def last_name_answer(transcript: str) -> str:
+    value = re.sub(r"^(?:(?:my |the )?last name is|it is|it's)\s+", "", clean(transcript), flags=re.I)
+    value = name_answer(value)
+    if normalized(value) in {"yes", "yeah", "yep", "no", "nope", "just my first name", "first name only", "i d rather not", "i only use one name", "i use one name"}:
+        return ""
+    return value if re.fullmatch(r"[A-Za-z][A-Za-z' -]{0,119}", value) else ""
+
+
 def phone_answer(transcript: str) -> str:
     introduced = re.search(r"\b(?:call me (?:back )?(?:at|on)|my (?:callback|phone|mobile|cell)(?: number)? is)\s*([+\d(][\d ().-]{6,30})", transcript, re.I)
     if introduced:
@@ -161,10 +169,14 @@ def capture_volunteered(state: IntakeState, transcript: str, *, expected: str = 
         if candidate and candidate != state.email:
             state.email, state.email_status = candidate, "provided"
             state.confirmations.pop("email", None)
-    if expected not in {"address", "confirm_address"} and not state.address:
-        match = re.search(r"\b(?:my address is|the service address is|the property is at|I live at)\s+(\d.+?)(?=[;!?]|,?\s+and my\b|$)", transcript, re.I)
+    if expected not in {"address", "confirm_address"}:
+        match = re.search(r"\b(?:my address is|the (?:correct |building |service )?address is|the property is at|I live at)\s+(.+?)(?=[;!?]|,?\s+and my\b|$)", transcript, re.I)
         if match:
-            state.address = clean(match[1], 500).rstrip(".")
+            candidate = address_answer(match[1]).rstrip(".")
+            if re.match(r"\d", candidate) and candidate != state.address:
+                state.address = candidate
+                state.confirmations.pop("address", None)
+                state.service_area_status, state.service_area_city = "unknown", ""
 
 
 def detail_stage(state: IntakeState) -> str:
