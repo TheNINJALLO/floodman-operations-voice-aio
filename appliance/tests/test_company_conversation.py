@@ -29,6 +29,8 @@ def test_contact_answers_are_not_company_questions(text):
 async def test_company_question_gets_conversation_context_and_preserves_intake_stage(core):
     model = ContextModel()
     core.llm = model
+    # This test exercises generation, independently of the immediate FAQ path.
+    core.knowledge.conversation_answer = lambda *args, **kwargs: ""
     session = core.create_session("company-context")
     session.state.stage = "name"
     session.state.description = "Damp crawl space after rain."
@@ -144,6 +146,36 @@ def test_immediate_company_answers_require_and_follow_approved_facts(project_roo
     assert "fifty years" in knowledge.direct_answer("How long have you been in business?")
     assert "commercial property owners" in knowledge.direct_answer("Do you help commercial properties too?")
     assert not knowledge.direct_answer("How long does an inspection take?")
+
+
+def test_service_answers_use_current_approved_documents_and_never_promise_a_fix(project_root, tmp_path):
+    knowledge = KnowledgeBase(project_root / "knowledge")
+    query = "How does crawl space encapsulation work"
+    documents = knowledge.search(query)
+    answer = knowledge.conversation_answer(query, intent_query=query, documents=documents)
+    assert "vapor barrier" in answer and "may include" in answer
+    followup = "Would that help with moisture and musty smells too"
+    assert "musty odors" in knowledge.conversation_answer(query, intent_query=followup, documents=documents)
+    assert not knowledge.conversation_answer(query, intent_query="Will it definitely fix the moisture forever?", documents=documents)
+    assert not knowledge.conversation_answer(query, intent_query=query, documents=[])
+    # Editing or withdrawing the approved facts disables the prepared answer.
+    from dataclasses import replace
+    changed = [replace(documents[0], body="The team must confirm all details.")]
+    assert not knowledge.conversation_answer(query, intent_query=query, documents=changed)
+
+
+@pytest.mark.asyncio
+async def test_common_service_question_and_followup_do_not_wait_for_cpu_generation(core):
+    class UnavailableModel:
+        async def answer_in_conversation(self, *args):
+            raise AssertionError("Common approved answers should not wait for the model")
+    core.llm = UnavailableModel()
+    session = core.create_session("immediate-service-answer")
+    session.state.stage = "name"
+    first = await core.process(session, "How does crawl space encapsulation work")
+    second = await core.process(session, "Would that help with moisture and musty smells too")
+    assert "vapor barrier" in first.text and "musty odors" in second.text
+    assert session.state.stage == "name" and not session.state.name
 
 
 @pytest.mark.asyncio

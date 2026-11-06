@@ -655,6 +655,8 @@ class VoiceCore:
             answer = self.knowledge.direct_answer(transcript)
         query = company.search_query(transcript, dialogue, state.description)
         documents = self.knowledge.search(query, top_k=3, max_chars=3600) if eligible else []
+        if eligible and not answer:
+            answer = self.knowledge.conversation_answer(query, intent_query=transcript, documents=documents)
         source = "approved_rules" if answer else "unavailable"
         if question_like and not answer and not (state.stage == "issue" and info["kind"] != "service"):
             context = self.knowledge.answer_context(query, documents, intent_query=transcript)

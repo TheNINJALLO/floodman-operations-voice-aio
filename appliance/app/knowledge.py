@@ -208,3 +208,27 @@ class KnowledgeBase:
                 if "homeowners and commercial property owners" in body:
                     return "Yes, we help both homeowners and commercial property owners. We can take the details and get them to the right team."
         return ""
+
+    def conversation_answer(self, query: str, *, intent_query: str, documents: list[KnowledgeDocument]) -> str:
+        """Immediate common service answers, conditional on current approved facts.
+
+        Keep CPU generation for questions that need composition. These answers
+        describe a service; they never diagnose a property or promise a result.
+        """
+        words = " ".join(re.findall(r"[a-z0-9]+", intent_query.lower()))
+        if re.search(r"\b(?:always|definitely|guarantee|guaranteed|forever|fix|cure|prevent|cost|price|insurance|warranty|how long)\b", words):
+            return ""
+        if not documents or documents[0].category != "crawl_space":
+            return ""
+        document = documents[0]
+        body = re.sub(r"\s+", " ", document.body).lower()
+        if not self._tokens(query) & self._tokens(document.title + " " + " ".join(document.tags)):
+            return ""
+        process = re.search(r"\b(?:how does .+ work|what does .+ involve|what happens|explain .+ process|tell me .+ process)\b", words)
+        if process and all(fact in body for fact in ("projects may involve a vapor barrier, sealing, drainage, dehumidification", "require inspection")):
+            return "Depending on your space, the work may include a vapor barrier, sealing, drainage, or dehumidification to manage moisture."
+        help_question = re.search(r"\b(?:does|would|could|can) .+ help\b", words)
+        concerns = re.search(r"\b(?:moisture|humidity|musty|smell|smells|odor|odors)\b", words)
+        if help_question and concerns and all(fact in body for fact in ("encapsulation and moisture control", "musty odor, humidity")):
+            return "We help with crawl-space moisture and concerns like musty odors. An inspection helps the team understand what's causing it."
+        return ""
