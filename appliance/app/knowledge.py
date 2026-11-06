@@ -26,7 +26,9 @@ class KnowledgeBase:
 
     @staticmethod
     def _tokens(value: str) -> set[str]:
-        return {token for token in re.findall(r"[a-z0-9]+", value.lower()) if len(token) > 2}
+        stop = {"the", "and", "for", "you", "your", "our", "that", "this", "what", "when", "where", "who", "why", "how", "does", "with", "have", "are", "can", "could", "would", "will", "about", "there", "they", "their", "please", "tell", "more", "from", "floodman"}
+        aliases = {"leaking": "leak", "leaks": "leak", "basements": "basement", "foundations": "foundation", "businesses": "commercial", "business": "commercial", "mould": "mold", "costs": "pricing", "cost": "pricing", "prices": "pricing", "price": "pricing", "estimates": "inspection", "estimate": "inspection"}
+        return {aliases.get(token, token) for token in re.findall(r"[a-z0-9]+", value.lower()) if len(token) > 2 and token not in stop}
 
     @staticmethod
     def _parse(path: Path) -> tuple[dict[str, Any], str]:

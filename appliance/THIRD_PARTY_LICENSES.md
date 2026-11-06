@@ -17,3 +17,9 @@ This repository does not redistribute model weights. First boot downloads them f
 - FastAPI, Uvicorn, HTTPX, PyYAML, NumPy, SciPy, SoundFile, ONNX Runtime, Hugging Face Hub: respective upstream open-source licenses
 
 The operator remains responsible for carrier terms, call-recording law, privacy notices, model-license review, and any deployment-specific compliance.
+# Expanded English voice presets
+
+The 19 selectable Pocket TTS voices and their source attribution are listed in
+`docs/VOICE_CATALOG.md`. Alba MacKenna and VCTK samples use CC BY 4.0; Unmute
+voice donations and Voice-Zero samples use CC0. Source voice states are pinned
+by revision and SHA-256 in `config/local-streaming-assets.json`.

@@ -73,26 +73,26 @@ class BusinessDirectory:
     def direct_answer(self, query: str) -> str:
         text = normalized(query)
         if any(term in text for term in ("what services", "what do you do", "kind of work", "services do you offer")):
-            return "Floodman provides water-damage restoration, basement waterproofing, foundation repair, crawl-space encapsulation, mold remediation, and sump-pump and drainage services."
+            return "We help with water-damage restoration, basement waterproofing, foundation repair, crawl-space encapsulation, mold remediation, and sump-pump and drainage services."
         if any(term in text for term in (
             "free inspection", "inspection free", "free consultation", "free estimate", "estimate free",
         )):
-            return "Floodman offers free inspections and consultations. Final recommendations and pricing depend on the property and work needed."
+            return "Yes, we offer free inspections and consultations. The team can look at what's happening with you; recommendations and pricing depend on the property and work needed."
         if any(term in text for term in ("how much", "price", "cost", "estimate over the phone")):
-            return "Pricing depends on the source and extent of the problem, affected materials, access, and the inspection findings. The team can review the next step after collecting the property details."
+            return "Pricing depends on what's causing it, how much is affected, access, and what the inspection finds. The team can talk you through the options after taking a look."
         if any(term in text for term in ("warranty", "guarantee")):
-            return "Warranty coverage depends on the installed system and the signed agreement. The Floodman team will need to review the specific warranty."
+            return "Warranty coverage depends on the system and your agreement. The team can review the details with you so you know what applies."
         if any(term in text for term in ("insurance", "direct billing", "deductible")):
             return "Floodman can document work when applicable, but coverage and claim decisions belong to the insurer. The team can confirm billing or documentation options for the specific job."
         if any(term in text for term in ("open 24", "after hours", "emergency", "24 7")):
-            return "Floodman advertises 24/7 emergency intake and water-damage response."
+            return "You can reach us for emergency water intake around the clock. The team will need to confirm response timing for your situation."
         if "serve" in text or "service area" in text or "come to" in text:
             result = self.service_area(query)
             if result.status == "published":
                 return result.message
         for key, aliases in SUPPORTED_ALIASES.items():
             if any(phrase_match(text, phrase) for phrase in aliases):
-                return f"Yes. Floodman advertises {SERVICE_NAMES[key]}. The exact recommendation and scope require a property inspection."
+                return f"Yes, we help with {SERVICE_NAMES[key]}. The team can take a look and explain what would make sense for your property."
         for aliases in UNSUPPORTED_ALIASES.values():
             if any(phrase_match(text, phrase) for phrase in aliases):
                 return "That is not a service Floodman advertises, but I can still collect the details and send them to the team for review."

@@ -9,6 +9,16 @@
   const meta = form.querySelector("[data-voice-meta]");
   const preview = document.querySelector("[data-voice-preview]");
   const previewText = document.querySelector("[data-preview-text]");
+  const sampleSelect = document.querySelector("[data-preview-sample]");
+  const samples = {
+    greeting: previewText.value,
+    care: "Let's take this one step at a time. I can get these details to the right team so they can help you with the next step.",
+    company: "Yes, we help with basement waterproofing. The team can take a look and talk you through the options for your property."
+  };
+  sampleSelect?.addEventListener("change", () => {
+    if (samples[sampleSelect.value]) previewText.value = samples[sampleSelect.value];
+  });
+  previewText.addEventListener("input", () => { if (sampleSelect) sampleSelect.value = "custom"; });
   const status = document.querySelector("[data-preview-status]");
   const audio = document.querySelector("[data-voice-audio]");
   const csrf = document.querySelector('meta[name="csrf-token"]')?.content || "";

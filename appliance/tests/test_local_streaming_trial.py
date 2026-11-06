@@ -60,7 +60,7 @@ def test_assets_are_pinned_and_matching_voice_states_are_selected(settings):
     assets = manifest()["assets"]
     assert all(len(asset["sha256"]) == 64 and asset["size_bytes"] > 0 for asset in assets)
     voices = [asset for asset in assets if asset["path"].startswith("pocket/") and asset["path"] != "pocket/model.safetensors" and asset["path"].endswith(".safetensors")]
-    assert len(voices) == 4 and all("/languages/english/embeddings/" in asset["url"] for asset in voices)
+    assert len(voices) == 19 and all("/languages/english/embeddings/" in asset["url"] for asset in voices)
     with pytest.raises(ValueError):
         asset_path(settings.local_trial_dir, "../../../../outside")
     config = prepare_pocket_config(settings.local_trial_dir).read_text()

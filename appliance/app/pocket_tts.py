@@ -17,7 +17,7 @@ from app.streaming_audio import TelephoneResampler, tempo_stream
 from app.tts import LocalTTS
 
 
-VOICES = ("alba", "jean", "cosette", "fantine")
+VOICES = ('alba', 'anna', 'azelma', 'bill_boerst', 'caro_davy', 'charles', 'eponine', 'eve', 'fantine', 'george', 'jane', 'javert', 'marius', 'mary', 'michael', 'paul', 'peter_yearsley', 'stuart_bell', 'vera')
 
 
 class PocketTTS:
@@ -208,6 +208,8 @@ class PocketTTS:
         if voice not in await self.available_voices():
             raise ValueError("Select an installed Pocket voice")
         speed = LocalTTS._validated_speed(speed)
+        await self.start()
+        await self._voice_state(voice.removeprefix("pocket_"))
         async with self._generation_lock:
             temporary = self.settings_path.with_suffix(".tmp")
             temporary.write_text(json.dumps({"voice": voice.removeprefix("pocket_"), "speed": speed}), encoding="utf-8")

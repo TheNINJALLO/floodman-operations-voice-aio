@@ -293,7 +293,7 @@ async def test_answer_to_interrupted_question_is_accepted_without_repeating(tmp_
 
 
 @pytest.mark.asyncio
-async def test_approved_questions_are_answered_then_active_intake_question_is_reasked(tmp_path,project_root,monkeypatch):
+async def test_approved_questions_are_answered_without_repeating_the_active_intake_question(tmp_path,project_root,monkeypatch):
     s=settings(tmp_path,project_root,monkeypatch);db=Database(s.database_path);llm=AnsweringLLM();core=VoiceCore(s,db,BusinessDirectory(s.service_area_path),KnowledgeBase(project_root/"knowledge"),llm,StubNotifier())
     session=core.create_session("free-flow-question");session.state.stage="property_context"
 
@@ -301,7 +301,7 @@ async def test_approved_questions_are_answered_then_active_intake_question_is_re
 
     assert llm.questions and "wet electrical equipment" in llm.questions[0][1].lower()
     assert reply.text.startswith("Floodman can inspect")
-    assert reply.text.endswith("Is this a home or a business?")
+    assert "Is this a home or a business?" not in reply.text
     assert session.state.stage=="property_context"
 
 

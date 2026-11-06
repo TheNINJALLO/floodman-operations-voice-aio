@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% set page_title = "Voice settings" %}
-{% set page_eyebrow = "Choose how the AI receptionist sounds" %}
+{% set page_eyebrow = "Choose how Avery sounds" %}
 {% block content %}
-<section class="page-heading"><div><span class="eyebrow">Call experience</span><h1>AI receptionist voice</h1><p>Preview any installed English voice, adjust its pace, and apply it to future speech.</p></div></section>
+<section class="page-heading"><div><span class="eyebrow">Call experience</span><h1>Avery's voice</h1><p>Compare {{ voices|length }} installed voices, hear a caring reply, and choose the voice that fits your callers.</p></div></section>
 {% include "assistant_nav.html" %}
 <div class="voice-layout">
   <section class="panel voice-editor">
@@ -26,6 +26,7 @@
   <aside class="panel preview-panel">
     <div class="panel-heading"><div><h2>Listen before saving</h2><p>Preview uses the selected voice and speed without changing live settings.</p></div></div>
     <div class="preview-content">
+      <label>Sample conversation<select data-preview-sample><option value="greeting">Introduction</option><option value="care">Calm, caring reply</option><option value="company">Company question</option><option value="custom">Your own words</option></select></label>
       <label>Preview phrase<textarea rows="5" maxlength="240" data-preview-text>{{ preview_greeting }}</textarea></label>
       <button class="button secondary full" type="button" data-voice-preview>▶ Generate preview</button>
       <div class="preview-feedback" data-preview-status>Ready to generate a private, local preview.</div>
@@ -36,7 +37,7 @@
 </div>
 <section class="panel voice-guide">
   <div class="panel-heading"><div><h2>Choosing a voice</h2><p>The voice changes tone and accent; speed changes delivery pace.</p></div></div>
-  <div class="guide-grid"><div><span class="metric-icon blue">A</span><h3>American English</h3><p>Uses American pronunciation for all generated prompts.</p></div><div><span class="metric-icon green">B</span><h3>British English</h3><p>Automatically switches pronunciation rules to match the accent.</p></div><div><span class="metric-icon amber">×</span><h3>Natural pacing</h3><p>Start near 1.00× and preview the greeting before changing it.</p></div></div>
+  <div class="guide-grid"><div><span class="metric-icon blue">A</span><h3>Compare the delivery</h3><p>Try the same phrase in several voices to hear differences in tone and pronunciation.</p></div><div><span class="metric-icon green">B</span><h3>Hear a caring reply</h3><p>Use the conversation samples to judge how the voice sounds when a caller needs reassurance.</p></div><div><span class="metric-icon amber">×</span><h3>Natural pacing</h3><p>Start near 1.00× and preview before saving. Previewing keeps the current live voice selected.</p></div></div>
 </section>
 <script src="/static/voice.js"></script>
 {% endblock %}
