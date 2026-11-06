@@ -21,15 +21,39 @@ QUESTIONS = {
 def closing_finished(transcript: str) -> bool:
     """Recognize a complete wrap-up answer, never a substring of new details."""
     text = normalized(transcript)
-    polite = r"(?:ok|okay|all right|alright|well|yes|yeah|no|nope|nah|thanks|thank you|bye|goodbye)"
+    polite = r"(?:ok|okay|all right|alright|well|oh|yes|yeah|no|nope|nah|thanks|thank you|bye|goodbye)"
     ending = (
         r"no|nope|nah|none|nothing(?: else| more)?|no more|"
         r"(?:i think |i guess )?(?:that s|that is|that should be|that ll be|that will be) (?:it|all|everything)(?: for now| i have| i can think of| i needed)?|"
         r"that should do it|i (?:don t|do not) think so|not that i can think of|"
         r"(?:i m|i am|we re|we are) all set|"
-        r"i (?:don t|do not) have anything else|thanks|thank you|bye|goodbye"
+        r"i (?:don t|do not) have anything else|"
+        r"(?:thanks|thank you)(?: so much| very much| a lot| for (?:your help|helping me|the help))?|"
+        r"i appreciate (?:it|your help)|(?:i )?(?:thank|think) you so much|bye|goodbye"
     )
     return bool(re.fullmatch(rf"(?:{polite} )*(?:{ending})(?: {polite})*", text))
+
+
+def gratitude(transcript: str) -> bool:
+    """A whole social turn, not gratitude followed by another request."""
+    return bool(re.fullmatch(
+        r"(?:(?:oh|well|okay|ok) )*(?:(?:thanks|thank you)(?: so much| very much| a lot| for (?:your help|helping me|the help))?|i appreciate (?:it|your help))",
+        normalized(transcript),
+    ))
+
+
+def contact_side_detail(transcript: str, stage: str) -> bool:
+    """Recognize a story continuation without treating it as a contact value."""
+    if stage.removeprefix("confirm_") not in {"name", "last_name", "phone", "address", "email"}:
+        return False
+    text = normalized(transcript)
+    if "@" in transcript or explicit_name(transcript) or re.search(r"\b(?:my name is|my last name is|my (?:email|address|phone|number) is|call me at|i live at|the (?:correct |service )?address is)\b", text):
+        return False
+    if not re.match(r"^(?:and|also|actually|it|there|we|i|my|our|the|this|that)\b", text):
+        return False
+    return bool(re.search(
+        r"\b(?:mold|mould|damp|water|leak|leaking|basement|crawl space|foundation|sump|crack|bathroom|flooding|moisture|inspection|estimate|started|noticed|worried|scared|stressed|overwhelmed|frustrated|upset|nervous)\b", text
+    ))
 
 
 def unfinished_turn(transcript: str) -> bool:
@@ -44,6 +68,10 @@ def unfinished_turn(transcript: str) -> bool:
     # Streaming recognition can append a hesitation to a short opening while
     # the caller is still forming the rest of the sentence.
     if re.fullmatch(r"(?:it s|it has|its) been(?: (?:at first|well|um|uh|like|so|the|a|an|i|we|they|you|my|our|your|this|that))*", text):
+        return True
+    if text in {"i have", "we have", "i m having", "we re having", "i was wondering", "i just wanted to", "and also"}:
+        return True
+    if len(text.split()) >= 3 and re.search(r"\b(?:in the|on the|at the|with the|my|our|your|because of|and also)$", text):
         return True
     return bool(re.search(r"\b(?:it s been|it has been|there s|there is|i was|we were|and|because|but|my name is|my email is|my address is)$", text))
 
@@ -74,6 +102,9 @@ def hold_requested(transcript: str) -> bool:
     return normalized(transcript) in {
         "hold on", "hang on", "one moment", "just a moment", "give me a second", "give me a sec",
         "give me a minute", "just a second", "let me check", "let me look", "please wait",
+        "let me finish", "please let me finish", "i m still talking", "i was still talking",
+        "let me finish what i was saying", "i m not finished", "i am not finished", "one more thing",
+        "let me explain", "can i just explain", "can i explain what happened", "can i tell you what happened",
     }
 
 
@@ -92,6 +123,7 @@ def explicit_name(transcript: str) -> str:
     match = re.search(r"\b(?:my name is|this is|I am|I'm)\s+([A-Za-z][A-Za-z' -]{0,79}?)(?=[,.!?;]|\s+(?:and|calling|from|with)\b|$)", transcript, re.I)
     if not match or normalized(match[1]).split()[0] in {
         "a", "an", "the", "not", "just", "looking", "having", "calling", "wondering", "trying", "interested", "hoping", "sorry", "water", "mold", "about", "at", "in", "for", "my", "our", "concerned",
+        "really", "very", "so", "worried", "scared", "stressed", "overwhelmed", "frustrated", "upset", "nervous", "afraid", "feeling",
     } or declined(match[1]):
         return ""
     return normalize_name(match[1])

@@ -56,3 +56,13 @@ async def test_contact_details_use_full_audio_and_more_accurate_decoding():
     assert model.vad_calls == [False]
     assert model.options[0]["beam_size"] == 5
     assert model.options[0]["best_of"] == 5
+
+
+@pytest.mark.asyncio
+async def test_endpointed_conversation_preserves_quiet_words_without_a_second_vad():
+    stt = LocalSTT(SimpleNamespace())
+    model = StubWhisperModel(filtered_text="wrong", unfiltered_text="Thank you so much.")
+    stt._model = model
+    pcm = (np.ones(8000, dtype="<i2") * 1000).tobytes()
+    assert await stt.transcribe(pcm, 8000, endpointed=True) == "Thank you so much."
+    assert model.vad_calls == [False] and model.options[0]["beam_size"] == 1

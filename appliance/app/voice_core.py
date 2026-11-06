@@ -10,7 +10,7 @@ from app.call_style import GREETING, INTRODUCTION, IDENTITY, FAREWELL, farewell_
 from app import company_conversation as company
 from app.call_diagnostics import emit_current
 from app.conversation import (
-    DETAIL_STAGES, QUESTIONS, capture_volunteered, closing_finished, contact_fields, declined,
+    DETAIL_STAGES, QUESTIONS, capture_volunteered, closing_finished, contact_fields, contact_side_detail, declined, gratitude,
     detail_stage, hold_requested, identity_question, last_name_answer, memory, name_answer, phone_answer, request_kind, unfinished_turn,
 )
 from app.db import Database
@@ -311,11 +311,12 @@ class VoiceCore:
         session.state.stage = "confirm_name"
         return self._confirmation(session, "name", prefix=prefix)
 
-    def _acknowledge_extra(self, session: CallSession) -> VoiceReply:
+    def _acknowledge_extra(self, session: CallSession, transcript: str = "") -> VoiceReply:
         info = memory(session.state)
         index = info.get("wrapup_ack_count", 0)
         info.update(wrapup_ack_count=index + 1, wrapup_followup=True)
-        return self._planned(session, extra_acknowledgment(index))
+        info.pop("wrapup_silence_cue", None)
+        return self._planned(session, extra_acknowledgment(index, transcript))
 
     def _next_reply(self, session: CallSession, *, prefix: str = "") -> VoiceReply:
         state = session.state
@@ -520,6 +521,7 @@ class VoiceCore:
         )
         session.no_input_count = 0
         info = memory(state)
+        info.pop("wrapup_silence_cue", None)
         info.pop("hold_timeouts", None)
         if info.get("speech_fragments") and not unfinished_turn(transcript) and not hold_requested(transcript) and not identity_question(transcript):
             fragments = info.pop("speech_fragments")
@@ -575,6 +577,20 @@ class VoiceCore:
         if hold_requested(transcript):
             info["hold_timeouts"] = 2
             return self._planned(session, "Take your time.")
+        if gratitude(transcript) and state.stage not in {"anything_else", "additional_message"}:
+            return self._planned(session, "You're welcome.")
+        if contact_side_detail(transcript, state.stage) and not self._question_like(transcript) and not normalize_confirmation(transcript):
+            # A caller can continue their story while a contact question is
+            # pending. Their words are notes, never a guessed contact value.
+            state.description = clean(f"{state.description} Additional detail: {transcript}", 4000)
+            capture_volunteered(state, transcript, expected=state.stage)
+            opening = company.supportive_opening(transcript)
+            if opening and len(transcript.split()) <= 12:
+                return self._planned(session, opening + "Take your time. I'm listening.")
+            return self._planned(session, (opening or "Thanks for explaining that. ") + self._current_question(state))
+        if normalized(transcript) in {"okay", "ok", "all right", "alright", "right"} and not state.stage.startswith("confirm_"):
+            self._save(session)
+            return VoiceReply(text="", wait_for_caller=True)
         if state.stage == "issue" and not state.description and info.get("company_dialogue", {}).get("turns"):
             if closing_finished(transcript) and normalized(transcript) not in {"no", "nope", "none", "no thanks", "thanks", "thank you"}:
                 info["questions_only_complete"] = True
@@ -695,11 +711,11 @@ class VoiceCore:
                 state.stage = "additional_message"
                 return self._planned(session, QUESTIONS["additional_message"])
             state.description = clean(f"{state.description} Additional message: {transcript}", 4000)
-            return self._acknowledge_extra(session)
+            return self._acknowledge_extra(session, transcript)
         if state.stage == "additional_message":
             state.description = clean(f"{state.description} Additional message: {transcript}", 4000)
             state.stage = "anything_else"
-            return self._acknowledge_extra(session)
+            return self._acknowledge_extra(session, transcript)
 
         recovered = self._recover_interrupted_prompt(session, transcript)
         if recovered is not None:
@@ -929,6 +945,9 @@ class VoiceCore:
             self._save(session)
             return VoiceReply(text="", wait_for_caller=True)
         if info.get("wrapup_followup") and not info.get("speech_fragments") and session.state.stage in {"anything_else", "additional_message"}:
+            if not info.get("wrapup_silence_cue"):
+                info["wrapup_silence_cue"] = True
+                return self._planned(session, "Your message is ready for the team. Take your time if there's something you'd like to clarify.")
             return await self._finish_intake(session)
         session.no_input_count += 1
         if session.no_input_count == 1:

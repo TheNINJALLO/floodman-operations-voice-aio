@@ -134,7 +134,8 @@ def test_endpointing_preserves_fast_confirmations_and_spelled_contacts(settings)
     assert endpoint_ms(settings, "anything_else") >= 600
     assert endpoint_ms(settings, "anything_else", "it's been") >= 1400
     assert endpoint_ms(settings, "anything_else", "it's been at first") >= 1400
-    assert endpoint_ms(settings, "anything_else", "it's been two weeks") == 600
+    assert endpoint_ms(settings, "anything_else", "it's been two weeks") == 800
+    assert endpoint_ms(settings, "issue") >= 800
 
 
 @pytest.mark.parametrize("candidate,expected", [

@@ -39,7 +39,7 @@ class LocalSTT:
             )
             logger.info("Faster-Whisper ready: %s", self.settings.faster_whisper_model)
 
-    async def transcribe(self, pcm16le: bytes, sample_rate: int = 8000, *, contact: bool = False) -> str:
+    async def transcribe(self, pcm16le: bytes, sample_rate: int = 8000, *, contact: bool = False, endpointed: bool = False) -> str:
         if not pcm16le:
             return ""
         await self.start()
@@ -68,6 +68,10 @@ class LocalSTT:
             # meaningful parts of real email spelling, so preserve the whole clip
             # and spend more decoding effort on these accuracy-sensitive fields.
             return await asyncio.to_thread(run, vad_filter=False, beam_size=5, best_of=5)
+        if endpointed:
+            # Streaming VAD has already captured this whole turn. Preserve a
+            # quiet onset and short social endings such as "thank you so much".
+            return await asyncio.to_thread(run, vad_filter=False, beam_size=1, best_of=1)
 
         transcript = await asyncio.to_thread(run, vad_filter=True, beam_size=1, best_of=1)
         if transcript:

@@ -380,10 +380,12 @@ async def test_wrapup_question_appears_once_while_details_questions_and_hold_rem
 
 
 @pytest.mark.asyncio
-async def test_silence_after_acknowledging_an_extra_detail_closes_without_another_question(core):
+async def test_silence_after_an_extra_detail_gives_a_cue_then_closes_without_another_question(core):
     session = core.create_session("wrapup-silence")
     session.state.stage = "anything_else"
     await core.process(session, "Please use the side door")
+    cue = await core.no_input(session)
+    assert not cue.end_call and "clarify" in cue.text and "anything else" not in cue.text.lower()
     reply = await core.no_input(session)
     assert reply.end_call and "anything else" not in reply.text.lower()
 

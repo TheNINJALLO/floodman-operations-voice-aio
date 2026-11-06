@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 from collections.abc import AsyncIterator, Callable
 
@@ -9,7 +10,8 @@ import numpy as np
 
 from app.call_diagnostics import emit_current
 from app.config import Settings
-from app.conversation import unfinished_turn
+from app.conversation import closing_finished, gratitude, hold_requested, unfinished_turn
+from app.intake import normalized
 from app.local_trial_assets import verify_speech_assets
 from app.audio import rms
 from app.speech_activity import SpeechActivity
@@ -27,9 +29,28 @@ def endpoint_ms(settings: Settings, stage: str, text: str = "") -> int:
         result = settings.contact_endpoint_silence_ms
     else:
         result = max(settings.endpoint_silence_ms, settings.conversation_endpoint_silence_ms)
+        if stage in {"issue", "service_detail", "anything_else", "additional_message"}:
+            result = max(result, 800)
     if text and unfinished_turn(text):
         result = max(result, 1400)
     return result
+
+
+def needs_conversation_recovery(stage: str, text: str) -> bool:
+    """Spend CPU on unclear turns, retaining the immediate path for clear words."""
+    words = normalized(text)
+    if not words:
+        return True
+    if unfinished_turn(text) or closing_finished(text) or gratitude(text) or hold_requested(text):
+        return False
+    if words in {"yes", "yeah", "yep", "no", "nope", "okay", "ok"}:
+        return False
+    if stage == "water_condition":
+        return True  # Accurate negation matters to the existing urgency rules.
+    if re.search(r"\bmy (?:email|address|phone|number)\b|@", text, re.I):
+        return True
+    known = r"\b(?:mold|mould|water|damp|leak|leaking|flood|flooding|basement|crawl ?space|foundation|sump|drain|crack|bathroom|kitchen|bedroom|garage|wall|walls|floor|floors|ceiling|moisture|humidity|estimate|inspection|consultation|cost|price|pricing|warranty|insurance|commercial|business|years|door|entrance|gate|dog|callback|lunch|morning|afternoon|evening|yesterday|today|week|weeks|month|months|rain|worried|scared|stressed)\b"
+    return not bool(re.search(known, words))
 
 
 class StreamingLocalSTT:
@@ -44,6 +65,28 @@ class StreamingLocalSTT:
         self.fallback = LocalSTT(settings)
         self._start_lock = asyncio.Lock()
         self._decode_lock = asyncio.Lock()
+        self._conversation_recovery: asyncio.Task[str] | None = None
+
+    async def _recover_conversation(self, text: str, pcm: bytes, stage: str) -> str:
+        """Use the existing local decoder without allowing slow work to queue."""
+        if self._conversation_recovery is not None and not self._conversation_recovery.done():
+            emit_current("stt_recovery_skipped", reason="decoder_busy", stage=stage)
+            return text
+        task = asyncio.create_task(self.fallback.transcribe(pcm, 8000, endpointed=True))
+        self._conversation_recovery = task
+        task.add_done_callback(lambda done: done.exception() if not done.cancelled() else None)
+        started = time.perf_counter()
+        try:
+            async with asyncio.timeout(2.5):
+                recovered = await asyncio.shield(task)
+            emit_current("stt_recovered", reason="local_whisper_conversation", stage=stage,
+                         duration_ms=(time.perf_counter() - started) * 1000)
+            return recovered or text
+        except TimeoutError:
+            emit_current("stt_recovery_skipped", reason="decoder_deadline", stage=stage)
+        except Exception as exc:
+            emit_current("stt_recovery_skipped", reason="decoder_unavailable", stage=stage, error_type=type(exc).__name__)
+        return text
 
     @property
     def ready(self) -> bool:
@@ -106,9 +149,14 @@ class StreamingLocalSTT:
             contact = stage.removeprefix("confirm_") in {"name", "last_name", "phone", "address", "email"}
             # Contact values retain the established higher-accuracy decoder.
             # Streaming partials are for turn timing, never verified facts.
-            if self.settings.sherpa_whisper_fallback and (contact or not text):
-                emit_current("stt_fallback", reason="local_whisper_contact" if contact else "empty_stream_result")
+            if self.settings.sherpa_whisper_fallback and contact:
+                emit_current("stt_fallback", reason="local_whisper_contact")
                 text = await self.fallback.transcribe(bytes(buffer), 8000, contact=contact)
+            elif self.settings.sherpa_whisper_fallback and (not text or (stage in {
+                "issue", "service_detail", "affected_area", "timing_summary", "source_summary",
+                "water_condition", "anything_else", "additional_message",
+            } and needs_conversation_recovery(stage, text))):
+                text = await self._recover_conversation(text, bytes(buffer), stage)
             emit_current("stt_completed", chars=len(text), stage=stage, reason="stream_endpoint")
             return TelAgentTranscriptTurn(text=text, audio_ended_at=last_speech_at, heard_audio=True)
 
