@@ -657,11 +657,13 @@ class VoiceCore:
         documents = self.knowledge.search(query, top_k=3, max_chars=3600) if eligible else []
         source = "approved_rules" if answer else "unavailable"
         if question_like and not answer and not (state.stage == "issue" and info["kind"] != "service"):
-            context = self.knowledge.answer_context(query, documents)
+            context = self.knowledge.answer_context(query, documents, intent_query=transcript)
             if context:
                 contextual = getattr(self.llm, "answer_in_conversation", None)
                 if contextual is not None:
-                    answer = await contextual(transcript, context, company.context_summary(dialogue, state.description))
+                    new_topic = bool(classify_service(transcript).get("service_key"))
+                    recent = {} if new_topic else dialogue
+                    answer = await contextual(transcript, context, company.context_summary(recent, state.description))
                 else:
                     answer = await self.llm.answer(transcript, context)
                 source = "local_model" if answer else "unavailable"

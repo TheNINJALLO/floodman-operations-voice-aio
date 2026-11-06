@@ -27,7 +27,7 @@ def search_query(text: str, dialogue: dict, description: str = "") -> str:
 
 
 def needs_detail(text: str) -> bool:
-    return bool(re.match(r"^(?:how|why|explain|tell me|what happens|what does|what about|and what about)\b", normalized(text)))
+    return bool(re.match(r"^(?:how|why|explain|tell me|what happens|what does|what is|what s|what about|and what about)\b", normalized(text)) or re.search(r"\b(?:compare|difference|versus)\b", normalized(text)))
 
 
 def policy_question(text: str) -> bool:
@@ -44,7 +44,7 @@ def supportive_opening(text: str) -> str:
 
 
 def context_summary(dialogue: dict, description: str) -> str:
-    turns = dialogue.get("turns", [])[-2:]
+    turns = dialogue.get("turns", [])[-1:]
     return ("Caller's concern: " + description[:200] + "\n" + "\n".join(
         f"Caller: {turn['question'][:150]}\nAvery: {turn['answer'][:220]}" for turn in turns
     ))[:900]

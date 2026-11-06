@@ -121,6 +121,15 @@ def test_compact_approved_context_keeps_company_experience_and_is_bounded(projec
     assert len(context) < 1500
 
 
+def test_process_question_retrieves_the_method_instead_of_a_general_service_list(project_root):
+    knowledge = KnowledgeBase(project_root / "knowledge")
+    context = knowledge.answer_context("How does crawl space encapsulation work")
+    assert "vapor barrier" in context and "dehumidification" in context
+    assert "Company Overview" not in context and len(context) < 500
+    followup = knowledge.answer_context("Would that help with moisture and musty smells too crawl space How does crawl space encapsulation work", intent_query="Would that help with moisture and musty smells too")
+    assert "musty odor" in followup
+
+
 def test_immediate_company_answers_require_and_follow_approved_facts(project_root, tmp_path):
     assert not KnowledgeBase(tmp_path).direct_answer("How long have you been in business?")
     knowledge = KnowledgeBase(project_root / "knowledge")

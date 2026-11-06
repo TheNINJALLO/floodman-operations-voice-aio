@@ -166,13 +166,20 @@ class KnowledgeBase:
             chunks.append(f"# {document.title}\n{document.body}")
         return "\n\n".join(chunks)
 
-    def answer_context(self, query: str, documents: list[KnowledgeDocument] | None = None) -> str:
+    def answer_context(self, query: str, documents: list[KnowledgeDocument] | None = None, *, intent_query: str | None = None) -> str:
         """Keep only a few relevant approved sentences for the CPU voice budget."""
         terms = self._tokens(query)
+        intent = intent_query or query
+        procedural = bool(re.search(r"\b(?:how|involve|process|explain|happens)\b", intent, re.I)) and not bool(re.search(r"\b(?:how long|how many years|in business|been around|experience)\b", intent, re.I))
+        compare = bool(re.search(r"\b(?:compare|difference|versus|vs)\b", query, re.I))
         chunks, used = [], 0
-        for document in (documents if documents is not None else self.search(query, top_k=2))[:2]:
+        for document in (documents if documents is not None else self.search(query, top_k=2))[:2 if compare else 1]:
             sentences = [re.sub(r"\s+", " ", part).strip() for part in re.split(r"(?<=[.!?])\s+|\n\s*\n", document.body)]
-            scored = sorted(enumerate(sentences), key=lambda item: len(terms & self._tokens(item[1])), reverse=True)
+            def relevance(item):
+                sentence = item[1]
+                process_fact = procedural and re.search(r"\b(?:projects may|may involve|may include|may consider|visit helps|inspection may)\b", sentence, re.I)
+                return len(terms & self._tokens(sentence)) + (5 if process_fact else 0)
+            scored = sorted(enumerate(sentences), key=relevance, reverse=True)
             selected = []
             for index, sentence in scored:
                 if not sentence or sentence.startswith('#') or used + len(sentence) > 1200:
