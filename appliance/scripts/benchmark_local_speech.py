@@ -82,10 +82,15 @@ async def benchmark(output: Path, *, realtime=False, strict=False, contacts=Fals
     tts.fallback = NoFallback()
     await tts.start()
     await stt.start()
+    # A repeatable speech fixture keeps unrelated source changes from selecting
+    # a different synthetic accent/hesitation on each CI run. Production speech
+    # keeps its normal sampling; the voice catalog checks varied presets too.
+    import torch
+    torch.manual_seed(4271)
     report = {"schema_version": 1, "python": platform.python_version(), "cpu": platform.processor(),
               "cpu_count": os.cpu_count(), "cold_start_seconds": round(time.perf_counter() - started, 3),
               "realtime_input": realtime, "speech_cache_enabled": False, "carrier_calls": 0, "staff_messages": 0,
-              "uses_customer_data": False, "cloud_ai_requests": 0, "cases": []}
+              "uses_customer_data": False, "cloud_ai_requests": 0, "speech_seed": 4271, "cases": []}
     cases = [
         ("greeting", "issue", ("Hello, this is Avery, Floodman's digital assistant. How may I help you today?",), None),
         ("active-flood", "issue", ("Water is rising in my basement and I cannot stop the water.",), True),

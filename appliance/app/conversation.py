@@ -43,7 +43,7 @@ def unfinished_turn(transcript: str) -> bool:
         return True
     # Streaming recognition can append a hesitation to a short opening while
     # the caller is still forming the rest of the sentence.
-    if re.fullmatch(r"(?:it s|it has|its) been(?: (?:at first|well|um|uh|like|so|the|a|an))*", text):
+    if re.fullmatch(r"(?:it s|it has|its) been(?: (?:at first|well|um|uh|like|so|the|a|an|i|we|they|you|my|our|your|this|that))*", text):
         return True
     return bool(re.search(r"\b(?:it s been|it has been|there s|there is|i was|we were|and|because|but|my name is|my email is|my address is)$", text))
 

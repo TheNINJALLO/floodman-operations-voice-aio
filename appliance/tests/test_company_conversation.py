@@ -146,7 +146,7 @@ async def test_conversational_opening_invites_the_question_without_collecting_a_
     assert "What would you like to know?" in reply.text and session.state.stage == "issue"
 
 
-@pytest.mark.parametrize("text", ["IT'S BEEN THE", "It's been a", "It has been an"])
+@pytest.mark.parametrize("text", ["IT'S BEEN THE", "It's been a", "It has been an", "IT'S BEEN I", "It's been my", "It's been we"])
 def test_short_recognized_fragment_with_a_determiner_is_still_unfinished(text):
     assert unfinished_turn(text)
 
