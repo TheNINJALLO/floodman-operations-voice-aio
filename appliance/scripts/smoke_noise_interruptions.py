@@ -57,6 +57,7 @@ def main():
         ('distorted-speakerphone-echo', 2200 * np.tanh(echo / 2200) + road * .3, False),
         ('caller-in-road-noise', voice + road, True),
         ('caller-over-speakerphone-echo', voice + echo + road * .3, True),
+        ('caller-over-distorted-speakerphone-echo', voice + 2200 * np.tanh(echo / 2200) + road * .3, True),
     ]:
         call = AudioSocketConnection(asyncio.StreamReader(), Writer(), settings)
         began = time.perf_counter()

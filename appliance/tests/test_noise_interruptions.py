@@ -154,6 +154,24 @@ def test_echo_subtraction_retains_unrelated_overlapping_caller():
     assert np.sqrt(np.mean((residual - caller[640:]) ** 2)) < 140
 
 
+@pytest.mark.parametrize('overlap', [False, True])
+def test_compressed_echo_is_removed_and_overlapping_caller_is_retained(overlap):
+    rng = np.random.default_rng(39)
+    reference = np.clip(rng.normal(0, 10000, 16000), -32768, 32767).astype('<i2')
+    voice = rng.normal(0, 650, 8000) if overlap else np.zeros(8000)
+    echo = PlaybackEchoFilter()
+    echo.record(reference.tobytes())
+    incoming = 2200 * np.tanh(.65 * reference[4000:12000].astype(np.float32) / 2200) + voice
+    output = []
+    for offset in range(0, len(incoming), 160):
+        raw = np.clip(incoming[offset:offset + 160], -32768, 32767).astype('<i2').tobytes()
+        output.extend(np.frombuffer(echo.filter(raw), dtype='<i2'))
+    residual = np.asarray(output, dtype=np.float64)[640:]
+    assert np.sqrt(np.mean((residual - voice[640:]) ** 2)) < 180
+    if overlap:
+        assert np.corrcoef(residual, voice[640:])[0, 1] > .95
+
+
 def test_reference_echo_is_removed_but_unrelated_speech_is_not():
     rng = np.random.default_rng(10)
     reference = rng.normal(0, 1500, 16000).astype('<i2')

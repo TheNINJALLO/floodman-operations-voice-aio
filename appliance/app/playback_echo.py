@@ -66,7 +66,22 @@ class PlaybackEchoFilter:
                                 best = (correlation, dot / max(1, match_power), start)
                         if best is not None and abs(best[0]) >= .68 and abs(best[1]) <= 3:
                             match = reference[best[2]:best[2] + 640]
-                            cleaned = frame - best[1] * match[-len(frame):]
-                            self.last_correlation = max(self.last_correlation, abs(best[0]))
+                            correlation, gain = best[:2]
+                            nonlinear_minimum = max(.90, abs(correlation) + .01)
+                            # Speakerphone limiting compresses peaks. A linear
+                            # fit can leave voiced echo even at a correct lag.
+                            # Only use a compressed reference when it explains
+                            # the input substantially better with high confidence.
+                            for limit in (800, 1600, 3200, 6400):
+                                candidate = limit * np.tanh(reference[best[2]:best[2] + 640] / limit)
+                                centered_candidate = candidate - candidate.mean()
+                                candidate_power = float(np.dot(centered_candidate, centered_candidate))
+                                candidate_dot = float(np.dot(centered, centered_candidate))
+                                candidate_correlation = candidate_dot / np.sqrt(max(1, candidate_power * target_power))
+                                candidate_gain = candidate_dot / max(1, candidate_power)
+                                if abs(candidate_correlation) >= nonlinear_minimum and abs(candidate_correlation) > abs(correlation) and abs(candidate_gain) <= 3:
+                                    match, correlation, gain = candidate, candidate_correlation, candidate_gain
+                            cleaned = frame - gain * match[-len(frame):]
+                            self.last_correlation = max(self.last_correlation, abs(correlation))
             output.append(cleaned)
         return np.clip(np.concatenate(output), -32768, 32767).astype('<i2').tobytes() if output else pcm
