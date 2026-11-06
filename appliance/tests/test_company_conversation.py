@@ -1,6 +1,6 @@
 import pytest
 
-from app.company_conversation import is_question, search_query, supportive_opening, safe_answer
+from app.company_conversation import context_summary, is_question, search_query, supportive_opening, safe_answer
 from app.conversation import memory
 from app.conversation import unfinished_turn
 from app.knowledge import KnowledgeBase
@@ -100,11 +100,19 @@ async def test_local_answer_uses_approved_information_and_recent_context_without
     monkeypatch.setattr(model, "_chat", chat)
     assert await model.answer_in_conversation("Does that help?", "Approved crawl-space information", "Caller asked about a crawl space")
     assert "professional, calm, gently caring" in captured[0][0]["content"]
+    assert len(captured[0][0]["content"].split()) < 60
     assert "Approved crawl-space information" in captured[0][1]["content"]
     assert "Caller asked about a crawl space" in captured[0][1]["content"]
     async def unsafe(*_, **__): return "I've booked your appointment."
     monkeypatch.setattr(model, "_chat", unsafe)
     assert not await model.answer("Book it", "Some approved facts")
+
+
+def test_cpu_context_keeps_question_and_concern_without_replaying_generated_answer():
+    dialogue = {"topic": "crawl space", "turns": [{"question": "How does encapsulation work?", "answer": "Old generated answer. " * 40}]}
+    recent = context_summary(dialogue, "Damp crawl space after rain.")
+    assert "How does encapsulation work?" in recent and "Damp crawl space after rain." in recent
+    assert "Old generated answer" not in recent and len(recent) <= 400
 
 
 def test_knowledge_search_ignores_question_stopwords(project_root):

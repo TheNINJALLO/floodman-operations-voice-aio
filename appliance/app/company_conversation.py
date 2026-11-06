@@ -44,10 +44,13 @@ def supportive_opening(text: str) -> str:
 
 
 def context_summary(dialogue: dict, description: str) -> str:
+    # Last question plus topic resolves references without resending an entire
+    # generated answer on the CPU prompt path. Full history remains in memory.
     turns = dialogue.get("turns", [])[-1:]
-    return ("Caller's concern: " + description[:200] + "\n" + "\n".join(
-        f"Caller: {turn['question'][:150]}\nAvery: {turn['answer'][:220]}" for turn in turns
-    ))[:900]
+    concern = f"Concern: {description[:120]}. " if description else ""
+    return (concern + f"Topic: {dialogue.get('topic', '')}. " + " ".join(
+        f"Previous question: {turn['question'][:150]}" for turn in turns
+    ))[:400]
 
 
 def remember(dialogue: dict, question: str, answer: str, topic: str = "") -> None:
