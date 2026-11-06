@@ -2,6 +2,7 @@ import pytest
 
 from app.company_conversation import is_question, search_query, supportive_opening, safe_answer
 from app.conversation import memory
+from app.conversation import unfinished_turn
 from app.knowledge import KnowledgeBase
 from app.llm import LocalLLM
 from test_conversation import core
@@ -128,3 +129,12 @@ async def test_conversational_opening_invites_the_question_without_collecting_a_
     session = core.create_session("question-opening")
     reply = await core.process(session, text)
     assert "What would you like to know?" in reply.text and session.state.stage == "issue"
+
+
+@pytest.mark.parametrize("text", ["IT'S BEEN THE", "It's been a", "It has been an"])
+def test_short_recognized_fragment_with_a_determiner_is_still_unfinished(text):
+    assert unfinished_turn(text)
+
+
+def test_complete_sentence_with_a_determiner_is_not_left_waiting():
+    assert not unfinished_turn("It's been the same way for two weeks")

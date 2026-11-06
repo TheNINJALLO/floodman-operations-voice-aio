@@ -161,6 +161,7 @@ async def benchmark(output: Path, *, realtime=False, strict=False, contacts=Fals
         report["contact_checks"]["last_name"] = last_name_answer(recognized["last-name"]).lower() == "jones"
     report["passed"] = all(case["recognized_text"] for case in report["cases"]) and report["routing_semantics_preserved"] and report["pause_preserved"] and all(report["contact_checks"].values()) and report["cancelled_voice_worker_stopped"] and report["barge_in_cancel_ms"] < 1500 and not warnings
     (output / "speech-report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+    print(json.dumps({key: report[key] for key in ("passed", "routing_semantics_preserved", "pause_preserved", "contact_checks", "cancelled_voice_worker_stopped", "barge_in_cancel_ms", "generation_warnings")}), flush=True)
     logging.getLogger("pocket_tts").removeHandler(handler)
     print(json.dumps({"speech_trial": "passed" if report["passed"] else "needs_review", "carrier_calls": 0, "report": str(output / "speech-report.json")}), flush=True)
     if strict and not report["passed"]:
