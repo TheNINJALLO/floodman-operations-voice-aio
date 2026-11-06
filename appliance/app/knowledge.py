@@ -27,7 +27,7 @@ class KnowledgeBase:
     @staticmethod
     def _tokens(value: str) -> set[str]:
         stop = {"the", "and", "for", "you", "your", "our", "that", "this", "what", "when", "where", "who", "why", "how", "does", "with", "have", "are", "can", "could", "would", "will", "about", "there", "they", "their", "please", "tell", "more", "from", "floodman"}
-        aliases = {"leaking": "leak", "leaks": "leak", "basements": "basement", "foundations": "foundation", "businesses": "commercial", "business": "commercial", "mould": "mold", "costs": "pricing", "cost": "pricing", "prices": "pricing", "price": "pricing", "estimates": "inspection", "estimate": "inspection"}
+        aliases = {"leaking": "leak", "leaks": "leak", "basements": "basement", "foundations": "foundation", "businesses": "commercial", "business": "commercial", "long": "years", "mould": "mold", "costs": "pricing", "cost": "pricing", "prices": "pricing", "price": "pricing", "estimates": "inspection", "estimate": "inspection"}
         return {aliases.get(token, token) for token in re.findall(r"[a-z0-9]+", value.lower()) if len(token) > 2 and token not in stop}
 
     @staticmethod
@@ -165,3 +165,39 @@ class KnowledgeBase:
         for document in self.search(query):
             chunks.append(f"# {document.title}\n{document.body}")
         return "\n\n".join(chunks)
+
+    def answer_context(self, query: str, documents: list[KnowledgeDocument] | None = None) -> str:
+        """Keep only a few relevant approved sentences for the CPU voice budget."""
+        terms = self._tokens(query)
+        chunks, used = [], 0
+        for document in (documents if documents is not None else self.search(query, top_k=2))[:2]:
+            sentences = [re.sub(r"\s+", " ", part).strip() for part in re.split(r"(?<=[.!?])\s+|\n\s*\n", document.body)]
+            scored = sorted(enumerate(sentences), key=lambda item: len(terms & self._tokens(item[1])), reverse=True)
+            selected = []
+            for index, sentence in scored:
+                if not sentence or sentence.startswith('#') or used + len(sentence) > 1200:
+                    continue
+                selected.append((index, sentence))
+                used += len(sentence)
+                if len(selected) == 2:
+                    break
+            if selected:
+                chunks.append(document.title + ": " + " ".join(sentence for _, sentence in sorted(selected)))
+        return "\n".join(chunks)
+
+    def direct_answer(self, query: str) -> str:
+        """Immediate company facts, enabled only by an approved source sentence."""
+        words = " ".join(re.findall(r"[a-z0-9]+", query.lower()))
+        for document in self.documents:
+            if document.category != "company":
+                continue
+            body = re.sub(r"\s+", " ", document.body).lower()
+            if re.search(r"\b(?:in business|been around|how many years|how long (?:have|has)|experience)\b", words):
+                tenure = re.search(r"\b(?:more than|over) (?:[a-z]+|\d+) years\b", body)
+                if tenure and "northern michigan" in body:
+                    return f"Floodman has been serving Northern Michigan homeowners for {tenure[0]}."
+            scope_question = re.search(r"\b(?:do you (?:help|work|serve|handle)|work with|what about)\b", words)
+            if scope_question and re.search(r"\b(?:commercial|business|rental|residential)\b", words):
+                if "homeowners and commercial property owners" in body:
+                    return "Yes, we help both homeowners and commercial property owners. We can take the details and get them to the right team."
+        return ""

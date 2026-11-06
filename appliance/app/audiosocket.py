@@ -791,8 +791,8 @@ class AudioSocketServer:
                     finalize = getattr(self.core, "finalize_completion", None)
                     if finalize is not None:
                         await finalize(session)
-                    outcome = "completed" if session.state.completed else "no_input"
-                    action = "completed" if session.state.completed else "fallback_callback"
+                    outcome = "completed" if call_completed(session) else "no_input"
+                    action = "completed" if call_completed(session) else "fallback_callback"
                     self.registry.write_action(call_uuid, action, "", outcome)
                     break
         except Exception as exc:

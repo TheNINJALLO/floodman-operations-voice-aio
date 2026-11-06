@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from app.business import BusinessDirectory
 from app.config import Settings
-from app.call_style import GREETING, INTRODUCTION, IDENTITY, farewell_body, extra_acknowledgment
+from app.call_style import GREETING, INTRODUCTION, IDENTITY, FAREWELL, farewell_body, extra_acknowledgment
 from app import company_conversation as company
 from app.call_diagnostics import emit_current
 from app.conversation import (
@@ -48,6 +48,10 @@ class CallSession:
     interrupted_from_stage: str = ""
     defer_assistant_recording: bool = False
     introduction_pending: bool = False
+
+
+def call_completed(session: CallSession) -> bool:
+    return bool(session.state.completed or session.state.metadata.get("conversation", {}).get("questions_only_complete"))
 
 
 class VoiceCore:
@@ -526,7 +530,7 @@ class VoiceCore:
         if state.stage == "done":
             # A caller may interrupt the farewell with a correction. The phone
             # driver keeps the channel open and this resumes message collection.
-            state.stage = "anything_else"
+            state.stage = "issue" if info.pop("questions_only_complete", False) else "anything_else"
             state.completed = False
             info.pop("finish_after_confirmation", None)
             info.pop("completion_pending", None)
@@ -571,6 +575,15 @@ class VoiceCore:
         if hold_requested(transcript):
             info["hold_timeouts"] = 2
             return self._planned(session, "Take your time.")
+        if state.stage == "issue" and not state.description and info.get("company_dialogue", {}).get("turns"):
+            if closing_finished(transcript) and normalized(transcript) not in {"no", "nope", "none", "no thanks", "thanks", "thank you"}:
+                info["questions_only_complete"] = True
+                state.stage = "done"
+                reply = self._planned(session, "You're welcome. " + FAREWELL)
+                reply.end_call = True
+                return reply
+            if normalized(transcript) in {"thanks", "thank you", "okay thanks"}:
+                return self._planned(session, "You're welcome.")
         if normalized(transcript) in {"can i ask a question", "can i ask you a question", "may i ask a question", "i have a question", "can i ask about the company"}:
             return self._planned(session, "Of course. What would you like to know?")
         if state.stage == "issue" and normalized(transcript) in {"can you help", "can you help me", "i need help"}:
@@ -638,11 +651,13 @@ class VoiceCore:
             r"\b(?:i need|i want|i d like|i would like|please arrange|can i get|can you arrange|can i talk to (?:someone|somebody)|can i speak to (?:someone|somebody))\b", normalized(transcript)))
         unsupported_question = classify_service(transcript).get("service_status") == "unsupported"
         answer = self.business.direct_answer(transcript) if eligible and (unsupported_question or company.policy_question(transcript) or not company.needs_detail(transcript)) else ""
+        if eligible and not answer:
+            answer = self.knowledge.direct_answer(transcript)
         query = company.search_query(transcript, dialogue, state.description)
         documents = self.knowledge.search(query, top_k=3, max_chars=3600) if eligible else []
         source = "approved_rules" if answer else "unavailable"
         if question_like and not answer and not (state.stage == "issue" and info["kind"] != "service"):
-            context = "\n\n".join(f"# {document.title}\n{document.body}" for document in documents)
+            context = self.knowledge.answer_context(query, documents)
             if context:
                 contextual = getattr(self.llm, "answer_in_conversation", None)
                 if contextual is not None:
@@ -666,7 +681,9 @@ class VoiceCore:
 
         if question_like and not repeat_requested and not intake_request and company.question_words(transcript) and not (state.stage == "issue" and info["kind"] != "service"):
             emit_current("company_answer", reason="unavailable", stage=state.stage)
-            return self._planned(session, "The team will need to confirm that detail for you.")
+            answer = "The team will need to confirm that detail for you."
+            company.remember(dialogue, transcript, answer)
+            return self._planned(session, answer)
 
         if state.stage == "anything_else":
             closing = normalized(transcript)
@@ -921,7 +938,7 @@ class VoiceCore:
 
     async def disconnect(self, session: CallSession, outcome: str = "caller_hangup") -> None:
         await self.finalize_completion(session)
-        if not session.state.completed and not session.notification_sent:
+        if not call_completed(session) and not session.notification_sent:
             await self._notify(session, kind="partial_hangup", partial=True)
         self.database.finish_call(session.call_id, outcome)
         if self.briefings is not None:

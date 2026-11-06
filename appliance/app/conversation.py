@@ -21,10 +21,10 @@ QUESTIONS = {
 def closing_finished(transcript: str) -> bool:
     """Recognize a complete wrap-up answer, never a substring of new details."""
     text = normalized(transcript)
-    polite = r"(?:ok|okay|all right|alright|well|yes|yeah|no|nope|nah|thanks|thank you)"
+    polite = r"(?:ok|okay|all right|alright|well|yes|yeah|no|nope|nah|thanks|thank you|bye|goodbye)"
     ending = (
         r"no|nope|nah|none|nothing(?: else| more)?|no more|"
-        r"(?:i think |i guess )?(?:that s|that is|that should be|that ll be|that will be) (?:it|all|everything)(?: for now| i have| i can think of)?|"
+        r"(?:i think |i guess )?(?:that s|that is|that should be|that ll be|that will be) (?:it|all|everything)(?: for now| i have| i can think of| i needed)?|"
         r"that should do it|i (?:don t|do not) think so|not that i can think of|"
         r"(?:i m|i am|we re|we are) all set|"
         r"i (?:don t|do not) have anything else|thanks|thank you|bye|goodbye"

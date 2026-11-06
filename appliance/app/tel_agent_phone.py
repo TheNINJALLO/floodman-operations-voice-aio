@@ -24,7 +24,7 @@ from app.intake_flow import contact_endpoint_stage
 from app.models import VoiceReply
 from app.registry import CallRegistry
 from app.tel_agent_runtime import TelAgentLLM, TelAgentSTT, TelAgentTranscriptTurn, TelAgentTTS
-from app.voice_core import CallSession, VoiceCore
+from app.voice_core import CallSession, VoiceCore, call_completed
 
 logger = logging.getLogger(__name__)
 
@@ -366,8 +366,8 @@ class TelAgentPhoneAgent:
                                     finalize = getattr(self.core, "finalize_completion", None)
                                     if finalize is not None:
                                         await finalize(session)
-                                    outcome = "completed" if session.state.completed else "no_input"
-                                    self.registry.write_action(call_uuid, "completed" if session.state.completed else "fallback_callback", "", outcome)
+                                    outcome = "completed" if call_completed(session) else "no_input"
+                                    self.registry.write_action(call_uuid, "completed" if call_completed(session) else "fallback_callback", "", outcome)
                                     break
                                 pending_reply = None
                             last_input_at = time.perf_counter()
@@ -481,8 +481,8 @@ class TelAgentPhoneAgent:
                     finalize = getattr(self.core, "finalize_completion", None)
                     if finalize is not None:
                         await finalize(session)
-                    outcome = "completed" if session.state.completed else "no_input"
-                    action = "completed" if session.state.completed else "fallback_callback"
+                    outcome = "completed" if call_completed(session) else "no_input"
+                    action = "completed" if call_completed(session) else "fallback_callback"
                     self.registry.write_action(call_uuid, action, "", outcome)
                     break
         except asyncio.CancelledError:

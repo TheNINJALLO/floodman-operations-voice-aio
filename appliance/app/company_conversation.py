@@ -44,10 +44,10 @@ def supportive_opening(text: str) -> str:
 
 
 def context_summary(dialogue: dict, description: str) -> str:
-    turns = dialogue.get("turns", [])[-3:]
-    return ("Caller's reported concern: " + description[:600] + "\n" + "\n".join(
-        f"Caller: {turn['question'][:300]}\nAvery: {turn['answer'][:600]}" for turn in turns
-    ))[:2400]
+    turns = dialogue.get("turns", [])[-2:]
+    return ("Caller's concern: " + description[:200] + "\n" + "\n".join(
+        f"Caller: {turn['question'][:150]}\nAvery: {turn['answer'][:220]}" for turn in turns
+    ))[:900]
 
 
 def remember(dialogue: dict, question: str, answer: str, topic: str = "") -> None:

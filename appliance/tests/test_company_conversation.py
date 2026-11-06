@@ -114,6 +114,21 @@ def test_knowledge_search_ignores_question_stopwords(project_root):
     assert all(d.path.name != "99-review-needed.md" for d in knowledge.search("business experience company"))
 
 
+def test_compact_approved_context_keeps_company_experience_and_is_bounded(project_root):
+    knowledge = KnowledgeBase(project_root / "knowledge")
+    context = knowledge.answer_context("Tell me about Floodman and how long you've been in business")
+    assert "fifty years" in context.lower()
+    assert len(context) < 1500
+
+
+def test_immediate_company_answers_require_and_follow_approved_facts(project_root, tmp_path):
+    assert not KnowledgeBase(tmp_path).direct_answer("How long have you been in business?")
+    knowledge = KnowledgeBase(project_root / "knowledge")
+    assert "fifty years" in knowledge.direct_answer("How long have you been in business?")
+    assert "commercial property owners" in knowledge.direct_answer("Do you help commercial properties too?")
+    assert not knowledge.direct_answer("How long does an inspection take?")
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("text", ["Tell me about your company", "What does an inspection involve?"])
 async def test_missing_model_answer_keeps_a_company_question_out_of_intake_fields(core, text):
@@ -138,3 +153,25 @@ def test_short_recognized_fragment_with_a_determiner_is_still_unfinished(text):
 
 def test_complete_sentence_with_a_determiner_is_not_left_waiting():
     assert not unfinished_turn("It's been the same way for two weeks")
+
+
+@pytest.mark.asyncio
+async def test_company_only_call_can_end_without_intake_or_a_false_callback_promise(core):
+    session = core.create_session("questions-only")
+    await core.process(session, "What services do you offer?")
+    assert (await core.process(session, "Thanks")).text == "You're welcome."
+    reply = await core.process(session, "That's all I needed. Goodbye.")
+    assert reply.end_call and "within" not in reply.text and not session.state.completed
+    assert not core.notifier.sent
+    await core.disconnect(session, "completed")
+    assert not core.notifier.sent
+
+
+@pytest.mark.asyncio
+async def test_interrupted_question_only_farewell_can_resume_an_actual_request(core):
+    session = core.create_session("question-farewell-correction")
+    await core.process(session, "What services do you offer?")
+    assert (await core.process(session, "Goodbye")).end_call
+    reply = await core.process(session, "Wait, I need an inspection for my damp basement.")
+    assert not reply.end_call and session.state.description
+    assert not memory(session.state).get("questions_only_complete")

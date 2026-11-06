@@ -154,7 +154,8 @@ async def single_text(text):
 
 
 @pytest.mark.asyncio
-async def test_driver_keeps_listening_when_caller_interrupts_farewell(monkeypatch):
+@pytest.mark.parametrize("questions_only", [False, True])
+async def test_driver_keeps_listening_when_caller_interrupts_farewell(monkeypatch, questions_only):
     class Connection:
         closed = False
         trace = None
@@ -172,7 +173,8 @@ async def test_driver_keeps_listening_when_caller_interrupts_farewell(monkeypatc
 
     class Core:
         settings = SimpleNamespace()
-        state = IntakeState(call_uuid="farewell-test", stage="anything_else", completed=True)
+        state = IntakeState(call_uuid="farewell-test", stage="anything_else", completed=not questions_only,
+                            metadata={"conversation": {"questions_only_complete": questions_only}})
 
         def create_session(self, *_args):
             return SimpleNamespace(state=self.state, call_id=9)
