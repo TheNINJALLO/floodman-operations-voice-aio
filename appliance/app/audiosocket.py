@@ -18,7 +18,7 @@ from app.registry import CallRegistry
 from app.speech_activity import SpeechActivity
 from app.stt import LocalSTT
 from app.tts import LocalTTS
-from app.voice_core import VoiceCore
+from app.voice_core import VoiceCore, call_completed
 
 logger = logging.getLogger(__name__)
 
