@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% set page_title = "Learning" %}
+{% set page_eyebrow = "Outreach history and Avery’s own calls" %}
+{% block content %}
+<div class="learning-workspace">
+<section class="page-heading"><div><h1>Learn from real conversations</h1><p>Review the history first, then learn from new calls. Published answers stay on this server.</p></div><a class="button secondary" href="/learning">Refresh progress</a></section>
+{% include 'assistant_nav.html' %}
+<section class="panel"><div class="panel-heading"><div><h2>{{ 'Learning is running' if report.controls.enabled else 'Learning is paused' }}</h2><p>{{ 'Live call in progress; background learning waits.' if report.active_calls else 'Local analysis runs while the phone line is idle.' }}</p></div></div>
+<div class="panel-copy">
+<div class="learning-counts" aria-label="Learning progress"><p><strong>{{ report.contacts }}</strong> Outreach contacts</p><p><strong>{{ report.conversations }}</strong> saved conversations</p><p><strong>{{ report.analyzed }}</strong> locally analyzed</p><p><strong>{{ report.pending }}</strong> awaiting analysis</p><p><strong>{{ report.approved }}</strong> approved answers</p></div>
+<p role="status">{% if report.scan.baseline_complete %}The first Outreach history scan is complete. Older analyses run before new ones.{% elif report.configured and report.controls.provider_enabled %}Reading the full Outreach history across all accessible projects.{% else %}Outreach history is not connected. Avery can still learn from its own ended calls.{% endif %}</p>
+{% if report.scan.phase %}<p>Scan: {{ report.scan.phase }} · Pass {{ report.scan.pass_number }} · {{ report.scan.projects | length }} projects, including inactive projects</p>{% endif %}
+{% if report.scan.reason %}<p class="learning-error" role="alert">Provider read needs attention: {{ report.scan.reason }}. Existing local examples and live calls remain available.</p>{% endif %}
+{% if report.configuration_error %}<p class="learning-error" role="alert">The protected learning connection needs review.</p>{% endif %}
+{% if report.attention or report.empty or report.expired %}<p>{{ report.attention }} analyses need attention · {{ report.empty }} empty conversations · {{ report.expired }} source texts expired</p>{% endif %}
+<div class="button-row">
+<form method="post" action="/learning/control"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="{{ 'pause' if report.controls.enabled else 'start' }}"><button class="button" type="submit">{{ 'Pause learning' if report.controls.enabled else 'Start learning' }}</button></form>
+{% if report.configured %}
+<form method="post" action="/learning/control"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="{{ 'disconnect' if report.controls.provider_enabled else 'reconnect' }}"><button class="button secondary" type="submit">{{ 'Stop Outreach imports' if report.controls.provider_enabled else 'Resume Outreach imports' }}</button></form>
+{% if report.controls.provider_enabled %}<form method="post" action="/learning/control"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="scan"><button class="button secondary" type="submit">Check for new conversations</button></form>{% endif %}
+{% endif %}
+</div>
+<p>New source texts are redacted automatically and kept for {{ report.retention_days }} days. Redaction can miss details: check every reusable answer before publishing. Vendor prompts and tool logs are excluded.</p>
+<p>{{ report.holdout }} conversations are reserved for evaluation and cannot be published as examples. No call automatically changes model weights, routing, communication permissions, or live knowledge.</p>
+{% if report.last_analysis.model %}<p>Last analysis model: {{ report.last_analysis.model }}</p>{% endif %}
+<details><summary>Project coverage and transition to Avery</summary><ul>{% for project in report.scan.projects or [] %}<li>{{ project.name }} · {{ 'active' if project.active else 'inactive' }}</li>{% endfor %}</ul><p>Stopping imports affects only this learning connection. It does not cancel Outreach service, change its campaigns, or interrupt Avery. Published knowledge works locally. Compare real-call accuracy, response waits, transfers and staff briefings before retiring Outreach.</p></details>
+</div></section>
+<div class="learning-layout">
+<section class="panel"><div class="panel-heading"><div><h2>Conversation reviews</h2><p>Page {{ page_number }} · Newest source updates first</p></div></div><div class="panel-copy learning-list">
+{% for row in rows %}<article><h3><a href="/learning?source={{ row.id }}&amp;page_number={{ page_number }}">{{ 'Avery call ' ~ row.external_id if row.origin == 'avery' else 'Outreach conversation ' ~ row.external_id[:8] }}</a></h3><p>{{ row.status }} · {{ 'historical' if row.historical else 'new' }} · {{ row.split }} · {{ row.review }}</p><p>{{ row.observations.caller_turns or 0 }} caller turns · {{ row.observations.repeated_assistant_turns or 0 }} repeated assistant turns</p>{% if row.error %}<p class="learning-error">{{ row.error }}</p>{% endif %}</article>
+{% else %}<p>No conversation reviews yet. Start learning with a configured account, or wait for Avery’s next completed call.</p>{% endfor %}
+<nav class="button-row" aria-label="Review pages">{% if page_number > 1 %}<a class="button secondary" href="/learning?page_number={{ page_number-1 }}">Previous page</a>{% endif %}{% if rows | length == 50 %}<a class="button secondary" href="/learning?page_number={{ page_number+1 }}">Next page</a>{% endif %}</nav>
+</div></section>
+<section class="panel"><div class="panel-heading"><div><h2>{{ 'Review this conversation' if selected else 'Choose a conversation' }}</h2><p>Model suggestions are drafts; a completed call does not establish a good outcome.</p></div></div><div class="panel-copy">
+{% if selected %}
+<p>Source {{ selected.external_id }} · {{ selected.status }} · {{ selected.split }}</p>
+{% if selected.analysis.overview %}<h3>How the call was handled</h3><p>{{ selected.analysis.overview }}</p><h3>What worked</h3><ul>{% for item in selected.analysis.strengths %}<li>{{ item }}</li>{% endfor %}</ul><h3>What Avery can improve</h3><ul>{% for item in selected.analysis.improvements %}<li>{{ item }}</li>{% endfor %}</ul><h3>Supporting evidence</h3><ul>{% for item in selected.analysis.evidence %}<li>Turn {{ item.message_index }}: “{{ item.quote }}”</li>{% endfor %}</ul>{% if selected.analysis.source_truncated %}<p>The model reviewed a bounded selection of turns. The complete retained dialogue is below.</p>{% endif %}{% endif %}
+{% if selected.status == 'analyzed' and selected.split == 'examples' %}
+<form method="post" action="/learning/review" class="learning-review-form"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="source" value="{{ selected.id }}"><input type="hidden" name="fingerprint" value="{{ selected.digest }}">
+<h3>Reusable company answer</h3><label>Customer question<input name="question" maxlength="240" value="{{ selected.analysis.question }}" required></label><label>Reviewed answer<textarea name="answer" maxlength="700" rows="5" required>{{ selected.analysis.answer }}</textarea></label>
+<label class="check-label"><input type="checkbox" name="confirmed" value="yes" required><span>I checked the facts against approved company information and removed personal details.</span></label>
+<button class="button" type="submit" name="action" value="approve">Publish reviewed answer</button><p>Publishing adds an approved document to Knowledge. It does not change call routing, model weights, or contact permissions. You can edit or remove the document there.</p></form>
+<form method="post" action="/learning/review"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="source" value="{{ selected.id }}"><input type="hidden" name="fingerprint" value="{{ selected.digest }}"><button class="button secondary" name="action" value="reject" type="submit">Reject this draft</button></form>
+{% elif selected.split == 'holdout' %}<p>This conversation is reserved for evaluation. It cannot be published as a learning example.</p>{% endif %}
+{% if selected.status in ['attention','retry'] %}<form method="post" action="/learning/review"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="source" value="{{ selected.id }}"><button class="button secondary" type="submit" name="action" value="retry">Retry local analysis</button></form>{% endif %}
+{% if selected.knowledge_slug %}<p><a href="/knowledge?edit={{ selected.knowledge_slug }}">Review the published knowledge document</a></p>{% endif %}
+<details><summary>Redacted source dialogue</summary><ol class="learning-dialogue">{% for message in selected.payload.messages or [] %}<li><strong>{{ 'Customer' if message.role == 'caller' else 'Assistant' }}</strong><p>{{ message.text }}</p></li>{% else %}<li>No source dialogue is retained for this conversation.</li>{% endfor %}</ol></details>
+{% else %}<p>Open a conversation on the left to inspect the handling, source evidence and suggested answer.</p>{% endif %}
+</div></section>
+</div></div>
+{% endblock %}

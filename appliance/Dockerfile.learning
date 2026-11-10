@@ -1,0 +1,8 @@
+FROM ghcr.io/theninjallo/floodman-operations-voice-aio@sha256:c505922581d6368120497fd015cb45bac90b76ad1bf586500a37a59058d01fb0
+USER root
+WORKDIR /opt/floodman
+COPY app/learning.py app/learning_provider.py app/learning_store.py app/main.py ./app/
+COPY templates/base.html templates/assistant_nav.html templates/learning.html ./templates/
+COPY static/learning.css ./static/
+USER container
+WORKDIR /home/container

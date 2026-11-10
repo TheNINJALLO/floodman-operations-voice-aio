@@ -2,6 +2,7 @@
   <a href="/assistant" {{ 'aria-current=page' if section == 'assistant' }}>Call flow</a>
   <a href="/knowledge" {{ 'aria-current=page' if section == 'knowledge' }}>Knowledge</a>
   {% if principal.can_manage %}<a href="/simulator" {{ 'aria-current=page' if section == 'simulator' }}>Test conversation</a>
-  <a href="/call-review" {{ 'aria-current=page' if section == 'call-review' }}>Call review</a>{% endif %}
+  <a href="/call-review" {{ 'aria-current=page' if section == 'call-review' }}>Call review</a>
+  <a href="/learning" {{ 'aria-current=page' if section == 'learning' }}>Learning</a>{% endif %}
   {% if principal.is_admin %}<a href="/voice" {{ 'aria-current=page' if section == 'voice' }}>Voice and pace</a>{% endif %}
 </nav>

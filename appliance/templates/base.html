@@ -10,6 +10,7 @@
   <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
   <link rel="manifest" href="/static/manifest.webmanifest">
   <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="/static/learning.css?v=2026.11.10.1">
   <script src="/static/app.js" defer></script>
 </head>
 <body>
@@ -36,6 +37,7 @@
         {% if principal.can_manage %}
         <a href="/simulator" class="{{ 'active' if section == 'simulator' else '' }}"><span aria-hidden="true">▷</span> Simulator</a>
         <a href="/call-review" class="{{ 'active' if section == 'call-review' else '' }}"><span aria-hidden="true">≡</span> Call review</a>
+        <a href="/learning" class="{{ 'active' if section == 'learning' else '' }}"><span aria-hidden="true">≡</span> Learning</a>
         {% endif %}
         <a href="/service-area" class="{{ 'active' if section == 'service-area' else '' }}"><span aria-hidden="true">⌖</span> Service area</a>
         <a href="/diagnostics" class="{{ 'active' if section == 'diagnostics' else '' }}"><span aria-hidden="true">⌁</span> Diagnostics</a>

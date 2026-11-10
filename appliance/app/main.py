@@ -35,6 +35,8 @@ from app.db import Database
 from app.emailer import normalize_user_email
 from app.knowledge import KnowledgeBase
 from app.llm import LocalLLM
+from app.learning import Learning
+from app.learning_provider import SourceError
 from app.notifications import TeamNotifier
 from app.registry import CallRegistry
 from app.sms_consent import SMS_DISCLOSURE, SMS_DISCLOSURE_VERSION, normalize_sms_phone
@@ -110,6 +112,11 @@ class Runtime:
         )
         self.call_diagnostics = CallDiagnostics(self.database, settings)
         self.audio = AudioSocketServer(settings, self.core, self.stt, self.tts, self.registry, self.call_diagnostics)
+        try:
+            self.learning = Learning(settings, self.database, lambda: self.audio.active_calls)
+        except (OSError, sqlite3.Error):
+            self.learning = None
+            logger.warning('Learning storage unavailable; live calls remain available')
         self.simulators: dict[str, CallSession] = {}
         self.ready = False
 
@@ -123,10 +130,14 @@ class Runtime:
         await self.audio.start()
         await self.suite_bridge.start()
         await self.briefings.start()
+        if self.learning is not None:
+            await self.learning.start()
         self.ready = True
 
     async def stop(self) -> None:
         self.ready = False
+        if self.learning is not None:
+            await self.learning.stop()
         await self.audio.stop()
         await self.briefings.stop()
         await self.suite_bridge.stop()
@@ -854,6 +865,69 @@ async def update_profile(
 
 
 # Knowledge and service area -----------------------------------------
+@app.get('/learning', response_class=HTMLResponse)
+async def learning_page(request: Request, source: str = '', page_number: int = 1,
+                        floodman_session: str | None = Cookie(default=None)):
+    principal = _require_api(floodman_session, manage=True)
+    if runtime.learning is None:
+        raise HTTPException(503, 'Learning storage is unavailable. Live calls remain available.')
+    page_number = max(1, min(100000, page_number))
+    report = await asyncio.to_thread(runtime.learning.status)
+    rows = await asyncio.to_thread(runtime.learning.store.listing, 50, (page_number-1)*50)
+    selected = await asyncio.to_thread(runtime.learning.store.source, source) if re.fullmatch('[a-f0-9]{64}', source) else None
+    return templates.TemplateResponse(request, 'learning.html', _context(request, principal, 'learning',
+        report=report, rows=rows, selected=selected, page_number=page_number))
+
+
+@app.get('/api/learning')
+async def learning_status(floodman_session: str | None = Cookie(default=None)):
+    _require_api(floodman_session, manage=True)
+    if runtime.learning is None: raise HTTPException(503, 'Learning storage is unavailable.')
+    return await asyncio.to_thread(runtime.learning.status)
+
+
+@app.post('/learning/control')
+async def learning_control(action: str = Form(default=''), csrf_token: str = Form(default=''),
+                           floodman_session: str | None = Cookie(default=None)):
+    principal = _require_api(floodman_session, manage=True)
+    _csrf(principal, csrf_token)
+    if runtime.learning is None: raise HTTPException(503, 'Learning storage is unavailable.')
+    try:
+        await asyncio.to_thread(runtime.learning.control, action)
+        _audit(principal, action, 'learning', detail={'provider_writes': 0})
+        return _redirect('/learning', message='Learning control saved.')
+    except (ValueError, SourceError):
+        return _redirect('/learning', error='The learning connection or action needs review.')
+
+
+@app.post('/learning/review')
+async def learning_review(source: str = Form(default=''), fingerprint: str = Form(default=''),
+                          action: str = Form(default=''), question: str = Form(default=''),
+                          answer: str = Form(default=''), confirmed: str = Form(default=''),
+                          csrf_token: str = Form(default=''), floodman_session: str | None = Cookie(default=None)):
+    principal = _require_api(floodman_session, manage=True)
+    _csrf(principal, csrf_token)
+    if runtime.learning is None: raise HTTPException(503, 'Learning storage is unavailable.')
+    try:
+        if not re.fullmatch('[a-f0-9]{64}', source): raise ValueError('Choose a source conversation.')
+        if action == 'approve':
+            slug = await asyncio.to_thread(runtime.learning.publish, source, fingerprint, runtime.knowledge, question, answer, confirmed == 'yes')
+            _audit(principal, 'approve', 'learning', source, {'knowledge_slug': slug})
+            message = 'Reviewed answer published to Avery’s local knowledge.'
+        elif action == 'reject':
+            await asyncio.to_thread(runtime.learning.store.review, source, fingerprint, 'rejected')
+            _audit(principal, 'reject', 'learning', source)
+            message = 'Draft rejected. Avery was not changed.'
+        elif action == 'retry':
+            await asyncio.to_thread(runtime.learning.store.retry, source)
+            _audit(principal, 'retry', 'learning', source)
+            message = 'Local analysis queued again.'
+        else: raise ValueError('Choose an available review action.')
+        return _redirect('/learning?source='+source, message=message)
+    except ValueError as exc:
+        return _redirect('/learning?source='+source, error=str(exc))
+
+
 @app.get("/knowledge", response_class=HTMLResponse)
 async def knowledge_page(request: Request, edit: str = "", floodman_session: str | None = Cookie(default=None)):
     principal = _principal(floodman_session)
