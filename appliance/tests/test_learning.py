@@ -102,6 +102,18 @@ def test_incremental_additions_updates_and_stable_holdout(learner):
     assert new['call-two']['digest'] != old['call-two']['digest']
 
 
+def test_history_includes_contacts_and_calls_beyond_first_pages(learner):
+    class Many(Provider):
+        projects = [{'id': 'active', 'name': 'Active', 'active': True}]
+        leads = {'active': [str(i) for i in range(51)]}
+        calls = {str(i): (['call-'+str(j) for j in range(101)] if i == 0 else []) for i in range(51)}
+    learner.source_factory = Many
+    finish_scan(learner, limit=1000)
+    assert learner.status()['contacts'] == 51
+    assert learner.status()['conversations'] == 101
+    assert learner.store.get('scan')['baseline_complete']
+
+
 def test_scan_restarts_from_saved_cursor_and_retries_same_provider_read(learner):
     learner.scan_one()
     saved = learner.store.get('scan')
