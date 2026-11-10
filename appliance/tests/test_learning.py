@@ -262,12 +262,13 @@ def portal(tmp_path, monkeypatch):
 def test_learning_http_permissions_csrf_and_escaped_source(portal):
     module, client = portal
     assert client.get('/api/learning').status_code == 401
+    assert client.get('/learning', follow_redirects=False).headers['location'] == '/login'
     for role in ('viewer', 'manager'):
         ident = module.runtime.database.create_user(role, role, 'unused', role, {}, None)
         token, csrf = module.runtime.database.create_session(ident, False, 1)
         client.cookies.set('floodman_session', token)
         if role == 'viewer':
-            assert client.get('/learning').status_code == 403
+            assert client.get('/learning', follow_redirects=False).status_code == 303
             assert client.post('/learning/control', data={'action': 'start', 'csrf_token': csrf}).status_code == 403
             continue
         assert client.post('/learning/control', data={'action': 'start'}).status_code == 403

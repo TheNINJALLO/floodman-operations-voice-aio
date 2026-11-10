@@ -868,7 +868,9 @@ async def update_profile(
 @app.get('/learning', response_class=HTMLResponse)
 async def learning_page(request: Request, source: str = '', page_number: int = 1,
                         floodman_session: str | None = Cookie(default=None)):
-    principal = _require_api(floodman_session, manage=True)
+    principal = _principal(floodman_session)
+    if not principal or not principal.can_manage:
+        return RedirectResponse('/login', status_code=303)
     if runtime.learning is None:
         raise HTTPException(503, 'Learning storage is unavailable. Live calls remain available.')
     page_number = max(1, min(100000, page_number))
