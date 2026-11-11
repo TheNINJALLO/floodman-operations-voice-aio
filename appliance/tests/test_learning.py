@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from app.db import Database
 from app.knowledge import KnowledgeBase
-from app.learning import Learning, observations, model_source, validate_analysis
+from app.learning import Learning, observations, model_source, validate_analysis, analysis_error
 from app.learning_provider import OutreachSource, SourceError, dialogue, redact
 from app.learning_store import LearningStore, digest
 from app.models import IntakeState
@@ -197,6 +197,126 @@ def test_model_context_is_bounded_and_evidence_is_checked():
     assert validate_analysis(json.dumps(result), source)['overview']
     result['evidence'][0]['quote'] = 'This was invented'
     with pytest.raises(ValueError): validate_analysis(json.dumps(result), source)
+
+
+def test_removed_provider_contact_restarts_a_verified_scan(learner):
+    learner.scan_one()
+    class Removed(Provider):
+        leads = {'active': [], 'old': ['two']}
+        def get(self, path, params=None):
+            if path == 'leads/one/conversations': raise SourceError('resource_missing')
+            return super().get(path, params)
+    learner.source_factory = Removed
+    assert not learner.scan_one()
+    state = learner.store.get('scan')
+    assert state['phase'] == 'rescan' and state['reason'] == 'source_changed_rescanning'
+    learner.store.put('scan', state | {'due': 0})
+    finish_scan(learner)
+    assert learner.store.get('scan')['baseline_complete']
+    assert {r['external_id'] for r in learner.store.listing()} == {'call-two'}
+
+
+def test_a_manual_scan_request_survives_an_inflight_provider_read(learner):
+    finish_scan(learner)
+    class Requested(Provider):
+        def get(self, path, params=None):
+            value = super().get(path, params)
+            learner.control('scan')
+            return value
+    learner.source_factory = Requested
+    learner.control('scan')
+    learner.scan_one()
+    state = learner.store.get('scan')
+    assert learner.store.get('scan_request') > state['request_consumed']
+    learner.source_factory = Provider
+    learner.scan_one()
+    assert learner.store.get('scan')['pass_number'] == state['pass_number'] + 1
+
+
+def test_expiry_during_analysis_cannot_restore_source_text(learner):
+    finish_scan(learner)
+    row = learner.store.next()
+    with learner.store.connect() as db: db.execute('UPDATE sources SET updated=0 WHERE id=?', (row['id'],))
+    learner.store.prune()
+    assert not learner.store.complete(row, {'overview': 'Old text'})
+    learner.store.defer(row, 'retry', attempt=False)
+    current = learner.store.source(row['id'])
+    assert current['status'] == 'expired' and current['analysis'] == {} and current['payload'] == {}
+
+
+@pytest.mark.asyncio
+async def test_model_result_for_an_updated_source_is_discarded(learner):
+    finish_scan(learner)
+    class Changed:
+        async def generate(self, payload):
+            row = next(r for r in learner.store.listing() if r['status'] == 'analyzing')
+            changed = deepcopy(payload)
+            changed['messages'].append({'role': 'caller', 'text': 'A correction.'})
+            learner.store.save_source(row['origin'], row['project_id'], row['external_id'], changed, {}, True)
+            return {'overview': 'Stale analysis'}
+    learner.model = Changed()
+    assert await learner.analyze_one()
+    assert learner.store.get('last_analysis', {}) == {}
+    assert all(not r['analysis'] for r in learner.store.listing())
+
+
+@pytest.mark.asyncio
+async def test_imports_continue_during_a_long_model_review(learner):
+    finish_scan(learner)
+    entered = asyncio.Event()
+    class Held:
+        async def generate(self, payload):
+            entered.set()
+            await asyncio.Event().wait()
+    class NewCalls(Provider):
+        calls = {'one': ['call-one', 'call-new'], 'two': ['call-two']}
+    learner.model, learner.source_factory = Held(), NewCalls
+    learner.poll_interval = .01
+    learner.control('scan')
+    await learner.start()
+    tasks = [learner.task, learner.analysis_task]
+    try:
+        await asyncio.wait_for(entered.wait(), 2)
+        async def imported():
+            while True:
+                rows = await asyncio.to_thread(learner.store.listing)
+                state = await asyncio.to_thread(learner.store.get, 'scan', {})
+                if any(r['external_id'] == 'call-new' for r in rows) and state.get('phase') == 'complete': return
+                await asyncio.sleep(.02)
+        await asyncio.wait_for(imported(), 5)
+        assert any(r['status'] == 'analyzing' for r in learner.store.listing())
+    finally:
+        await learner.stop()
+    assert all(t.done() for t in tasks) and learner.task is None and learner.analysis_task is None
+
+
+@pytest.mark.asyncio
+async def test_analysis_waits_for_the_initial_history_scan(learner):
+    entered = asyncio.Event()
+    class Held:
+        async def generate(self, payload):
+            assert learner.store.get('scan')['baseline_complete']
+            assert learner.status()['conversations'] == 2
+            entered.set()
+            await asyncio.Event().wait()
+    learner.model, learner.poll_interval = Held(), .01
+    await learner.start()
+    try: await asyncio.wait_for(entered.wait(), 5)
+    finally: await learner.stop()
+
+
+def test_failure_diagnostics_are_useful_without_returning_exception_text():
+    assert analysis_error(TimeoutError('PRIVATE')) == 'local_model_timeout'
+    assert analysis_error(ValueError('invalid_evidence')) == 'invalid_evidence'
+    assert analysis_error(ValueError('PRIVATE')) == 'analysis_output_invalid'
+    assert analysis_error(RuntimeError('PRIVATE')) == 'local_analysis_failed'
+
+
+def test_missing_resource_is_distinct_from_provider_downtime():
+    client = OutreachSource(TOKEN, httpx.MockTransport(lambda r: httpx.Response(404)))
+    try:
+        with pytest.raises(SourceError, match='resource_missing'): client.get('leads/deleted/conversations')
+    finally: client.close()
 
 
 @pytest.mark.asyncio

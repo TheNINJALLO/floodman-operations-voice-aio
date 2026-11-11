@@ -11,7 +11,7 @@ import time
 from urllib.parse import quote
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.briefings import private_ollama_url, valid_model
 from app.call_quality import review_call
@@ -20,6 +20,15 @@ from app.learning_store import LearningStore, digest
 from app.llm import LocalLLM
 
 log = logging.getLogger(__name__)
+
+
+def analysis_error(error):
+    if isinstance(error, (TimeoutError, httpx.TimeoutException)): return 'local_model_timeout'
+    if isinstance(error, httpx.HTTPStatusError): return 'local_model_http_' + str(error.response.status_code)
+    if isinstance(error, ValidationError): return 'analysis_output_invalid'
+    if isinstance(error, ValueError):
+        return str(error) if str(error) in {'invalid_evidence', 'incomplete_analysis', 'unbounded_analysis'} else 'analysis_output_invalid'
+    return 'local_analysis_failed'
 
 
 def observations(messages):
@@ -126,6 +135,8 @@ class Learning:
         self.source_factory = source_factory or OutreachSource
         self.model = model
         self.task = None
+        self.analysis_task = None
+        self.poll_interval = .5
 
     def connection(self):
         path = self.store.root / 'connection.json'
@@ -176,8 +187,8 @@ class Learning:
             if not self.connection(): raise ValueError('Configure an account-only API key first.')
             controls['provider_enabled'] = True
         elif action == 'scan':
-            scan = self.store.get('scan', {})
-            if scan: self.store.put('scan', scan | {'due': 0})
+            # A separate marker cannot be overwritten by an in-flight page read.
+            self.store.put('scan_request', time.time())
         else: raise ValueError('Unknown learning action.')
         self.store.put('controls', controls)
 
@@ -205,6 +216,9 @@ class Learning:
         config = self.connection()
         if not config: return False
         state = self.store.get('scan', {})
+        requested = self.store.get('scan_request', 0)
+        if requested > state.get('request_consumed', 0):
+            state |= {'due': 0, 'identity': None, 'phase': 'rescan', 'reason': 'requested_rescan'}
         if state.get('due', 0) > time.time(): return False
         identity = digest([config['account_id'], config['environment'], config['api_key']])
         if state.get('identity') not in (None, identity):
@@ -217,7 +231,7 @@ class Learning:
                 state = {'phase': 'leads', 'projects': projects, 'project_index': 0, 'page': 1,
                     'pass_number': state.get('pass_number', 0) + 1, 'identity': identity,
                     'baseline_complete': state.get('baseline_complete', False), 'seen_leads': [], 'seen_calls': [],
-                    'last_complete': state.get('last_complete'), 'due': 0, 'reason': ''}
+                    'last_complete': state.get('last_complete'), 'due': 0, 'reason': '', 'request_consumed': requested}
             if state['project_index'] >= len(state['projects']):
                 state |= {'phase': 'complete', 'baseline_complete': True, 'last_complete': time.time(), 'due': time.time()+900}
                 self.store.put('scan', state)
@@ -270,7 +284,13 @@ class Learning:
             self.store.put('scan', state)
             return True
         except SourceError as exc:
-            self.store.put('scan', state | {'reason': exc.code, 'due': time.time()+exc.delay})
+            if exc.code == 'resource_missing':
+                # A deleted contact/conversation must not pin an old cursor
+                # forever. Re-verify the account and rebuild current pages.
+                self.store.put('scan', state | {'phase': 'rescan', 'identity': None,
+                    'reason': 'source_changed_rescanning', 'due': time.time()+5})
+            else:
+                self.store.put('scan', state | {'reason': exc.code, 'due': time.time()+exc.delay})
             return False
         finally:
             source.close()
@@ -319,26 +339,28 @@ class Learning:
                         await asyncio.to_thread(self.store.defer, row, 'live_call_or_paused', attempt=False)
                         return True
                 analysis = await work
-                await asyncio.to_thread(self.store.complete, row, analysis)
-                await asyncio.to_thread(self.store.put, 'last_analysis', {'at': time.time(), 'model': getattr(self.model, 'model', 'local'), 'source': row['id']})
+                saved = await asyncio.to_thread(self.store.complete, row, analysis)
+                if saved:
+                    await asyncio.to_thread(self.store.put, 'last_analysis', {'at': time.time(), 'model': getattr(self.model, 'model', 'local'), 'source': row['id']})
             finally:
                 if not work.done(): work.cancel()
                 await asyncio.gather(work, return_exceptions=True)
         except asyncio.CancelledError:
             await asyncio.to_thread(self.store.defer, row, 'restart', attempt=False)
             raise
-        except Exception:
-            await asyncio.to_thread(self.store.defer, row, 'local_analysis_failed')
+        except Exception as exc:
+            await asyncio.to_thread(self.store.defer, row, analysis_error(exc))
         return True
 
     async def start(self):
-        if self.task is None: self.task = asyncio.create_task(self.run(), name='local-learning')
+        if self.task is None: self.task = asyncio.create_task(self.run(), name='local-learning-import')
+        if self.analysis_task is None: self.analysis_task = asyncio.create_task(self.analyze_loop(), name='local-learning-analysis')
 
     async def stop(self):
-        if self.task:
-            self.task.cancel()
-            await asyncio.gather(self.task, return_exceptions=True)
-            self.task = None
+        tasks = [task for task in (self.task, self.analysis_task) if task is not None]
+        for task in tasks: task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        self.task = self.analysis_task = None
 
     async def run(self):
         while True:
@@ -351,10 +373,23 @@ class Learning:
                     else:
                         if not await asyncio.to_thread(self.local_one):
                             await asyncio.to_thread(self.store.put, 'local_baseline_complete', True)
-                        await self.analyze_one()
                         await asyncio.to_thread(self.scan_one)
                     await asyncio.to_thread(self.store.prune)
             except asyncio.CancelledError: raise
             except Exception:
                 log.warning('Learning paused for an internal error; live calls remain independent')
-            await asyncio.sleep(.5)
+            await asyncio.sleep(self.poll_interval)
+
+    async def analyze_loop(self):
+        while True:
+            try:
+                controls = await asyncio.to_thread(self.controls)
+                state = await asyncio.to_thread(self.store.get, 'scan', {})
+                waiting_for_history = (controls['enabled'] and not state.get('baseline_complete') and controls['provider_enabled']
+                                       and await asyncio.to_thread(self.connection))
+                if controls['enabled'] and not self.active_calls() and not waiting_for_history:
+                    await self.analyze_one()
+            except asyncio.CancelledError: raise
+            except Exception:
+                log.warning('Local learning analysis unavailable; import and live calls remain independent')
+            await asyncio.sleep(self.poll_interval)

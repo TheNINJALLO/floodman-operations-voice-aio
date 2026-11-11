@@ -93,13 +93,14 @@ class LearningStore:
 
     def complete(self, row, analysis):
         with self.connect() as db:
-            db.execute("UPDATE sources SET status='analyzed',analysis=?,error='' WHERE id=? AND digest=?", (json.dumps(analysis), row['id'], row['digest']))
+            result = db.execute("UPDATE sources SET status='analyzed',analysis=?,error='' WHERE id=? AND digest=? AND status!='expired'", (json.dumps(analysis), row['id'], row['digest']))
+            return result.rowcount == 1
 
     def defer(self, row, code, *, attempt=True):
         count = row['attempts'] + int(attempt)
         status = 'attention' if count >= 3 else 'retry'
         with self.connect() as db:
-            db.execute("UPDATE sources SET status=?,attempts=?,error=?,due=? WHERE id=? AND digest=?", (status, count, code, time.time() + (min(1800, 60*2**count) if attempt else 5), row['id'], row['digest']))
+            db.execute("UPDATE sources SET status=?,attempts=?,error=?,due=? WHERE id=? AND digest=? AND status!='expired'", (status, count, code, time.time() + (min(1800, 60*2**count) if attempt else 5), row['id'], row['digest']))
 
     def review(self, ident, expected_digest, decision, slug=''):
         with self.connect() as db:

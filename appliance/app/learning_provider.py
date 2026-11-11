@@ -88,6 +88,7 @@ class OutreachSource:
             with self.http.stream("GET", path, params=params) as response:
                 status = response.status_code
                 if status in {401, 403}: raise SourceError("authentication" if status == 401 else "permission", 900)
+                if status == 404: raise SourceError("resource_missing")
                 if status == 429:
                     try: delay = float(response.headers.get("Retry-After", "60"))
                     except ValueError:

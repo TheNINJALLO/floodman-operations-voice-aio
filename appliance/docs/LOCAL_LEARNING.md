@@ -26,6 +26,12 @@ source text does not extend retention.
 History is collected before inference begins. The inference queue prioritizes
 historical records, including delayed retries, before newly discovered calls.
 Scans repeat 15 minutes after completion and take additional worker time.
+Importing and model analysis run in separate tasks. Long model reviews do not
+delay provider page reads or collection of Avery's own calls. Live calls still
+pause background work. A source removed during a scan causes a fresh verified
+scan rather than permanently retrying a stale contact or conversation ID.
+The manual check control also requests fresh provider pages. Concurrent source
+changes invalidate old model output before it is recorded as a finished review.
 Changed conversations invalidate their previous analysis; stable IDs prevent
 duplicate examples. Active calls discovered during scanning are revisited on
 later scans. Empty, failed, expired and attention states remain visible.
