@@ -16,7 +16,11 @@ def estimate_inquiry(text: str) -> bool:
     topic = r"(?:estimates?|inspections?|consultations?)"
     return bool(re.fullmatch(rf"(?:free |pre )?{topic}", words) or re.search(
         rf"\b(?:do|offer|provide|give)(?: (?:you|you guys|you guise|floodman))?"
-        rf"(?: (?:do|offer|provide|give))? (?:free |pre )?{topic}\b", words))
+        rf"(?: (?:do|offer|provide|give))? (?:free |pre )?{topic}\b", words) or re.search(
+        rf"\b(?:is|are) (?:(?:a|an|the|your|these|those) )?{topic} (?:really )?free\b|"
+        rf"\b(?:do|would|will) you charge(?: (?:me|us|anything))? for (?:(?:a|an|the) )?{topic}\b|"
+        rf"\bis there (?:a )?(?:charge|fee) for (?:(?:a|an|the) )?{topic}\b|"
+        rf"\b(?:does|do|would|will) (?:(?:a|an|the|your) )?{topic} cost\b", words))
 
 
 def question_words(text: str) -> bool:

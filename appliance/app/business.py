@@ -78,7 +78,7 @@ class BusinessDirectory:
         if estimate_inquiry(query) or any(term in text for term in (
             "free inspection", "inspection free", "free consultation", "free estimate", "estimate free",
         )):
-            return "Yes, we offer free inspections and consultations. The team can look at what's happening with you; recommendations and pricing depend on the property and work needed."
+            return "We offer free inspections and consultations. The team can look at what's happening with you; recommendations and pricing depend on the property and work needed."
         if any(term in text for term in ("how much", "price", "cost", "estimate over the phone")):
             return "Pricing depends on what's causing it, how much is affected, access, and what the inspection finds. The team can talk you through the options after taking a look."
         if any(term in text for term in ("warranty", "guarantee")):

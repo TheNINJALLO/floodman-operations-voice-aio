@@ -16,6 +16,10 @@ ESTIMATE_QUESTIONS = [
     "I'VE JUST CARES IF YOU GUISE DO ESTIMATES",
     "I'm just curious if you give estimates",
     "Oh, do you offer inspections",
+    "Are your estimates free",
+    "How much does an inspection cost",
+    "Do you charge for an estimate",
+    "Is there a fee for an inspection",
 ]
 
 
@@ -38,6 +42,7 @@ def test_questions_can_have_natural_introductions(text):
 @pytest.mark.parametrize("text", [
     "I need an estimate", "Our inspection was yesterday", "My estimate number is 123",
     "Sam Jones", "Will Smith", "estimates@example.com", "123 Estimate Street",
+    "Our inspection was free", "I paid for an inspection yesterday",
 ])
 def test_service_requests_and_contact_values_are_not_offer_questions(text):
     assert not estimate_inquiry(text) and not is_question(text)
