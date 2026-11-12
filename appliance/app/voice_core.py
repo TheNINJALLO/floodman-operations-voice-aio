@@ -580,7 +580,8 @@ class VoiceCore:
             return self._planned(session, "Take your time.")
         if gratitude(transcript) and state.stage not in {"anything_else", "additional_message"}:
             return self._planned(session, "You're welcome.")
-        question_like = self._question_like(transcript) or company.is_question(transcript, has_topic=bool(dialogue))
+        prepared = self.knowledge.prepared_answers.match(transcript, topic=dialogue.get("topic", ""), description=state.description)
+        question_like = bool(prepared) or self._question_like(transcript) or company.is_question(transcript, has_topic=bool(dialogue))
         if contact_side_detail(transcript, state.stage) and not question_like and not normalize_confirmation(transcript):
             # A caller can continue their story while a contact question is
             # pending. Their words are notes, never a guessed contact value.
@@ -667,14 +668,16 @@ class VoiceCore:
         # knowledge. Neither path can perform protected business actions.
         eligible = question_like and not (state.stage == "issue" and kind != "service")
         unsupported_question = classify_service(transcript).get("service_status") == "unsupported"
-        answer = self.business.direct_answer(transcript) if eligible and (unsupported_question or company.policy_question(transcript) or not company.needs_detail(transcript)) else ""
+        answer = prepared.answer if eligible and prepared else ""
+        if eligible and not answer and (unsupported_question or company.policy_question(transcript) or not company.needs_detail(transcript)):
+            answer = self.business.direct_answer(transcript)
         if eligible and not answer:
             answer = self.knowledge.direct_answer(transcript)
         query = company.search_query(transcript, dialogue, state.description)
         documents = self.knowledge.search(query, top_k=3, max_chars=3600) if eligible else []
         if eligible and not answer:
             answer = self.knowledge.conversation_answer(query, intent_query=transcript, documents=documents)
-        source = "approved_rules" if answer else "unavailable"
+        source = "approved_faq" if answer and prepared else "approved_rules" if answer else "unavailable"
         if eligible and not answer:
             context = self.knowledge.answer_context(query, documents, intent_query=transcript)
             if context:
@@ -687,8 +690,11 @@ class VoiceCore:
                     answer = await self.llm.answer(transcript, context)
                 source = "local_model" if answer else "unavailable"
         if answer:
-            company.remember(dialogue, transcript, answer, documents[0].category if documents else classify_service(transcript).get("service_key", ""))
+            topic = prepared.service if prepared else documents[0].category if documents else classify_service(transcript).get("service_key", "")
+            company.remember(dialogue, transcript, answer, topic)
             emit_current("company_answer", reason=source, stage=state.stage)
+            if prepared:
+                emit_current("company_faq", reason=prepared.id, stage=state.stage)
             if state.stage == "issue" and intake_request:
                 state.description = transcript
                 service = classify_service(transcript)

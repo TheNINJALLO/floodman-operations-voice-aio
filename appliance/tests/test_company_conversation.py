@@ -27,9 +27,11 @@ def test_contact_answers_are_not_company_questions(text):
 
 @pytest.mark.asyncio
 async def test_company_question_gets_conversation_context_and_preserves_intake_stage(core):
+    from app.prepared_answers import PreparedAnswers
     model = ContextModel()
     core.llm = model
     # This test exercises generation, independently of the immediate FAQ path.
+    core.knowledge.prepared_answers = PreparedAnswers([])
     core.knowledge.conversation_answer = lambda *args, **kwargs: ""
     session = core.create_session("company-context")
     session.state.stage = "name"
@@ -179,7 +181,7 @@ async def test_common_service_question_and_followup_do_not_wait_for_cpu_generati
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("text", ["Tell me about your company", "What does an inspection involve?"])
+@pytest.mark.parametrize("text", ["What color are your trucks?", "What time is your office open?"])
 async def test_missing_model_answer_keeps_a_company_question_out_of_intake_fields(core, text):
     session = core.create_session("company-fallback")
     reply = await core.process(session, text)

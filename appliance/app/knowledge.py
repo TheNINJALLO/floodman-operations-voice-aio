@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from app.prepared_answers import PreparedAnswers
 
 
 @dataclass(slots=True)
@@ -65,6 +66,7 @@ class KnowledgeBase:
                 )
             )
         self.documents = documents
+        self.prepared_answers = PreparedAnswers(documents)
 
     def managed_documents(self) -> list[dict[str, Any]]:
         output = []
@@ -141,6 +143,8 @@ class KnowledgeBase:
             return []
         scored: list[tuple[float, KnowledgeDocument]] = []
         for document in self.documents:
+            if document.category == "prepared_answers":
+                continue
             title = self._tokens(document.title + " " + " ".join(document.tags))
             body = self._tokens(document.body)
             overlap = len(terms & body)
