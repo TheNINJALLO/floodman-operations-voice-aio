@@ -203,8 +203,8 @@ class KnowledgeBase:
                 tenure = re.search(r"\b(?:more than|over) (?:[a-z]+|\d+) years\b", body)
                 if tenure and "northern michigan" in body:
                     return f"Floodman has been serving Northern Michigan homeowners for {tenure[0]}."
-            scope_question = re.search(r"\b(?:do you (?:help|work|serve|handle)|work with|what about)\b", words)
-            if scope_question and re.search(r"\b(?:commercial|business|rental|residential)\b", words):
+            scope_question = re.search(r"\b(?:do you (?:help|work|serve|handle)|you (?:guys )?(?:help|work|serve|handle)|work with|what about)\b", words)
+            if scope_question and re.search(r"\b(?:commercial|business(?:es)?|rental|residential)\b", words):
                 if "homeowners and commercial property owners" in body:
                     return "Yes, we help both homeowners and commercial property owners. We can take the details and get them to the right team."
         return ""

@@ -3,6 +3,7 @@ import pytest
 
 from app.company_conversation import estimate_inquiry, is_question
 from app.conversation import memory
+from app.knowledge import KnowledgeBase
 from app.streaming_stt import needs_conversation_recovery
 from test_conversation import core
 
@@ -112,3 +113,26 @@ async def test_intake_still_starts_when_the_caller_explicitly_requests_an_estima
 ])
 def test_recognizable_plural_offer_words_avoid_the_slow_secondary_decode(stage, text):
     assert not needs_conversation_recovery(stage, text)
+
+
+@pytest.mark.parametrize("text", [
+    "I'm just curious whether you help commercial properties",
+    "I was wondering if you work with businesses",
+    "Would you help a commercial property owner too",
+])
+@pytest.mark.asyncio
+async def test_conversational_company_scope_uses_approved_fact_without_model_wait(core, text):
+    class NoGeneration:
+        async def answer_in_conversation(self, *args):
+            raise AssertionError("The approved company-scope fact should answer immediately")
+    core.llm = NoGeneration()
+    session = core.create_session("conversational-company-scope")
+    session.state.stage = "name"
+    reply = await core.process(session, text)
+    assert "commercial property owners" in reply.text
+    assert session.state.stage == "name" and not session.state.name
+    assert not reply.end_call and not reply.transfer_number
+
+
+def test_conversational_scope_cannot_create_a_fact_without_an_approved_source(tmp_path):
+    assert not KnowledgeBase(tmp_path).direct_answer("I'm curious whether you help commercial properties")
