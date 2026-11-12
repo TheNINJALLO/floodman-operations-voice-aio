@@ -5,9 +5,29 @@ import re
 from app.intake import classify_service, normalized
 
 
+def estimate_inquiry(text: str) -> bool:
+    """Recognize an offer inquiry even without punctuation or a clean onset.
+
+    Telephone ASR can lose the subject or hear "free" as "pre". The offer
+    verb and service noun still identify the question; no caller data or
+    price is inferred from the damaged words.
+    """
+    words = normalized(text)
+    topic = r"(?:estimates?|inspections?|consultations?)"
+    return bool(re.fullmatch(rf"(?:free |pre )?{topic}", words) or re.search(
+        rf"\b(?:do|offer|provide|give)(?: (?:you|you guys|you guise|floodman))?"
+        rf"(?: (?:do|offer|provide|give))? (?:free |pre )?{topic}\b", words))
+
+
 def question_words(text: str) -> bool:
     words = normalized(text)
-    return bool(re.search(r"\b(?:what does .+ involve|how does .+ work)\b", words) or re.match(
+    # People routinely introduce a question with a social phrase, rather than
+    # starting with "what" or "do". Keep the original transcript unchanged.
+    words = re.sub(r"^(?:(?:oh|well|um|uh|hey|hello|hi|okay|ok|so|and|also|but|please|thanks|thank you) )+", "", words)
+    introduction = re.match(r"^i (?:(?:was|am|m) )?(?:just )?(?:wondering|curious|wondered|wanted to (?:ask|know)) (?:if |whether )?", words)
+    if introduction:
+        words = words[introduction.end():]
+    return bool((introduction and words) or estimate_inquiry(text) or re.search(r"\b(?:what does .+ involve|how does .+ work)\b", words) or re.match(
         r"^(?:what|when|where|who|why|which|how|do you|does|(?:can|could|would|will|should|are) (?:you|i|we|it|that|this|they|there)|is (?:it|that|this|there|a|an|the|your|my|floodman)|tell me|explain|i was wondering|i m wondering|i am wondering|i m curious|i am curious)\b", words))
 
 

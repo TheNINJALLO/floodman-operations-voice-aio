@@ -521,6 +521,7 @@ class VoiceCore:
         )
         session.no_input_count = 0
         info = memory(state)
+        dialogue = info.setdefault("company_dialogue", {})
         info.pop("wrapup_silence_cue", None)
         info.pop("hold_timeouts", None)
         if info.get("speech_fragments") and not unfinished_turn(transcript) and not hold_requested(transcript) and not identity_question(transcript):
@@ -579,7 +580,8 @@ class VoiceCore:
             return self._planned(session, "Take your time.")
         if gratitude(transcript) and state.stage not in {"anything_else", "additional_message"}:
             return self._planned(session, "You're welcome.")
-        if contact_side_detail(transcript, state.stage) and not self._question_like(transcript) and not normalize_confirmation(transcript):
+        question_like = self._question_like(transcript) or company.is_question(transcript, has_topic=bool(dialogue))
+        if contact_side_detail(transcript, state.stage) and not question_like and not normalize_confirmation(transcript):
             # A caller can continue their story while a contact question is
             # pending. Their words are notes, never a guessed contact value.
             state.description = clean(f"{state.description} Additional detail: {transcript}", 4000)
@@ -635,9 +637,10 @@ class VoiceCore:
         if state.stage != "confirm_email" and repeat_requested:
             return self._planned(session, self._current_question(state) or "Go ahead, I'm listening.")
         before_contacts = tuple(getattr(state, field) for field in ("name", "phone", "address", "email"))
-        dialogue = info.setdefault("company_dialogue", {})
-        question_like = (self._question_like(transcript) or company.is_question(transcript, has_topic=bool(dialogue))) and not spelling_requested
-        if not question_like or self._starts_intake(transcript) or re.search(r"\b(my|our|we have|I have)\b", transcript, re.I):
+        question_like = question_like and not spelling_requested
+        intake_request = self._starts_intake(transcript) and bool(re.search(
+            r"\b(?:i need|i want|i d like|i would like|please arrange|can i get|can you arrange|can i talk to (?:someone|somebody)|can i speak to (?:someone|somebody))\b", normalized(transcript)))
+        if not question_like or intake_request:
             capture_volunteered(state, transcript, expected=state.stage)
         if state.address and not state.service_area_city:
             area = self.business.service_area(state.address)
@@ -650,7 +653,7 @@ class VoiceCore:
         negative_confirmation = state.stage.startswith("confirm_") and normalized(transcript) in {
             "no", "nope", "nah", "none", "not sure", "i don t know", "i do not know",
         }
-        if field in {"name", "phone", "address", "email"} and declined(transcript) and not negative_confirmation:
+        if field in {"name", "phone", "address", "email"} and declined(transcript) and not negative_confirmation and not question_like:
             if field == "email":
                 if state.email:
                     state.metadata["unconfirmed_email"] = state.email
@@ -662,9 +665,7 @@ class VoiceCore:
 
         # Answer from deterministic business rules first, then approved local
         # knowledge. Neither path can perform protected business actions.
-        eligible = question_like and not (state.stage == "issue" and info["kind"] != "service")
-        intake_request = self._starts_intake(transcript) and bool(re.search(
-            r"\b(?:i need|i want|i d like|i would like|please arrange|can i get|can you arrange|can i talk to (?:someone|somebody)|can i speak to (?:someone|somebody))\b", normalized(transcript)))
+        eligible = question_like and not (state.stage == "issue" and kind != "service")
         unsupported_question = classify_service(transcript).get("service_status") == "unsupported"
         answer = self.business.direct_answer(transcript) if eligible and (unsupported_question or company.policy_question(transcript) or not company.needs_detail(transcript)) else ""
         if eligible and not answer:
@@ -674,7 +675,7 @@ class VoiceCore:
         if eligible and not answer:
             answer = self.knowledge.conversation_answer(query, intent_query=transcript, documents=documents)
         source = "approved_rules" if answer else "unavailable"
-        if question_like and not answer and not (state.stage == "issue" and info["kind"] != "service"):
+        if eligible and not answer:
             context = self.knowledge.answer_context(query, documents, intent_query=transcript)
             if context:
                 contextual = getattr(self.llm, "answer_in_conversation", None)
@@ -699,7 +700,7 @@ class VoiceCore:
             self._clear_interrupted_prompt(session)
             return self._planned(session, company.supportive_opening(transcript) + answer)
 
-        if question_like and not repeat_requested and not intake_request and company.question_words(transcript) and not (state.stage == "issue" and info["kind"] != "service"):
+        if eligible and not repeat_requested and not intake_request and company.question_words(transcript):
             emit_current("company_answer", reason="unavailable", stage=state.stage)
             answer = "The team will need to confirm that detail for you."
             company.remember(dialogue, transcript, answer)

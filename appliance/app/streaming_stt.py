@@ -49,7 +49,7 @@ def needs_conversation_recovery(stage: str, text: str) -> bool:
         return True  # Accurate negation matters to the existing urgency rules.
     if re.search(r"\bmy (?:email|address|phone|number)\b|@", text, re.I):
         return True
-    known = r"\b(?:mold|mould|water|damp|leak|leaking|flood|flooding|basement|crawl ?space|foundation|sump|drain|crack|bathroom|kitchen|bedroom|garage|wall|walls|floor|floors|ceiling|moisture|humidity|estimate|inspection|consultation|cost|price|pricing|warranty|insurance|commercial|business|years|door|entrance|gate|dog|callback|lunch|morning|afternoon|evening|yesterday|today|week|weeks|month|months|rain|worried|scared|stressed)\b"
+    known = r"\b(?:mold|mould|water|damp|leak|leaking|flood|flooding|basement|crawl ?space|foundation|sump|drain|crack|bathroom|kitchen|bedroom|garage|wall|walls|floor|floors|ceiling|moisture|humidity|estimates?|inspections?|consultations?|cost|price|pricing|warranty|insurance|commercial|business|years|door|entrance|gate|dog|callback|lunch|morning|afternoon|evening|yesterday|today|week|weeks|month|months|rain|worried|scared|stressed)\b"
     return not bool(re.search(known, words))
 
 

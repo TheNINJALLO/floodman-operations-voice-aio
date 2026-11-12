@@ -8,6 +8,7 @@ from typing import Any
 import yaml
 
 from app.intake import SUPPORTED_ALIASES, UNSUPPORTED_ALIASES, normalized, phrase_match
+from app.company_conversation import estimate_inquiry
 
 SERVICE_NAMES = {
     "water_damage_restoration": "water-damage restoration",
@@ -74,7 +75,7 @@ class BusinessDirectory:
         text = normalized(query)
         if any(term in text for term in ("what services", "what do you do", "kind of work", "services do you offer")):
             return "We help with water-damage restoration, basement waterproofing, foundation repair, crawl-space encapsulation, mold remediation, and sump-pump and drainage services."
-        if any(term in text for term in (
+        if estimate_inquiry(query) or any(term in text for term in (
             "free inspection", "inspection free", "free consultation", "free estimate", "estimate free",
         )):
             return "Yes, we offer free inspections and consultations. The team can look at what's happening with you; recommendations and pricing depend on the property and work needed."
